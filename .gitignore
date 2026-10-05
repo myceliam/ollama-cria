@@ -1,0 +1,52 @@
+# ollama-cria never holds a secret value. Secrets live in the Bitwarden bundle only.
+# tools/Test-NoSecrets.ps1 (run in CI) is the real guard; these patterns are the first line.
+
+# Secret material
+*.env
+.env
+.env.*
+!*.env.example
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+id_rsa*
+id_ed25519*
+known_hosts
+token.json
+credentials.json
+client_secret*.json
+server-keys.json
+
+# The secrets bundle and its map belong in Bitwarden, never in Git
+stack-secrets-*.zip
+00-RESTORE-MAP.json
+recovery-secrets/
+
+# Databases and runtime state
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+webui.db
+config.runtime.json
+
+# Retired, and holds a dead hard-coded key (RESTORE.md R-20)
+kais_chat_tidy.ps1
+
+# Evidence and state written by the controller
+recovery-state/
+evidence/
+*.log
+
+# Test output
+testResults.xml
+coverage.xml
+
+# Editors and OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
