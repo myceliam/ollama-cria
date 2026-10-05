@@ -14,7 +14,8 @@
          consumer), and every path root is an absolute path for its host
          (E:\x on the PC, /x on the VPS; %VAR% at the start is allowed on the
          PC), below a drive or filesystem root, with no '.', '..' or empty
-         segment. Whether a root is a link is checked on its own host by the
+         segment. When the check itself runs off Windows, a PC root may also
+         be /x: there the tests stand in for the PC. Whether a root is a link is checked on its own host by the
          restorer, which runs Test-RecoveryPath.ps1 against the real folder.
       3. Rows: every destination names a known root; each bundle folder goes to
          the kind of root manifests/bundle-folders.json gives it (folder 05 to
@@ -126,6 +127,7 @@ function Get-RootPathProblem([string]$Path, [string]$OnHost) {
         if ($Path -match '^[\\/]{2}') { return 'UNC or device path' }
         if ($Path -match '^[A-Za-z]:[\\/]') { $body = $Path.Substring(3) }
         elseif ($Path -match '^%[A-Za-z_][A-Za-z0-9_]*%[\\/]') { $body = $Path.Substring($Path.IndexOfAny([char[]]@('\', '/')) + 1) }
+        elseif (-not $IsWindows -and $Path -match '^/(?!/)') { $body = $Path.Substring(1) }   # tests standing in for the PC
         else { return 'not an absolute PC path (E:\... or %VAR%\...)' }
         if ($body.Contains(':')) { return 'colon after the drive' }
     }

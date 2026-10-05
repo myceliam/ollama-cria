@@ -156,7 +156,8 @@ Describe 'Collect-StackSecrets' {
             $r = Invoke-Collector $s
             $r.IsValid | Should -BeFalse
             $r.Problems | Should -Contain "row 'stack-env': stack:.env is missing (required)"
-            $r.Warnings | Should -Match "row 'gcal-oauth-token'.*optional"
+            # Windows adds a BitLocker warning, so look for this one among the rest.
+            $r.Warnings | Where-Object { $_ -match "row 'gcal-oauth-token'.*optional" } | Should -HaveCount 1
         }
 
         It 'fails the audit when a Docker secret has no row' {

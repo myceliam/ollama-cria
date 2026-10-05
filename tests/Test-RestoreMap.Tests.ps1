@@ -318,6 +318,13 @@ Describe 'Test-RestoreMap' {
             $r.Problems | Should -Contain "root '$Root': path refused ($Why)"
         }
 
+        It 'accepts a /x PC root only off Windows, where tests stand in for the PC' {
+            $b = New-TestBundle
+            $r = Invoke-Check $b -RootsPath (Save-TestRoot 'stack' '/srv/stack')
+            if ($IsWindows) { $r.Problems | Should -Contain "root 'stack': path refused (not an absolute PC path (E:\... or %VAR%\...))" }
+            else { $r.Problems | Should -BeNullOrEmpty }
+        }
+
         It 'accepts %VAR% at the start of a PC path and a trailing separator' {
             $b = New-TestBundle
             (Invoke-Check $b -RootsPath (Save-TestRoot 'stack' '%USERPROFILE%\stack\')).Problems | Should -BeNullOrEmpty
