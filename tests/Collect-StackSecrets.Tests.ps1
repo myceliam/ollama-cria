@@ -132,7 +132,9 @@ Describe 'Collect-StackSecrets' {
         It 'the real inventory breaks no manifest rule' {
             $r = & $script:Tool -PassThru -SshCommand $script:Missing -ScpCommand $script:Missing -DockerCommand $script:Missing
             $r.Mode | Should -Be 'Plan'
-            $r.Rows | Should -HaveCount 15
+            $expected = @((Get-Content -LiteralPath (Join-Path $script:Manifests 'secrets.json') -Raw | ConvertFrom-Json).rows).Count
+            $expected | Should -BeGreaterThan 0
+            $r.Rows | Should -HaveCount $expected
             @($r.Problems | Where-Object { $_ -match '^(manifest|roots file|folders file|stopped)' }) | Should -BeNullOrEmpty
         }
     }
@@ -164,6 +166,23 @@ Describe 'Collect-StackSecrets' {
             $s = New-TestSetup
             Set-Content -LiteralPath (Join-Path $s.Pc 'stack/secrets/new-service.pw') -Value ('fake-' + [guid]::NewGuid())
             (Invoke-Collector $s).Problems | Should -Contain "audit 'stack:secrets': 'stack:secrets/new-service.pw' has no row in the manifest"
+        }
+
+        It 'audits a whole root, subfolders included, when nothing follows the colon' {
+            $s = New-TestSetup
+            $s.Manifest.audits += [ordered]@{ location = 'ssh:'; purpose = 'test' }
+            $extra = Join-Path $s.Pc 'ssh/kit dir/extra.key'
+            New-Item -ItemType Directory -Path (Split-Path $extra -Parent) | Out-Null
+            Set-Content -LiteralPath $extra -Value ('fake-' + [guid]::NewGuid())
+            Save-TestSetup $s
+            $r = Invoke-Collector $s
+            $r.Problems | Should -Be @("audit 'ssh:': 'ssh:kit dir/extra.key' has no row in the manifest")
+
+            $s.Manifest.rows.Add([ordered]@{ id = 'ssh-extra'; folder = '04'; location = 'ssh:kit dir/extra.key'; kind = 'file'; required = $false; purpose = 'test' })
+            Save-TestSetup $s
+            $r = Invoke-Collector $s
+            $r.Problems | Should -BeNullOrEmpty
+            ($r.Rows | Where-Object Id -EQ 'ssh-extra').Status | Should -Be 'present'
         }
 
         It 'refuses a source that passes through a junction or link' {
@@ -378,7 +397,8 @@ Describe 'Collect-StackSecrets' {
     Context 'collecting from Docker volumes' -Skip:(-not $DockerReady) {
         BeforeAll {
             $script:Image = 'python:3.12-slim'
-            docker pull -q $script:Image | Out-Null
+            docker image inspect $script:Image *> $null
+            if ($LASTEXITCODE -ne 0) { docker pull -q $script:Image | Out-Null }
             $tag = [guid]::NewGuid().ToString('n').Substring(0, 8)
             $script:NtfyVolume = "cria-test-ntfy-$tag"
             $script:BoltVolume = "cria-test-bolt-$tag"

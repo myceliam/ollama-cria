@@ -465,7 +465,9 @@ function Invoke-Audit($Manifest) {
         $rootPath = [Environment]::ExpandEnvironmentVariables($Manifest.Roots[$rootName].path)
         try {
             if ($rootPath.Contains('%')) { throw 'unset variable' }
-            $check = & $testPath -Path $relative -Root $rootPath -Relative -Detailed
+            # Nothing after the colon audits the whole root.
+            $check = if ($relative -eq '') { & $testPath -Path $rootPath -Root $rootPath -AllowRoot -Detailed }
+            else { & $testPath -Path $relative -Root $rootPath -Relative -Detailed }
         }
         catch {
             $problems.Add("audit '$($a.location)': root '$rootName' cannot be used on this machine")
@@ -478,7 +480,8 @@ function Invoke-Audit($Manifest) {
         }
         foreach ($item in Get-ChildItem -LiteralPath $check.FullPath -Recurse -Force) {
             $below = $item.FullName.Substring($check.FullPath.Length).TrimStart([char[]]@('\', '/')) -replace '\\', '/'
-            $logical = $rootName + ':' + (($relative -replace '\\', '/').TrimEnd('/') + '/' + $below)
+            $prefix = ($relative -replace '\\', '/').TrimEnd('/')
+            $logical = $rootName + ':' + $(if ($prefix) { $prefix + '/' + $below } else { $below })
             if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
                 $problems.Add("audit '$($a.location)': '$logical' is a junction or symbolic link")
                 continue
