@@ -81,8 +81,9 @@ $lineRules = @(
     @{ Rule = 'password in a URL'; Pattern = '[a-z][a-z0-9+.-]{0,31}://[^/\s:@''"]+:[^/\s@''"]+@' }
     @{ Rule = 'secret-named setting with a literal value'; Pattern = '(?i)\b[A-Z0-9_]{0,64}(SECRET|TOKEN|PASSWORD|PASSWD|PASSPHRASE|API_?KEY|PRIVATE_?KEY)[A-Z0-9_]{0,64}["'']?\s*[:=]\s*["'']?[A-Za-z0-9+/=_.-]{16,}' }
     # Quoted values the rule above misses: 8 or more characters with a space or
-    # punctuation in them (a passphrase). Placeholders ({{X}}, ${X}, $x, <x>, %X%) pass.
-    @{ Rule = 'secret-named setting with a quoted passphrase'; Pattern = '(?i)\b[A-Z0-9_]{0,64}(?:SECRET|TOKEN|PASSWORD|PASSWD|PASSPHRASE|API_?KEY|PRIVATE_?KEY)[A-Z0-9_]{0,64}["'']?\s*[:=]\s*(["''])(?![{$<%])(?=(?:(?!\1)[^\r\n])*?[^A-Za-z0-9+/=_.\r\n"''-])(?:(?!\1)[^\r\n]){8,}\1' }
+    # punctuation other than : / \ in them (a passphrase, not a path or a
+    # 'root:relative' location). Placeholders ({{X}}, ${X}, $x, <x>, %X%) pass.
+    @{ Rule = 'secret-named setting with a quoted passphrase'; Pattern = '(?i)\b[A-Z0-9_]{0,64}(?:SECRET|TOKEN|PASSWORD|PASSWD|PASSPHRASE|API_?KEY|PRIVATE_?KEY)[A-Z0-9_]{0,64}["'']?\s*[:=]\s*(["''])(?![{$<%])(?=(?:(?!\1)[^\r\n])*?[^A-Za-z0-9+/=_.:\\\r\n"''-])(?:(?!\1)[^\r\n]){8,}\1' }
     @{ Rule = 'tailnet IP (use {{PC_TS_IP}} or {{VPS_TS_IP}})'; Pattern = '\b100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}\b' }
     # Tailscale gives every node an IPv6 address in one fixed /48.
     @{ Rule = 'tailnet IPv6 address'; Pattern = '(?i)\bfd7a:115c:a1e0:[0-9a-f]{0,4}:' }

@@ -124,6 +124,8 @@ Describe 'Test-NoSecrets' {
             @{ Text = 'PASS' + 'WORD="<your passphrase here>"' }
             @{ Text = 'PASS' + 'WORD="%DB_PASSWORD% or empty"' }
             @{ Text = 'PASS' + 'WORD="short x"' }
+            @{ Text = '"audit ''stack:secret' + 's'': ''stack:secrets/new-service.pw'' has no row"' }
+            @{ Text = 'TOK' + 'EN_PATH = "E:\ai\ollama\secrets\ntfy-pc.token"' }
         ) {
             $d = New-ScanFolder
             Save-Text $d 'settings.txt' "$Text`n" | Out-Null
