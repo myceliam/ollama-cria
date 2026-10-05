@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/myceliam/ollama-cria/blob/main/manifests/schemas/recovery-roots.schema.json",
+  "title": "ollama-cria logical roots",
+  "description": "Maps each logical root used in restore-map destinations to where it lives.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "roots"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "formatVersion": {
+      "const": 1
+    },
+    "roots": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]{0,31}$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/root"
+      }
+    }
+  },
+  "$defs": {
+    "root": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "host",
+        "purpose"
+      ],
+      "properties": {
+        "kind": {
+          "description": "path: a folder on the PC or VPS. volume: a named Docker volume on the PC, written with its container stopped. consumed: read in place from the protected staging folder by a later stage.",
+          "enum": [
+            "path",
+            "volume",
+            "consumed"
+          ]
+        },
+        "host": {
+          "enum": [
+            "pc",
+            "vps"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 3
+        },
+        "volume": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]+$"
+        },
+        "consumer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "purpose": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "description": "Which of path, volume or consumer is required depends on kind; tools/Test-RestoreMap.ps1 checks that, so schema errors stay readable."
+    }
+  }
+}

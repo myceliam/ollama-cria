@@ -1,0 +1,48 @@
+{
+  "$schema": "./schemas/recovery-roots.schema.json",
+  "formatVersion": 1,
+  "roots": {
+    "stack": {
+      "kind": "path",
+      "host": "pc",
+      "path": "E:\\ai\\ollama",
+      "purpose": "Stack .env, Docker secrets in secrets\\, gcal and Gmail bridge OAuth files (bundle folders 01 and 02)"
+    },
+    "dashboard": {
+      "kind": "path",
+      "host": "pc",
+      "path": "E:\\ai\\ag-startuip\\cline-dashboard",
+      "purpose": "Homelab dashboard configuration"
+    },
+    "ssh": {
+      "kind": "path",
+      "host": "pc",
+      "path": "%USERPROFILE%\\.ssh",
+      "purpose": "SSH key pair and config (bundle folder 04, placed in Stage 1)"
+    },
+    "vps-egress": {
+      "kind": "path",
+      "host": "vps",
+      "path": "/home/liam/owui-web-egress",
+      "purpose": "VPS web egress .env: WireGuard keys, Brave key, SearXNG secret (bundle folder 05)"
+    },
+    "ntfy-data": {
+      "kind": "volume",
+      "host": "pc",
+      "volume": "ollama_ntfy-data",
+      "purpose": "ntfy user.db: phone and publisher accounts and tokens (bundle folder 07)"
+    },
+    "bolt-data": {
+      "kind": "volume",
+      "host": "pc",
+      "volume": "ollama_bolt-data",
+      "purpose": "Bolt server-keys.json (bundle folder 07)"
+    },
+    "owui-secrets": {
+      "kind": "consumed",
+      "host": "pc",
+      "consumer": "tools/Import-OwuiSeed.py (Stage 7d)",
+      "purpose": "Secret values the OWUI seed refers to (bundle folder 03)"
+    }
+  }
+}

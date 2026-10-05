@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/myceliam/ollama-cria/blob/main/manifests/schemas/restore-map.schema.json",
+  "title": "ollama-cria restore map (00-RESTORE-MAP.json)",
+  "description": "Written by tools/Collect-StackSecrets.ps1 into the secrets bundle and read by tools/Restore-StackSecrets.ps1. One row per file in the bundle. Holds names, logical destinations, sizes and hashes only: never a secret value. Review finding C-08: one versioned format for both ends.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["formatVersion", "createdUtc", "collector", "entries"],
+  "properties": {
+    "formatVersion": {
+      "description": "Bump on any breaking change. Restore refuses a version it does not know.",
+      "const": 1
+    },
+    "createdUtc": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "collector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "const": "Collect-StackSecrets.ps1" },
+        "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" }
+      }
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/entry" }
+    }
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "folder", "file", "destination", "sha256", "bytes", "required"],
+      "properties": {
+        "id": {
+          "description": "Stable name for the row, unique in the map.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{1,63}$"
+        },
+        "folder": {
+          "description": "Bundle folder (docs/RESTORE.md Stage 4b). 06 was removed in v0.3.",
+          "enum": ["01", "02", "03", "04", "05", "07"]
+        },
+        "file": {
+          "description": "Path of the file inside its bundle folder, using '/'.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "destination": {
+          "description": "Logical destination '<root>:<relative path>'. Roots are defined in manifests/recovery-roots.json; raw absolute paths are never allowed (C-49).",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,31}:[^:]{1,240}$"
+        },
+        "sha256": {
+          "description": "Full SHA-256 of the file, lower-case hex.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "required": {
+          "description": "A missing required row stops the restore; a missing optional row only warns (C-07).",
+          "type": "boolean"
+        },
+        "mode": {
+          "description": "Linux file mode for VPS destinations, for example 0600.",
+          "type": "string",
+          "pattern": "^0[0-7]{3}$"
+        },
+        "owner": {
+          "description": "Linux owner for VPS destinations.",
+          "type": "string",
+          "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+        }
+      }
+    }
+  }
+}
