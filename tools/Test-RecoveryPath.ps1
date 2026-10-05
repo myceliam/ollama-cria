@@ -31,14 +31,25 @@
         the root and the target is a real item, not a junction or symbolic link.
       - With several paths: no two resolve to the same place, ignoring case.
 
-    The root must be absolute and must not be a drive or filesystem root, so a
-    caller can never be pointed at the whole of E:\ or /.
+    The root must be fully qualified on the machine running the check (a
+    drive and a separator on Windows, a leading / elsewhere), so it can never
+    resolve against the current drive or folder. It must not be a drive or
+    filesystem root, so a caller can never be pointed at the whole of E:\ or /.
 
     Both \ and / are treated as separators on every platform.
 
-    Not covered (documented, not silently assumed): hard links to files, and
-    per-directory NTFS case sensitivity. Remove-RecoveryPlaintext.ps1 adds its
-    own "same object the controller created" check before deleting.
+    Not covered (documented, not silently assumed):
+      - Hard links to files, and per-directory NTFS case sensitivity.
+        Remove-RecoveryPlaintext.ps1 adds its own "same object the controller
+        created" check before deleting.
+      - A race between this check and the caller's use of the path. A process
+        that can write inside the root could swap a checked folder for a link
+        after the check. PowerShell has no portable no-follow open, so the
+        guard is where the roots live instead: callers only use roots that no
+        other account can write to (the collector's run folder is owner-only),
+        and they walk the finished output for links afterwards (the bundle
+        walk in Test-RestoreMap.ps1). Anything able to win the race already
+        runs as the owner and could read the secrets directly.
 
 .PARAMETER Path
     One or more paths to check. Relative paths are resolved against -Root.
@@ -133,10 +144,14 @@ function Test-IsLink([string]$FullPath) {
 # ---------- The root ----------
 if ([string]::IsNullOrWhiteSpace($Root)) { throw 'Root is empty.' }
 if ($Root -match $badChars) { throw 'Root contains a control or wildcard character.' }
-if (-not (Test-Rooted $Root) -or $Root -match '^[A-Za-z]:(?![\\/])') { throw "Root must be an absolute path: '$Root'." }
 if ($Root -match '^[\\/]{2}') { throw "Root must not be a UNC or device path: '$Root'." }
+if ($Root -match '^([A-Za-z]:)?[\\/]+$') { throw "Root is a whole drive or filesystem root, which is too broad: '$Root'." }
+# Fully qualified for this machine: 'C:\x' on Windows, '/x' elsewhere. '\x' on
+# Windows or 'C:\x' on Linux would resolve against the current drive or folder.
+$rootNative = ConvertTo-NativePath $Root
+if (-not [IO.Path]::IsPathFullyQualified($rootNative)) { throw "Root must be an absolute path on this machine: '$Root'." }
 
-$rootFull = [IO.Path]::GetFullPath((ConvertTo-NativePath $Root))
+$rootFull = [IO.Path]::GetFullPath($rootNative)
 $rootTrimmed = $rootFull.TrimEnd([char[]]@('\', '/'))
 if ($rootTrimmed -eq '' -or $rootTrimmed -match '^[A-Za-z]:$') {
     throw "Root is a whole drive or filesystem root, which is too broad: '$Root'."

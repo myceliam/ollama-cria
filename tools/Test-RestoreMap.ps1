@@ -11,21 +11,29 @@
       1. Schema: the map matches manifests/schemas/restore-map.schema.json and
          the roots file matches manifests/schemas/recovery-roots.schema.json.
       2. Roots: every root has the field its kind needs (path, volume or
-         consumer).
+         consumer), and every path root is an absolute path for its host
+         (E:\x on the PC, /x on the VPS; %VAR% at the start is allowed on the
+         PC), below a drive or filesystem root, with no '.', '..' or empty
+         segment. Whether a root is a link is checked on its own host by the
+         restorer, which runs Test-RecoveryPath.ps1 against the real folder.
       3. Rows: every destination names a known root; each bundle folder goes to
          the kind of root it belongs to (folder 05 to the VPS, 07 to a Docker
          volume, 03 to the OWUI seed importer, the rest to a PC folder); mode
          and owner only appear on VPS rows.
       4. Paths: every file name and destination passes Test-RecoveryPath.ps1
-         as a relative path (C-49).
+         as a relative path (C-49) and names a file, not a folder (no trailing
+         separator).
       5. Uniqueness: ids, destinations and bundle files are each unique,
          ignoring case.
-      6. With -BundleRoot: every row's file is in the bundle, inside it, with
-         the right byte length and SHA-256; and the bundle holds no file the
-         map does not list.
+      6. With -BundleRoot: the bundle's own 00-RESTORE-MAP.json exists and is
+         byte for byte the map that was checked, so a restorer reading it
+         reads exactly what passed; every required row's file is in the
+         bundle, inside it, with the right byte length and SHA-256; and the
+         bundle holds no file the map does not list and no link.
 
-    Problems name rows by id and file name only. They never include file
-    contents or hashes.
+    A missing optional file is a warning, not a problem: the restorer skips
+    that row. Problems and warnings name rows by id and file name only. They
+    never include file contents or hashes.
 
 .PARAMETER MapPath
     The restore map to check.
@@ -38,7 +46,8 @@
     numbered folders). When given, the files themselves are checked too.
 
 .OUTPUTS
-    [pscustomobject] with IsValid, EntryCount and Problems.
+    [pscustomobject] with IsValid, EntryCount, Problems and Warnings. IsValid
+    is true when there are no problems; warnings do not change it.
 
 .EXAMPLE
     ./tools/Test-RestoreMap.ps1 -MapPath E:\recovery-secrets\bundle\00-RESTORE-MAP.json -BundleRoot E:\recovery-secrets\bundle
@@ -64,6 +73,7 @@ $testPath = Join-Path $PSScriptRoot 'Test-RecoveryPath.ps1'
 $mapFileName = '00-RESTORE-MAP.json'
 
 $problems = [Collections.Generic.List[string]]::new()
+$warnings = [Collections.Generic.List[string]]::new()
 $entryCount = 0
 
 function Get-MapResult {
@@ -71,6 +81,7 @@ function Get-MapResult {
         IsValid    = ($problems.Count -eq 0)
         EntryCount = $entryCount
         Problems   = $problems.ToArray()
+        Warnings   = $warnings.ToArray()
     }
 }
 
@@ -95,6 +106,35 @@ function Get-OptionalProperty($Object, [string]$Name) {
     $prop = $Object.PSObject.Properties[$Name]
     if ($prop) { return $prop.Value }
     return $null
+}
+
+function Get-RootPathProblem([string]$Path, [string]$OnHost) {
+    # Syntax only, for the host the root lives on, so this works on either machine.
+    if ($Path -match '[\x00-\x1F<>"|?*]') { return 'control or wildcard character' }
+    if ($OnHost -eq 'vps') {
+        if ($Path -notmatch '^/(?!/)') { return 'not an absolute VPS path (/...)' }
+        $body = $Path.Substring(1)
+        if ($body.Contains('\')) { return 'backslash in a VPS path' }
+    }
+    else {
+        if ($Path -match '^[\\/]{2}') { return 'UNC or device path' }
+        if ($Path -match '^[A-Za-z]:[\\/]') { $body = $Path.Substring(3) }
+        elseif ($Path -match '^%[A-Za-z_][A-Za-z0-9_]*%[\\/]') { $body = $Path.Substring($Path.IndexOfAny([char[]]@('\', '/')) + 1) }
+        else { return 'not an absolute PC path (E:\... or %VAR%\...)' }
+        if ($body.Contains(':')) { return 'colon after the drive' }
+    }
+    $body = $body -replace '[\\/]$', ''
+    if ($body -eq '') { return 'a whole drive or filesystem root, which is too broad' }
+    foreach ($s in $body -split '[\\/]') {
+        if ($s -eq '') { return 'empty segment (doubled separator)' }
+        if ($s -eq '.' -or $s -eq '..') { return "'$s' segment" }
+    }
+    return $null
+}
+
+function Get-UniqueKey([string]$Text) {
+    # One spelling per place: / for \, no trailing separator, lower case.
+    return (($Text -replace '\\', '/') -replace '/+$', '').ToLowerInvariant()
 }
 
 # Which kind of root each bundle folder may restore to (docs/RESTORE.md Stage 4b).
@@ -132,6 +172,11 @@ foreach ($r in $roots.PSObject.Properties) {
     if ($r.Value.kind -ne 'path' -and $r.Value.host -ne 'pc') {
         $problems.Add("root '$($r.Name)': kind '$($r.Value.kind)' is PC-only")
     }
+    $rootPath = Get-OptionalProperty $r.Value 'path'
+    if ($r.Value.kind -eq 'path' -and $rootPath) {
+        $why = Get-RootPathProblem $rootPath $r.Value.host
+        if ($why) { $problems.Add("root '$($r.Name)': path refused ($why)") }
+    }
 }
 
 # ---------- 3 to 5. Rows ----------
@@ -151,7 +196,8 @@ foreach ($e in $map.entries) {
     # File inside its bundle folder
     $fileCheck = & $testPath -Path $e.file -Root (Join-Path $syntaxBase "bundle-$($e.folder)") -Relative -SyntaxOnly -Detailed
     if (-not $fileCheck.IsValid) { $problems.Add("${label}: file name refused ($($fileCheck.Reason))") }
-    $fileKey = ($e.folder + '/' + ($e.file -replace '\\', '/')).ToLowerInvariant()
+    elseif ($e.file -match '[\\/]$') { $problems.Add("${label}: file name refused (ends in a separator, so it names a folder)") }
+    $fileKey = Get-UniqueKey ($e.folder + '/' + $e.file)
     if ($files.ContainsKey($fileKey)) { $problems.Add("${label}: same bundle file as entry #$($files[$fileKey])") } else { $files[$fileKey] = $n }
 
     # Destination: '<root>:<relative>'
@@ -171,9 +217,12 @@ foreach ($e in $map.entries) {
         }
     }
 
+    # Syntax only: the real root may be on another host or inside a Docker
+    # volume. The restorer checks against the real folder before writing.
     $destCheck = & $testPath -Path $relative -Root (Join-Path $syntaxBase $rootName) -Relative -SyntaxOnly -Detailed
     if (-not $destCheck.IsValid) { $problems.Add("${label}: destination refused ($($destCheck.Reason))") }
-    $destKey = ($rootName + ':' + ($relative -replace '\\', '/')).ToLowerInvariant()
+    elseif ($relative -match '[\\/]$') { $problems.Add("${label}: destination refused (ends in a separator, so it names a folder)") }
+    $destKey = $rootName.ToLowerInvariant() + ':' + (Get-UniqueKey $relative)
     if ($destinations.ContainsKey($destKey)) { $problems.Add("${label}: same destination as entry #$($destinations[$destKey])") } else { $destinations[$destKey] = $n }
 }
 
@@ -185,6 +234,20 @@ if ($BundleRoot) {
     }
     $bundleFull = [IO.Path]::GetFullPath($BundleRoot)
 
+    # The restorer reads the map inside the bundle, so it must be the one checked here.
+    $bundledMap = & $testPath -Path $mapFileName -Root $bundleFull -Relative -Detailed
+    if (-not $bundledMap.IsValid) {
+        $problems.Add("bundle: $mapFileName refused ($($bundledMap.Reason))")
+    }
+    elseif (-not (Test-Path -LiteralPath $bundledMap.FullPath -PathType Leaf)) {
+        $problems.Add("bundle: $mapFileName is missing")
+    }
+    else {
+        $checkedHash = (Get-FileHash -LiteralPath $MapPath -Algorithm SHA256).Hash
+        $bundledHash = (Get-FileHash -LiteralPath $bundledMap.FullPath -Algorithm SHA256).Hash
+        if ($checkedHash -ne $bundledHash) { $problems.Add("bundle: $mapFileName differs from the map that was checked") }
+    }
+
     $n = 0
     foreach ($e in $map.entries) {
         $n++
@@ -193,7 +256,8 @@ if ($BundleRoot) {
         $check = & $testPath -Path $member -Root $bundleFull -Relative -Detailed
         if (-not $check.IsValid) { $problems.Add("${label}: bundle path refused ($($check.Reason))"); continue }
         if (-not (Test-Path -LiteralPath $check.FullPath -PathType Leaf)) {
-            $problems.Add("${label}: missing from the bundle" + $(if ($e.required) { ' (required)' } else { ' (optional)' }))
+            if ($e.required) { $problems.Add("${label}: missing from the bundle (required)") }
+            else { $warnings.Add("${label}: missing from the bundle (optional, the restorer skips it)") }
             continue
         }
         $item = Get-Item -LiteralPath $check.FullPath -Force
