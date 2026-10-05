@@ -41,6 +41,15 @@ BeforeAll {
         if ($WithBundle) { & $script:Tool -MapPath $Bundle.MapPath -RootsPath $RootsPath -BundleRoot $Bundle.Dir }
         else { & $script:Tool -MapPath $Bundle.MapPath -RootsPath $RootsPath }
     }
+
+    # Writes a copy of the repo's roots file with one root's path changed.
+    function Save-TestRoot([string]$Name, [string]$Path) {
+        $roots = Get-Content -LiteralPath $script:Roots -Raw | ConvertFrom-Json -AsHashtable
+        $roots.roots[$Name].path = $Path
+        $rootsPath = Join-Path $TestDrive ('roots-' + [guid]::NewGuid().ToString('n') + '.json')
+        $roots | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $rootsPath
+        return $rootsPath
+    }
 }
 
 Describe 'Test-RestoreMap' {
@@ -50,6 +59,7 @@ Describe 'Test-RestoreMap' {
             $b = New-TestBundle
             $r = Invoke-Check $b
             $r.Problems | Should -BeNullOrEmpty
+            $r.Warnings | Should -BeNullOrEmpty
             $r.IsValid | Should -BeTrue
             $r.EntryCount | Should -Be 4
         }
@@ -145,6 +155,20 @@ Describe 'Test-RestoreMap' {
             Save-TestMap $b
             (Invoke-Check $b).Problems | Should -Match 'file name refused'
         }
+
+        It 'refuses a file name that ends in a separator' {
+            $b = New-TestBundle
+            $b.Map.entries[0].file = 'stack.env/'
+            Save-TestMap $b
+            (Invoke-Check $b).Problems | Should -Contain "entry #1 ('stack-env'): file name refused (ends in a separator, so it names a folder)"
+        }
+
+        It 'refuses a destination that ends in a separator' {
+            $b = New-TestBundle
+            $b.Map.entries[0].destination = 'stack:.env\'
+            Save-TestMap $b
+            (Invoke-Check $b).Problems | Should -Contain "entry #1 ('stack-env'): destination refused (ends in a separator, so it names a folder)"
+        }
     }
 
     Context 'uniqueness' {
@@ -172,6 +196,24 @@ Describe 'Test-RestoreMap' {
             Save-TestMap $b
             (Invoke-Check $b).Problems | Should -Match 'same bundle file as entry #1'
         }
+
+        It 'refuses two destinations that differ only by a trailing separator' {
+            $b = New-TestBundle
+            $copy = @{} + $b.Map.entries[0]
+            $copy.id = 'stack-env-2'; $copy.file = 'other.env'; $copy.destination = 'stack:.env/'
+            $b.Map.entries += $copy
+            Save-TestMap $b
+            (Invoke-Check $b).Problems | Should -Contain "entry #5 ('stack-env-2'): same destination as entry #1"
+        }
+
+        It 'refuses two bundle files that differ only by a trailing separator' {
+            $b = New-TestBundle
+            $copy = @{} + $b.Map.entries[0]
+            $copy.id = 'stack-env-2'; $copy.file = 'stack.env\'; $copy.destination = 'stack:other.env'
+            $b.Map.entries += $copy
+            Save-TestMap $b
+            (Invoke-Check $b).Problems | Should -Contain "entry #5 ('stack-env-2'): same bundle file as entry #1"
+        }
     }
 
     Context 'the bundle' {
@@ -179,6 +221,35 @@ Describe 'Test-RestoreMap' {
             $b = New-TestBundle
             Remove-Item -LiteralPath (Join-Path $b.Dir '01/stack.env')
             (Invoke-Check $b -WithBundle).Problems | Should -Contain "entry #1 ('stack-env'): missing from the bundle (required)"
+        }
+
+        It 'warns about a missing optional file and stays valid' {
+            $b = New-TestBundle
+            Remove-Item -LiteralPath (Join-Path $b.Dir '07/ntfy/user.db')
+            $r = Invoke-Check $b -WithBundle
+            $r.Problems | Should -BeNullOrEmpty
+            $r.IsValid | Should -BeTrue
+            $r.Warnings | Should -Be @("entry #4 ('ntfy-user-db'): missing from the bundle (optional, the restorer skips it)")
+        }
+
+        It 'refuses a bundle with no map of its own' {
+            $b = New-TestBundle
+            $elsewhere = Join-Path $TestDrive ([guid]::NewGuid().ToString('n') + '.json')
+            Move-Item -LiteralPath $b.MapPath -Destination $elsewhere
+            $r = & $script:Tool -MapPath $elsewhere -RootsPath $script:Roots -BundleRoot $b.Dir
+            $r.IsValid | Should -BeFalse
+            $r.Problems | Should -Contain 'bundle: 00-RESTORE-MAP.json is missing'
+        }
+
+        It 'refuses a bundle whose own map is not the map that was checked' {
+            $b = New-TestBundle
+            $elsewhere = Join-Path $TestDrive ([guid]::NewGuid().ToString('n') + '.json')
+            Copy-Item -LiteralPath $b.MapPath -Destination $elsewhere
+            $b.Map.entries[0].destination = 'stack:somewhere-else.env'
+            Save-TestMap $b
+            $r = & $script:Tool -MapPath $elsewhere -RootsPath $script:Roots -BundleRoot $b.Dir
+            $r.IsValid | Should -BeFalse
+            $r.Problems | Should -Contain 'bundle: 00-RESTORE-MAP.json differs from the map that was checked'
         }
 
         It 'reports a file whose length changed' {
@@ -225,6 +296,31 @@ Describe 'Test-RestoreMap' {
             $r = Invoke-Check $b -RootsPath $rootsPath
             $r.Problems | Should -Contain "root 'ntfy-data': kind 'volume' needs 'volume'"
             $r.Problems | Should -Contain "root 'ntfy-data': kind 'volume' must not have 'path'"
+        }
+
+        It 'refuses <Root> path <Path> (<Why>)' -ForEach @(
+            @{ Root = 'stack'; Path = 'ai\ollama'; Why = 'not an absolute PC path (E:\... or %VAR%\...)' }
+            @{ Root = 'stack'; Path = '\ai\ollama'; Why = 'not an absolute PC path (E:\... or %VAR%\...)' }
+            @{ Root = 'stack'; Path = 'E:\'; Why = 'a whole drive or filesystem root, which is too broad' }
+            @{ Root = 'stack'; Path = '\\server\share\x'; Why = 'UNC or device path' }
+            @{ Root = 'stack'; Path = 'E:\ai\..\x'; Why = "'..' segment" }
+            @{ Root = 'stack'; Path = 'E:\ai\\x'; Why = 'empty segment (doubled separator)' }
+            @{ Root = 'stack'; Path = 'E:\ai\x:y'; Why = 'colon after the drive' }
+            @{ Root = 'stack'; Path = 'E:\ai\*'; Why = 'control or wildcard character' }
+            @{ Root = 'vps-egress'; Path = 'home/liam/x'; Why = 'not an absolute VPS path (/...)' }
+            @{ Root = 'vps-egress'; Path = 'C:\home\x'; Why = 'not an absolute VPS path (/...)' }
+            @{ Root = 'vps-egress'; Path = '/home/../etc'; Why = "'..' segment" }
+            @{ Root = 'vps-egress'; Path = '/home\liam'; Why = 'backslash in a VPS path' }
+        ) {
+            $b = New-TestBundle
+            $r = Invoke-Check $b -RootsPath (Save-TestRoot $Root $Path)
+            $r.IsValid | Should -BeFalse
+            $r.Problems | Should -Contain "root '$Root': path refused ($Why)"
+        }
+
+        It 'accepts %VAR% at the start of a PC path and a trailing separator' {
+            $b = New-TestBundle
+            (Invoke-Check $b -RootsPath (Save-TestRoot 'stack' '%USERPROFILE%\stack\')).Problems | Should -BeNullOrEmpty
         }
     }
 }

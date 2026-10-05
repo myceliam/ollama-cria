@@ -11,11 +11,18 @@
       - every file name against a list that must never be committed (the
         secrets bundle and its map, .env files, keys, databases, the retired
         kais_chat_tidy.ps1);
-      - every line of every text file against known secret formats (private
+      - every line of every file against known secret formats (private
         keys, provider API keys, OAuth tokens, JWTs, webhook URLs, passwords in
-        URLs, secret-named settings with a literal value);
-      - private addresses: tailnet IPs and MagicDNS names, which belong in
-        templates as {{PC_TS_IP}} and {{VPS_TS_IP}}.
+        URLs, secret-named settings with a literal value, quoted passphrases);
+      - private addresses: tailnet IPv4 and IPv6 addresses and MagicDNS names,
+        which belong in templates as {{PC_TS_IP}} and {{VPS_TS_IP}}.
+
+    Every file is scanned, whatever its size. Text is decoded from its byte
+    order mark (UTF-8, UTF-16 or UTF-32), or as UTF-16 when the NUL bytes fall
+    in the pattern UTF-16 text leaves, or else as UTF-8. Anything else is
+    binary: its bytes are still scanned, read one byte per character, so an
+    ASCII secret inside it is found (reported as line 0). Compressed files
+    (ZIP, DOCX) are not unpacked; the bundle names are refused instead.
 
     A finding names the file, the line and the rule. It never prints the
     matched text, so the scan cannot leak what it finds.
@@ -56,6 +63,7 @@ $forbiddenNames = @(
 )
 $allowedNames = '\.example$|\.sample$'
 
+# Quantifiers are bounded so a long line cannot make a rule backtrack for minutes.
 $lineRules = @(
     @{ Rule = 'private key block'; Pattern = '-----BEGIN [A-Z ]*PRIVATE KEY-----' }
     @{ Rule = 'API key (sk-)'; Pattern = '\bsk-[A-Za-z0-9_-]{20,}' }
@@ -70,11 +78,53 @@ $lineRules = @(
     @{ Rule = 'Slack token'; Pattern = '\bxox[abprs]-[0-9A-Za-z-]{10,}' }
     @{ Rule = 'JWT'; Pattern = '\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}' }
     @{ Rule = 'Discord webhook URL'; Pattern = 'discord(app)?\.com/api/webhooks/[0-9]+/[A-Za-z0-9_-]{20,}' }
-    @{ Rule = 'password in a URL'; Pattern = '[a-z][a-z0-9+.-]*://[^/\s:@''"]+:[^/\s@''"]+@' }
-    @{ Rule = 'secret-named setting with a literal value'; Pattern = '(?i)\b[A-Z0-9_]*(SECRET|TOKEN|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY)[A-Z0-9_]*["'']?\s*[:=]\s*["'']?[A-Za-z0-9+/=_.-]{16,}' }
+    @{ Rule = 'password in a URL'; Pattern = '[a-z][a-z0-9+.-]{0,31}://[^/\s:@''"]+:[^/\s@''"]+@' }
+    @{ Rule = 'secret-named setting with a literal value'; Pattern = '(?i)\b[A-Z0-9_]{0,64}(SECRET|TOKEN|PASSWORD|PASSWD|PASSPHRASE|API_?KEY|PRIVATE_?KEY)[A-Z0-9_]{0,64}["'']?\s*[:=]\s*["'']?[A-Za-z0-9+/=_.-]{16,}' }
+    # Quoted values the rule above misses: 8 or more characters with a space or
+    # punctuation in them (a passphrase). Placeholders ({{X}}, ${X}, $x, <x>, %X%) pass.
+    @{ Rule = 'secret-named setting with a quoted passphrase'; Pattern = '(?i)\b[A-Z0-9_]{0,64}(?:SECRET|TOKEN|PASSWORD|PASSWD|PASSPHRASE|API_?KEY|PRIVATE_?KEY)[A-Z0-9_]{0,64}["'']?\s*[:=]\s*(["''])(?![{$<%])(?=(?:(?!\1)[^\r\n])*?[^A-Za-z0-9+/=_.\r\n"''-])(?:(?!\1)[^\r\n]){8,}\1' }
     @{ Rule = 'tailnet IP (use {{PC_TS_IP}} or {{VPS_TS_IP}})'; Pattern = '\b100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}\b' }
-    @{ Rule = 'MagicDNS name'; Pattern = '(?i)\b[a-z0-9-]+\.[a-z0-9-]+\.ts\.net\b' }
+    # Tailscale gives every node an IPv6 address in one fixed /48.
+    @{ Rule = 'tailnet IPv6 address'; Pattern = '(?i)\bfd7a:115c:a1e0:[0-9a-f]{0,4}:' }
+    @{ Rule = 'MagicDNS name'; Pattern = '(?i)\b[a-z0-9-]{1,63}\.[a-z0-9-]{1,63}\.ts\.net\b' }
 )
+
+function Get-ScanText([byte[]]$Bytes) {
+    # Returns the text to scan and whether the file is binary.
+    $n = $Bytes.Length
+    $bom = @(
+        @{ Mark = [byte[]](0xFF, 0xFE, 0x00, 0x00); Encoding = [Text.UTF32Encoding]::new($false, $false) }
+        @{ Mark = [byte[]](0x00, 0x00, 0xFE, 0xFF); Encoding = [Text.UTF32Encoding]::new($true, $false) }
+        @{ Mark = [byte[]](0xEF, 0xBB, 0xBF); Encoding = [Text.UTF8Encoding]::new($false) }
+        @{ Mark = [byte[]](0xFF, 0xFE); Encoding = [Text.UnicodeEncoding]::new($false, $false) }
+        @{ Mark = [byte[]](0xFE, 0xFF); Encoding = [Text.UnicodeEncoding]::new($true, $false) }
+    )
+    foreach ($b in $bom) {
+        $m = $b.Mark
+        if ($n -ge $m.Length -and [Linq.Enumerable]::SequenceEqual([byte[]]$Bytes[0..($m.Length - 1)], $m)) {
+            return @{ Text = $b.Encoding.GetString($Bytes, $m.Length, $n - $m.Length); Binary = $false }
+        }
+    }
+
+    $probe = [Math]::Min($n, 8000) -band -2    # an even count, so byte pairs line up
+    $evenNul = 0; $oddNul = 0
+    for ($i = 0; $i -lt $probe; $i++) {
+        if ($Bytes[$i] -eq 0) { if ($i % 2) { $oddNul++ } else { $evenNul++ } }
+    }
+    if ($evenNul + $oddNul -eq 0) {
+        return @{ Text = [Text.Encoding]::UTF8.GetString($Bytes); Binary = $false }
+    }
+    # UTF-16 with no mark: mostly-ASCII text puts a NUL in every other byte.
+    $pairs = [Math]::Max($probe / 2, 1)
+    if ($oddNul / $pairs -ge 0.5 -and $evenNul / $pairs -le 0.05) {
+        return @{ Text = [Text.UnicodeEncoding]::new($false, $false).GetString($Bytes); Binary = $false }
+    }
+    if ($evenNul / $pairs -ge 0.5 -and $oddNul / $pairs -le 0.05) {
+        return @{ Text = [Text.UnicodeEncoding]::new($true, $false).GetString($Bytes); Binary = $false }
+    }
+    # Binary: one byte per character, so ASCII runs inside it are still scanned.
+    return @{ Text = [Text.Encoding]::Latin1.GetString($Bytes); Binary = $true }
+}
 
 $root = (Resolve-Path -LiteralPath $Path).ProviderPath
 
@@ -107,15 +157,15 @@ foreach ($rel in $relativeFiles) {
     }
 
     $bytes = [IO.File]::ReadAllBytes($full)
-    if ($bytes.Length -gt 5MB) { continue }
-    $probe = [Math]::Min($bytes.Length, 8000)
-    if ($probe -gt 0 -and [Array]::IndexOf($bytes, [byte]0, 0, $probe) -ge 0) { continue }   # binary
+    if ($bytes.Length -eq 0) { continue }
+    $scan = Get-ScanText $bytes
 
-    $lines = [Text.Encoding]::UTF8.GetString($bytes) -split "\r?\n"
+    $lines = $scan.Text -split "\r?\n|\r"
     for ($i = 0; $i -lt $lines.Count; $i++) {
         foreach ($r in $lineRules) {
             if ($lines[$i] -match $r.Pattern) {
-                $findings.Add([pscustomobject]@{ File = $rel; Line = $i + 1; Rule = $r.Rule })
+                if ($scan.Binary) { $findings.Add([pscustomobject]@{ File = $rel; Line = 0; Rule = "$($r.Rule) (in a binary file)" }) }
+                else { $findings.Add([pscustomobject]@{ File = $rel; Line = $i + 1; Rule = $r.Rule }) }
             }
         }
     }

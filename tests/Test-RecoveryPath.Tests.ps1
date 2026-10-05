@@ -125,7 +125,7 @@ Describe 'Test-RecoveryPath' {
             { & $script:Tool -Path 'x' -Root '/' } | Should -Throw '*too broad*'
         }
 
-        It 'throws for a whole drive' -Skip:(-not $IsWindows) {
+        It 'throws for a whole drive' {
             { & $script:Tool -Path 'x' -Root 'C:\' } | Should -Throw '*too broad*'
         }
 
@@ -139,6 +139,12 @@ Describe 'Test-RecoveryPath' {
 
         It 'throws for a relative root' {
             { & $script:Tool -Path 'x' -Root 'relative/folder' } | Should -Throw '*absolute*'
+        }
+
+        It 'throws for a root that only looks absolute on this machine' {
+            # '\Users\x' on Windows uses the current drive; 'C:\Users\x' on Linux is a relative name.
+            $other = if ($IsWindows) { '\Users\someone' } else { 'C:\Users\someone' }
+            { & $script:Tool -Path 'x' -Root $other } | Should -Throw '*absolute path on this machine*'
         }
 
         It 'throws for a root with a wildcard' {
