@@ -1,0 +1,36 @@
+{
+  "$schema": "./schemas/bundle-folders.schema.json",
+  "formatVersion": 1,
+  "folders": {
+    "01": {
+      "kind": "path",
+      "host": "pc",
+      "holds": "Stack .env and the ntfy Docker secrets"
+    },
+    "02": {
+      "kind": "path",
+      "host": "pc",
+      "holds": "Google OAuth client, tokens and bridge settings for the gcal and Gmail bridges"
+    },
+    "03": {
+      "kind": "consumed",
+      "host": "pc",
+      "holds": "OWUI secret values the seed refers to; written by Export-OwuiSeed.py (Module 3)"
+    },
+    "04": {
+      "kind": "path",
+      "host": "pc",
+      "holds": "SSH key pair and config for the vps alias (placed in Stage 1)"
+    },
+    "05": {
+      "kind": "path",
+      "host": "vps",
+      "holds": "VPS web egress .env"
+    },
+    "07": {
+      "kind": "volume",
+      "host": "pc",
+      "holds": "Service state: ntfy user.db and Bolt server-keys.json"
+    }
+  }
+}

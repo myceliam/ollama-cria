@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/myceliam/ollama-cria/blob/main/manifests/schemas/bundle-folders.schema.json",
+  "title": "ollama-cria bundle folders (manifests/bundle-folders.json)",
+  "description": "Which kind of root each numbered folder of the secrets bundle restores to (docs/RESTORE.md Stage 4b). Read by Collect-StackSecrets.ps1 and Test-RestoreMap.ps1 so both ends apply the same rule.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["formatVersion", "folders"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "formatVersion": { "const": 1 },
+    "folders": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "enum": ["01", "02", "03", "04", "05", "07"] },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "host", "holds"],
+        "properties": {
+          "kind": { "enum": ["path", "volume", "consumed"] },
+          "host": { "enum": ["pc", "vps"] },
+          "holds": { "type": "string", "minLength": 1, "maxLength": 200 }
+        }
+      }
+    }
+  }
+}

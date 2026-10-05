@@ -13,9 +13,9 @@
       2. Roots: every root has the field its kind needs (path, volume or
          consumer).
       3. Rows: every destination names a known root; each bundle folder goes to
-         the kind of root it belongs to (folder 05 to the VPS, 07 to a Docker
-         volume, 03 to the OWUI seed importer, the rest to a PC folder); mode
-         and owner only appear on VPS rows.
+         the kind of root manifests/bundle-folders.json gives it (folder 05 to
+         the VPS, 07 to a Docker volume, 03 to the OWUI seed importer, the rest
+         to a PC folder); mode and owner only appear on VPS rows.
       4. Paths: every file name and destination passes Test-RecoveryPath.ps1
          as a relative path (C-49).
       5. Uniqueness: ids, destinations and bundle files are each unique,
@@ -32,6 +32,9 @@
 
 .PARAMETER RootsPath
     The logical roots file. Defaults to manifests/recovery-roots.json in this repo.
+
+.PARAMETER FoldersPath
+    The bundle-folder rules. Defaults to manifests/bundle-folders.json in this repo.
 
 .PARAMETER BundleRoot
     The unpacked bundle folder (the one holding 00-RESTORE-MAP.json and the
@@ -51,6 +54,8 @@ param(
 
     [string]$RootsPath = (Join-Path $PSScriptRoot '../manifests/recovery-roots.json'),
 
+    [string]$FoldersPath = (Join-Path $PSScriptRoot '../manifests/bundle-folders.json'),
+
     [string]$BundleRoot
 )
 
@@ -60,6 +65,7 @@ $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 $mapSchema = Join-Path $repo 'manifests/schemas/restore-map.schema.json'
 $rootsSchema = Join-Path $repo 'manifests/schemas/recovery-roots.schema.json'
+$foldersSchema = Join-Path $repo 'manifests/schemas/bundle-folders.schema.json'
 $testPath = Join-Path $PSScriptRoot 'Test-RecoveryPath.ps1'
 $mapFileName = '00-RESTORE-MAP.json'
 
@@ -97,23 +103,20 @@ function Get-OptionalProperty($Object, [string]$Name) {
     return $null
 }
 
-# Which kind of root each bundle folder may restore to (docs/RESTORE.md Stage 4b).
-$folderRule = @{
-    '01' = @{ Kind = 'path'; Host = 'pc' }
-    '02' = @{ Kind = 'path'; Host = 'pc' }
-    '03' = @{ Kind = 'consumed'; Host = 'pc' }
-    '04' = @{ Kind = 'path'; Host = 'pc' }
-    '05' = @{ Kind = 'path'; Host = 'vps' }
-    '07' = @{ Kind = 'volume'; Host = 'pc' }
-}
-
 # ---------- 1. Schemas ----------
 $mapOk = Test-AgainstSchema $MapPath $mapSchema 'map'
 $rootsOk = Test-AgainstSchema $RootsPath $rootsSchema 'roots file'
-if (-not ($mapOk -and $rootsOk)) { return (Get-MapResult) }
+$foldersOk = Test-AgainstSchema $FoldersPath $foldersSchema 'folders file'
+if (-not ($mapOk -and $rootsOk -and $foldersOk)) { return (Get-MapResult) }
 
 $map = Get-Content -LiteralPath $MapPath -Raw | ConvertFrom-Json
 $roots = (Get-Content -LiteralPath $RootsPath -Raw | ConvertFrom-Json).roots
+
+# Which kind of root each bundle folder may restore to (docs/RESTORE.md Stage 4b).
+$folderRule = @{}
+foreach ($f in (Get-Content -LiteralPath $FoldersPath -Raw | ConvertFrom-Json).folders.PSObject.Properties) {
+    $folderRule[$f.Name] = @{ Kind = $f.Value.kind; Host = $f.Value.host }
+}
 $entryCount = @($map.entries).Count
 
 # ---------- 2. Roots ----------
@@ -162,7 +165,10 @@ foreach ($e in $map.entries) {
     }
     else {
         $rule = $folderRule[$e.folder]
-        if ($root.kind -ne $rule.Kind -or $root.host -ne $rule.Host) {
+        if (-not $rule) {
+            $problems.Add("${label}: folder $($e.folder) is not in the folders file")
+        }
+        elseif ($root.kind -ne $rule.Kind -or $root.host -ne $rule.Host) {
             $problems.Add("${label}: folder $($e.folder) must go to a $($rule.Host) '$($rule.Kind)' root, not '$rootName'")
         }
         $hasLinuxBits = ($null -ne (Get-OptionalProperty $e 'mode')) -or ($null -ne (Get-OptionalProperty $e 'owner'))

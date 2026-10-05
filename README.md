@@ -43,14 +43,15 @@ Built in this order: the **capture side first**, because a restore script can be
 
 | # | Module | What it does | Status |
 |---|---|---|---|
-| 1 | `tools/Test-RecoveryPath.ps1` | The one path check every stage uses before it writes, copies, extracts or deletes anything | 🚧 |
-| 1 | `manifests/schemas/restore-map.schema.json`, `manifests/recovery-roots.json`, `tools/Test-RestoreMap.ps1` | The versioned restore-map format the collector writes and the restorer reads | 🚧 |
-| 1 | `tools/Test-NoSecrets.ps1` | CI guard: refuses secret-shaped strings, private addresses and forbidden files | 🚧 |
-| 2 | `tools/Collect-StackSecrets.ps1` | Rewritten collector: builds the bundle and its map (dry run by default) | ⏳ |
+| 1 | `tools/Test-RecoveryPath.ps1` | The one path check every stage uses before it writes, copies, extracts or deletes anything | 🔍 |
+| 1 | `manifests/schemas/restore-map.schema.json`, `manifests/recovery-roots.json`, `tools/Test-RestoreMap.ps1` | The versioned restore-map format the collector writes and the restorer reads | 🔍 |
+| 1 | `tools/Test-NoSecrets.ps1` | CI guard: refuses secret-shaped strings, private addresses and forbidden files | 🔍 |
+| 2 | `manifests/secrets.json`, `manifests/bundle-folders.json` | The secret inventory (names and logical locations only, never values) and which root each bundle folder restores to | 🚧 |
+| 2 | `tools/Collect-StackSecrets.ps1` | Rewritten collector: plans offline by default; with `-Execute` builds a protected bundle, its restore map and the ZIP | 🚧 |
 | 3 | `tools/Export-OwuiSeed.py` | OWUI functional seed exporter, run inside the OWUI container | ⏳ |
 | 4+ | Stage modules and the controller | `Invoke-StackRecovery.ps1` and `windows/stages/*`, `linux/stages/*` | ⏳ |
 
-Status key: ✅ done and reviewed · 🚧 in progress · ⏳ not started.
+Status key: ✅ done and reviewed · 🔍 built, in review · 🚧 in progress · ⏳ not started.
 
 ---
 
@@ -64,7 +65,7 @@ Invoke-Pester ./tests -Output Detailed
 ./tools/Test-NoSecrets.ps1                                      # the same scan CI runs
 ```
 
-CI runs both on Windows and Linux for every push and pull request.
+CI runs both on Windows and Linux for every push and pull request. The collector's VPS tests use stand-ins for `ssh` and `scp` (`tests/fakes/`) and run on Linux only; its volume tests need a Linux Docker engine, so they run on the Linux runner and are skipped elsewhere.
 
 ---
 
