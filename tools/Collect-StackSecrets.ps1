@@ -792,9 +792,14 @@ $result = Get-RunResult
 if ($PassThru) { return $result }
 
 Write-Output ("Collect-StackSecrets $collectorVersion  [" + $result.Mode.ToUpperInvariant() + ']')
+# Columns as wide as their longest entry, so long ids and locations stay aligned.
+$idWidth = (@($result.Rows | ForEach-Object { $_.Id.Length }) + 2 | Measure-Object -Maximum).Maximum
+$locationWidth = (@($result.Rows | ForEach-Object { $_.Location.Length }) + 8 | Measure-Object -Maximum).Maximum
 foreach ($r in $result.Rows) {
-    Write-Output ('  {0}  {1,-22} {2,-44} {3}' -f $r.Folder, $r.Id, $r.Location, $r.Status)
+    Write-Output ('  {0}  {1} {2} {3}' -f $r.Folder, $r.Id.PadRight($idWidth), $r.Location.PadRight($locationWidth), $r.Status)
 }
+$tally = ($result.Rows | Group-Object Status | Sort-Object Name | ForEach-Object { "$($_.Count) $($_.Name)" }) -join ', '
+Write-Output "  Rows: $(@($result.Rows).Count) ($tally)"
 Write-Output "  Staging drive BitLocker: $($result.BitLocker)"
 foreach ($w in $result.Warnings) { Write-Output "  WARN     $w" }
 foreach ($p in $result.Problems) { Write-Output "  PROBLEM  $p" }
