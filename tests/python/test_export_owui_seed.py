@@ -492,8 +492,9 @@ class ExportTests(unittest.TestCase):
         self.assertEqual(run.code, 0, run.text)
         self.assertEqual(run.seed('skill')[0]['content'], 'fetch through {{BUNDLE:embedded/config/rag.youtube_loader_proxy_url}}')
         secrets = json.loads(run.secrets_file.read_text(encoding='utf-8'))['refs']
-        self.assertEqual(secrets['config/rag.youtube_loader_proxy_url'], proxy)
-        self.assertEqual(secrets['embedded/config/rag.youtube_loader_proxy_url'], proxy.replace(PC_IP, '{{PC_TS_IP}}'))
+        templated = proxy.replace(PC_IP, '{{PC_TS_IP}}')
+        self.assertEqual(secrets['config/rag.youtube_loader_proxy_url'], templated, 'a restore renders the new address')
+        self.assertEqual(secrets['embedded/config/rag.youtube_loader_proxy_url'], templated)
 
     def test_the_final_scan_still_catches_a_secret_value_left_in_the_seed(self):
         export = exporter.Export(load_schema(), {'PC_TS_IP': PC_IP})

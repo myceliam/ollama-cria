@@ -11,7 +11,8 @@ It reads webui.db in one read-only transaction and produces:
     text (a tool's source code with the key as a Valve default, a ComfyUI
     workflow) is swapped there for {{BUNDLE:embedded/<ref>}}, so the
     importer can put the exact text back.
-  * the secrets: {ref: value} for bundle folder 03. Never commit these.
+  * the secrets: {ref: value} for bundle folder 03, with tailnet addresses
+    and the admin id templated the same way. Never commit these.
 
 The export stops, and writes nothing, when:
 
@@ -139,13 +140,14 @@ class Export:
         self.problems: list[str] = []
         self.warnings: list[str] = []
         self.secrets: dict[str, object] = {}
+        self.raw_secrets: dict[str, object] = {}
         self.admin_id: str | None = None
         self.patterns: dict[str, re.Pattern] = {}
 
     # ---- values ---------------------------------------------------------
 
-    def template(self, text: str, ref: str, check: bool = True) -> str:
-        if check and '{{' in text:
+    def template(self, text: str, ref: str) -> str:
+        if '{{' in text:
             names = {name for name, _ in self.endpoints} | {'OWNER'}
             for m in PLACEHOLDER.finditer(text):
                 name = m.group(1)
@@ -177,10 +179,23 @@ class Export:
         return rx
 
     def add_secret(self, ref: str, value) -> dict:
+        """The secrets file keeps the value with its addresses templated too
+        (a token in a URL to the PC), so a restore onto new addresses renders
+        it like the seed. The value as found is kept for the final scan."""
         if ref in self.secrets:
             self.problems.append(f'secret reference {ref} is produced twice')
-        self.secrets[ref] = value
+        self.raw_secrets[ref] = value
+        self.secrets[ref] = self.template_all(value, ref)
         return {SECRET_KEY: ref}
+
+    def template_all(self, value, ref: str):
+        if isinstance(value, str):
+            return self.template(value, ref)
+        if isinstance(value, list):
+            return [self.template_all(v, f'{ref}/{i}') for i, v in enumerate(value)]
+        if isinstance(value, dict):
+            return {k: self.template_all(v, f'{ref}/{k}') for k, v in value.items()}
+        return value
 
     @staticmethod
     def is_empty(value) -> bool:
@@ -473,10 +488,11 @@ class Export:
             raise Stop('')
         return seed
 
-    def secret_texts(self):
+    def secret_texts(self, source: dict | None = None):
         """(path, text) for every string of 8 or more characters in a secret
-        value, with the path inside the value; shorter ones are too common to
-        look for in other text."""
+        value (as kept in the secrets file, unless another source is given),
+        with the path inside the value; shorter ones are too common to look
+        for in other text."""
         def walk(value, path):
             if isinstance(value, str):
                 if len(value) >= 8:
@@ -487,25 +503,22 @@ class Export:
             elif isinstance(value, dict):
                 for k, v in sorted(value.items()):
                     yield from walk(v, f'{path}/{k}')
-        for ref in sorted(self.secrets):
+        source = self.secrets if source is None else source
+        for ref in sorted(source):
             if not ref.startswith(EMBEDDED):
-                yield from walk(self.secrets[ref], ref)
+                yield from walk(source[ref], ref)
 
     def embed_secrets(self, seed: dict) -> None:
         """Swap each secret value found inside other seed text for
         {{BUNDLE:embedded/<path>}}, and put that value in the secrets file.
 
-        Seed text has its addresses templated already, so the templated form
-        of each value is what is looked for, and what is kept: the importer
-        fills the marker first and then renders the addresses, so the text
-        comes back exactly as it was, with the new install's addresses."""
+        Seed text and the kept secret values have their addresses templated
+        alike, so a kept value is what is looked for: the importer fills the
+        marker first and then renders the addresses, so the text comes back
+        exactly as it was, with the new install's addresses."""
         forms: dict[str, str] = {}
-        raw: dict[str, tuple[str, str]] = {}
-        for path, value in self.secret_texts():
-            form = self.template(value, path, check=False)
-            if len(form) >= 8 and form not in forms:
-                forms[form] = EMBEDDED + path
-                raw[EMBEDDED + path] = (path, value)
+        for path, form in self.secret_texts():
+            forms.setdefault(form, EMBEDDED + path)
         if not forms:
             return
         ordered = sorted(forms.items(), key=lambda kv: (-len(kv[0]), kv[1]))
@@ -531,10 +544,7 @@ class Export:
                 seed[name] = swap(seed[name])
         for form, ref in ordered:
             if ref in used:
-                # The marker is filled before addresses are rendered, so the
-                # value itself must not hold placeholder text.
-                self.template(raw[ref][1], raw[ref][0])
-                self.add_secret(ref, form)
+                self.secrets[ref] = form
 
     def seed_strings(self, seed: dict):
         """Every string in the seed, with rows named by their id."""
@@ -548,12 +558,7 @@ class Export:
 
     def final_scan(self, seed: dict) -> None:
         """Nothing secret-shaped, no ciphertext, no secret value, no tailnet address."""
-        found = set()
-        for path, v in self.secret_texts():
-            found.add(v)
-            form = self.template(v, path, check=False)
-            if len(form) >= 8:
-                found.add(form)
+        found = {v for _, v in self.secret_texts()} | {v for _, v in self.secret_texts(self.raw_secrets)}
         values = sorted(found, key=len, reverse=True)
         for path, text in self.seed_strings(seed):
             if self.admin_id and str(self.admin_id) in text:
