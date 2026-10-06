@@ -174,6 +174,27 @@ Describe 'Test-RecoveryPath' {
             Get-Reason 'file.txt' -Relative -Root $script:LinkedRoot | Should -Be 'the root is a junction or symbolic link'
         }
 
+        It 'refuses everything when a folder above the root is a link' {
+            # The root is an ordinary folder, but it is reached through a link (M1-02).
+            New-Item -ItemType Directory -Path (Join-Path $script:Outside 'child') -Force | Out-Null
+            $root = Join-Path $script:LinkedRoot 'child'
+            Get-Reason 'file.txt' -Relative -Root $root | Should -Be 'a folder above the root is a junction or symbolic link'
+            & $script:Tool -Path 'file.txt' -Root $root -Relative | Should -BeFalse
+        }
+
+        It 'refuses a folder on the way that cannot be inspected' -Skip:($IsWindows -or [Environment]::UserName -eq 'root') {
+            # Access denied is not proof that nothing is there.
+            $locked = Join-Path $script:Root 'locked'
+            New-Item -ItemType Directory -Path (Join-Path $locked 'inner') -Force | Out-Null
+            [IO.File]::SetUnixFileMode($locked, [IO.UnixFileMode]::None)
+            try {
+                Get-Reason 'locked/inner/file.txt' -Relative | Should -Be 'an item on the way cannot be inspected'
+            }
+            finally {
+                [IO.File]::SetUnixFileMode($locked, [IO.UnixFileMode]'UserRead, UserWrite, UserExecute')
+            }
+        }
+
         It 'skips the filesystem checks with -SyntaxOnly' {
             & $script:Tool -Path 'escape/file.txt' -Root $script:Root -Relative -SyntaxOnly | Should -BeTrue
         }

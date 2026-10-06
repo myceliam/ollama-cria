@@ -9,11 +9,14 @@
     rule. It checks:
 
       - every file name against a list that must never be committed (the
-        secrets bundle and its map, .env files, keys, databases, the retired
-        kais_chat_tidy.ps1);
+        secrets bundle and its map, .env files, keys, databases, archives,
+        the retired kais_chat_tidy.ps1);
       - every line of every file against known secret formats (private
-        keys, provider API keys, OAuth tokens, JWTs, webhook URLs, passwords in
-        URLs, secret-named settings with a literal value, quoted passphrases);
+        keys, provider API keys, ntfy and OAuth tokens, JWTs, webhook URLs,
+        passwords in URLs, secret-named settings with a literal value, quoted
+        passphrases, opaque values under a key or keys field). A line holding
+        JSON \uXXXX escapes is scanned again with them decoded, so
+        'sk-...' is found too;
       - private addresses: tailnet IPv4 and IPv6 addresses and MagicDNS names,
         which belong in templates as {{PC_TS_IP}} and {{VPS_TS_IP}}.
 
@@ -22,7 +25,16 @@
     in the pattern UTF-16 text leaves, or else as UTF-8. Anything else is
     binary: its bytes are still scanned, read one byte per character, so an
     ASCII secret inside it is found (reported as line 0). Compressed files
-    (ZIP, DOCX) are not unpacked; the bundle names are refused instead.
+    are not unpacked, so archives are refused by name instead.
+
+    In a Git work tree the file list comes from 'git ls-files -z', read as
+    UTF-8, so a name Git would quote (non-ASCII, a tab) is scanned under its
+    real name. A listed file that cannot be read is a finding, not a skip;
+    only a tracked file deleted from the work tree is skipped.
+
+    A pattern scan is a guard, not proof that nothing secret is here. It does
+    not recognise an opaque token with no telling name or prefix (a bare hex
+    string, a UUID, a base64 key on its own), so review still matters.
 
     A finding names the file, the line and the rule. It never prints the
     matched text, so the scan cannot leak what it finds.
@@ -58,6 +70,7 @@ $forbiddenNames = @(
     @{ Rule = '.env file'; Pattern = '(^|\.)env$|^\.env\.' }
     @{ Rule = 'key or certificate file'; Pattern = '\.(pem|key|pfx|p12)$|^id_(rsa|ed25519|ecdsa|dsa)(\.pub)?$' }
     @{ Rule = 'database file'; Pattern = '\.(db|sqlite|sqlite3)(-wal|-shm)?$' }
+    @{ Rule = 'archive (not scanned inside)'; Pattern = '\.(zip|7z|rar|tar|tgz|gz|bz2|xz|zst)$' }
     @{ Rule = 'service state file'; Pattern = '^(server-keys|config\.runtime|token|credentials)\.json$|^client_secret.*\.json$' }
     @{ Rule = 'retired script with a hard-coded key (R-20)'; Pattern = '^kais_chat_tidy\.ps1$' }
 )
@@ -73,17 +86,22 @@ $lineRules = @(
     @{ Rule = 'Google OAuth token'; Pattern = '\bya29\.[0-9A-Za-z_-]{20,}|\b1//0[0-9A-Za-z_-]{20,}' }
     @{ Rule = 'Google OAuth client secret'; Pattern = '\bGOCSPX-[0-9A-Za-z_-]{20,}' }
     @{ Rule = 'Hugging Face token'; Pattern = '\bhf_[A-Za-z0-9]{30,}' }
+    @{ Rule = 'ntfy access token'; Pattern = '\btk_[A-Za-z0-9]{24,}' }
     @{ Rule = 'Brave Search key'; Pattern = '\bBSA[0-9A-Za-z_-]{20,}' }
     @{ Rule = 'AWS access key'; Pattern = '\bAKIA[0-9A-Z]{16}\b' }
     @{ Rule = 'Slack token'; Pattern = '\bxox[abprs]-[0-9A-Za-z-]{10,}' }
     @{ Rule = 'JWT'; Pattern = '\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}' }
     @{ Rule = 'Discord webhook URL'; Pattern = 'discord(app)?\.com/api/webhooks/[0-9]+/[A-Za-z0-9_-]{20,}' }
     @{ Rule = 'password in a URL'; Pattern = '[a-z][a-z0-9+.-]{0,31}://[^/\s:@''"]+:[^/\s@''"]+@' }
-    @{ Rule = 'secret-named setting with a literal value'; Pattern = '(?i)\b[A-Z0-9_]{0,64}(SECRET|TOKEN|PASSWORD|PASSWD|PASSPHRASE|API_?KEY|PRIVATE_?KEY)[A-Z0-9_]{0,64}["'']?\s*[:=]\s*["'']?[A-Za-z0-9+/=_.-]{16,}' }
+    @{ Rule = 'secret-named setting with a literal value'; Pattern = '(?i)\b[A-Z0-9_]{0,64}(SECRET|TOKEN|PASSWORD|PASSWD|PASSPHRASE|API_?KEY|PRIVATE_?KEY|PRESHARED_?KEY)[A-Z0-9_]{0,64}["'']?\s*[:=]\s*["'']?[A-Za-z0-9+/=_.-]{16,}' }
     # Quoted values the rule above misses: 8 or more characters with a space or
     # punctuation other than : / \ in them (a passphrase, not a path or a
     # 'root:relative' location). Placeholders ({{X}}, ${X}, $x, <x>, %X%) pass.
-    @{ Rule = 'secret-named setting with a quoted passphrase'; Pattern = '(?i)\b[A-Z0-9_]{0,64}(?:SECRET|TOKEN|PASSWORD|PASSWD|PASSPHRASE|API_?KEY|PRIVATE_?KEY)[A-Z0-9_]{0,64}["'']?\s*[:=]\s*(["''])(?![{$<%])(?=(?:(?!\1)[^\r\n])*?[^A-Za-z0-9+/=_.:\\\r\n"''-])(?:(?!\1)[^\r\n]){8,}\1' }
+    @{ Rule = 'secret-named setting with a quoted passphrase'; Pattern = '(?i)\b[A-Z0-9_]{0,64}(?:SECRET|TOKEN|PASSWORD|PASSWD|PASSPHRASE|API_?KEY|PRIVATE_?KEY|PRESHARED_?KEY)[A-Z0-9_]{0,64}["'']?\s*[:=]\s*(["''])(?![{$<%])(?=(?:(?!\1)[^\r\n])*?[^A-Za-z0-9+/=_.:\\\r\n"''-])(?:(?!\1)[^\r\n]){8,}\1' }
+    # A long opaque value under a generic key, keys, auth or credential field
+    # (Bolt's key arrays, exported settings), or under a Civitai setting.
+    @{ Rule = 'opaque value under a key or credential field'; Pattern = '(?i)"(?:keys?|auth|credentials?|bearer)"\s*:\s*\[?\s*"[A-Za-z0-9+/=_-]{32,}"' }
+    @{ Rule = 'Civitai key'; Pattern = '(?i)\bcivitai[A-Za-z0-9_]{0,32}["'']?\s*[:=]\s*["'']?[A-Za-z0-9]{32,}' }
     @{ Rule = 'tailnet IP (use {{PC_TS_IP}} or {{VPS_TS_IP}})'; Pattern = '\b100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}\b' }
     # Tailscale gives every node an IPv6 address in one fixed /48.
     @{ Rule = 'tailnet IPv6 address'; Pattern = '(?i)\bfd7a:115c:a1e0:[0-9a-f]{0,4}:' }
@@ -127,13 +145,37 @@ function Get-ScanText([byte[]]$Bytes) {
     return @{ Text = [Text.Encoding]::Latin1.GetString($Bytes); Binary = $true }
 }
 
+function Get-GitFile([string]$Root, [string[]]$Arguments) {
+    # NUL-separated and read as UTF-8 bytes, so no name is quoted, escaped or
+    # re-encoded on the way (PowerShell would decode it with the console code page).
+    $psi = [Diagnostics.ProcessStartInfo]::new('git')
+    foreach ($a in @('-C', $Root, '-c', 'core.quotepath=off', 'ls-files', '-z') + $Arguments) { $psi.ArgumentList.Add($a) }
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.UseShellExecute = $false
+    $psi.StandardOutputEncoding = [Text.UTF8Encoding]::new($false)
+    $proc = [Diagnostics.Process]::Start($psi)
+    $errTask = $proc.StandardError.ReadToEndAsync()
+    $out = $proc.StandardOutput.ReadToEnd()
+    $proc.WaitForExit()
+    $null = $errTask.Result
+    if ($proc.ExitCode -ne 0) { throw 'git ls-files failed.' }
+    return , @($out.Split([char]0) | Where-Object { $_ -ne '' })
+}
+
+function Test-Leaf([string]$FullPath) {
+    try { return [bool]((Get-Item -LiteralPath $FullPath -Force -ErrorAction Stop) -is [IO.FileInfo]) }
+    catch [Management.Automation.ItemNotFoundException] { return $false }
+}
+
 $root = (Resolve-Path -LiteralPath $Path).ProviderPath
 
 # ---------- Which files ----------
 $relativeFiles = $null
+$deleted = @{}
 if (Test-Path -LiteralPath (Join-Path $root '.git')) {
-    $relativeFiles = @(git -C $root ls-files --cached --others --exclude-standard)
-    if ($LASTEXITCODE -ne 0) { throw 'git ls-files failed.' }
+    $relativeFiles = Get-GitFile $root @('--cached', '--others', '--exclude-standard')
+    foreach ($d in (Get-GitFile $root @('--deleted'))) { $deleted[$d] = $true }
 }
 else {
     $relativeFiles = @(Get-ChildItem -LiteralPath $root -Recurse -File -Force |
@@ -143,11 +185,25 @@ else {
 
 $findings = [Collections.Generic.List[object]]::new()
 
+$scanned = 0
 foreach ($rel in $relativeFiles) {
+    if ($deleted.ContainsKey($rel)) { continue }   # tracked, but deleted from the work tree
     $rel = $rel -replace '\\', '/'
     $full = Join-Path $root $rel
-    if (-not (Test-Path -LiteralPath $full -PathType Leaf)) { continue }   # deleted in the work tree
     $name = Split-Path $rel -Leaf
+    $bytes = $null
+    try {
+        if (Test-Leaf $full) { $bytes = [IO.File]::ReadAllBytes($full) }
+    }
+    catch {
+        $bytes = $null
+    }
+    if ($null -eq $bytes) {
+        # Listed but not readable as a file: fail closed rather than skip it.
+        $findings.Add([pscustomobject]@{ File = $rel; Line = 0; Rule = 'listed file could not be read' })
+        continue
+    }
+    $scanned++
 
     if ($name -notmatch $allowedNames) {
         foreach ($f in $forbiddenNames) {
@@ -157,14 +213,18 @@ foreach ($rel in $relativeFiles) {
         }
     }
 
-    $bytes = [IO.File]::ReadAllBytes($full)
     if ($bytes.Length -eq 0) { continue }
     $scan = Get-ScanText $bytes
 
     $lines = $scan.Text -split "\r?\n|\r"
     for ($i = 0; $i -lt $lines.Count; $i++) {
+        $variants = @($lines[$i])
+        if ($lines[$i] -match '\\u[0-9A-Fa-f]{4}') {
+            # JSON escapes: 'sk-...' is 'sk-...' once a program reads it.
+            $variants += [regex]::Replace($lines[$i], '\\u([0-9A-Fa-f]{4})', { param($m) [string][char][Convert]::ToInt32($m.Groups[1].Value, 16) })
+        }
         foreach ($r in $lineRules) {
-            if ($lines[$i] -match $r.Pattern) {
+            if (@($variants | Where-Object { $_ -match $r.Pattern }).Count -gt 0) {
                 if ($scan.Binary) { $findings.Add([pscustomobject]@{ File = $rel; Line = 0; Rule = "$($r.Rule) (in a binary file)" }) }
                 else { $findings.Add([pscustomobject]@{ File = $rel; Line = $i + 1; Rule = $r.Rule }) }
             }
@@ -184,4 +244,4 @@ if ($findings.Count -gt 0) {
     Write-Output "Test-NoSecrets: $($findings.Count) finding(s) in $($relativeFiles.Count) file(s). The matched text is never printed."
     exit 1
 }
-Write-Output "Test-NoSecrets: clean ($($relativeFiles.Count) files scanned)."
+Write-Output "Test-NoSecrets: clean ($scanned files scanned)."

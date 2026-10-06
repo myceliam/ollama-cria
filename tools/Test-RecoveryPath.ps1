@@ -27,8 +27,11 @@
         8.3 'RUNNER~1' profile folder.
       - Once joined to the root and normalised, it is inside the root. The root
         itself only passes with -AllowRoot.
-      - Unless -SyntaxOnly: the root and every existing folder or file between
-        the root and the target is a real item, not a junction or symbolic link.
+      - Unless -SyntaxOnly: every existing folder above the root, the root
+        itself, and every existing folder or file between the root and the
+        target is a real item, not a junction or symbolic link. A folder that
+        cannot be inspected (access denied) fails the check; only a folder
+        that does not exist yet ends the walk.
       - With several paths: no two resolve to the same place, ignoring case.
 
     The root must be fully qualified on the machine running the check (a
@@ -49,7 +52,9 @@
         other account can write to (the collector's run folder is owner-only),
         and they walk the finished output for links afterwards (the bundle
         walk in Test-RestoreMap.ps1). Anything able to win the race already
-        runs as the owner and could read the secrets directly.
+        runs as the owner and could read the secrets directly. A restorer
+        that writes, elevated, into folders a less-privileged account can
+        change does not have that guard and needs no-follow opens of its own.
 
 .PARAMETER Path
     One or more paths to check. Relative paths are resolved against -Root.
@@ -135,10 +140,40 @@ function ConvertTo-NativePath([string]$Text) {
     return ($Text -replace '[\\/]', [string]$sep)
 }
 
-function Test-IsLink([string]$FullPath) {
-    $item = Get-Item -LiteralPath $FullPath -Force -ErrorAction SilentlyContinue
-    if ($null -eq $item) { return $null }      # does not exist
-    return [bool]($item.Attributes -band [IO.FileAttributes]::ReparsePoint)
+function Get-ItemState([string]$FullPath) {
+    # 'item', 'link', 'missing' or 'unreadable'. Only a missing item ends a
+    # walk: an access error is never taken as proof that nothing is there.
+    # .NET, not Get-Item: PowerShell reports a folder it may not read as not
+    # found. GetAttributes does not follow a link, so a link reports itself.
+    try {
+        $attributes = [IO.File]::GetAttributes($FullPath)
+    }
+    catch [IO.FileNotFoundException], [IO.DirectoryNotFoundException] {
+        return 'missing'
+    }
+    catch {
+        return 'unreadable'
+    }
+    if ($attributes -band [IO.FileAttributes]::ReparsePoint) { return 'link' }
+    return 'item'
+}
+
+function Get-RootProblem([string]$FullRoot) {
+    # Every existing folder from the top of the drive down to the root itself.
+    # A junction above the root redirects it just as surely as one below it.
+    $top = [IO.Path]::GetPathRoot($FullRoot)
+    $current = $top
+    $names = @($FullRoot.Substring($top.Length) -split '[\\/]' | Where-Object { $_ -ne '' })
+    for ($k = 0; $k -lt $names.Count; $k++) {
+        $current = [IO.Path]::Combine($current, $names[$k])
+        $isRoot = ($k -eq $names.Count - 1)
+        switch (Get-ItemState $current) {
+            'missing' { return $null }
+            'unreadable' { return $(if ($isRoot) { 'the root cannot be inspected' } else { 'a folder above the root cannot be inspected' }) }
+            'link' { return $(if ($isRoot) { 'the root is a junction or symbolic link' } else { 'a folder above the root is a junction or symbolic link' }) }
+        }
+    }
+    return $null
 }
 
 # ---------- The root ----------
@@ -158,9 +193,9 @@ if ($rootTrimmed -eq '' -or $rootTrimmed -match '^[A-Za-z]:$') {
 }
 $rootFull = $rootTrimmed
 
-$rootIsLink = $false
+$rootProblem = $null
 if (-not $SyntaxOnly) {
-    $rootIsLink = (Test-IsLink $rootFull) -eq $true
+    $rootProblem = Get-RootProblem $rootFull
 }
 
 # ---------- Each path ----------
@@ -178,8 +213,8 @@ for ($i = 0; $i -lt $Path.Count; $i++) {
     elseif ($p -match $badChars) {
         $reason = 'control or wildcard character'
     }
-    elseif ($rootIsLink) {
-        $reason = 'the root is a junction or symbolic link'
+    elseif ($rootProblem) {
+        $reason = $rootProblem
     }
 
     if (-not $reason) {
@@ -248,9 +283,10 @@ for ($i = 0; $i -lt $Path.Count; $i++) {
         $current = $rootFull
         foreach ($s in ($rest -split '[\\/]')) {
             $current = [IO.Path]::Combine($current, $s)
-            $isLink = Test-IsLink $current
-            if ($null -eq $isLink) { break }
-            if ($isLink) { $reason = 'a junction or symbolic link on the way'; break }
+            $state = Get-ItemState $current
+            if ($state -eq 'missing') { break }
+            if ($state -eq 'unreadable') { $reason = 'an item on the way cannot be inspected'; break }
+            if ($state -eq 'link') { $reason = 'a junction or symbolic link on the way'; break }
         }
     }
 

@@ -5,7 +5,7 @@
   "description": "Written by tools/Collect-StackSecrets.ps1 into the secrets bundle and read by tools/Restore-StackSecrets.ps1. One row per file in the bundle. Holds names, logical destinations, sizes and hashes only: never a secret value. Review finding C-08: one versioned format for both ends.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["formatVersion", "createdUtc", "collector", "entries"],
+  "required": ["formatVersion", "createdUtc", "collector", "inventory", "entries"],
   "properties": {
     "formatVersion": {
       "description": "Bump on any breaking change. Restore refuses a version it does not know.",
@@ -22,6 +22,25 @@
       "properties": {
         "name": { "const": "Collect-StackSecrets.ps1" },
         "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" }
+      }
+    },
+    "inventory": {
+      "description": "Binds the map to the secret inventory it was collected from, so a map that leaves out a required row cannot pass. The restorer compares it with the inventory it receives from the repo.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha256", "required"],
+      "properties": {
+        "sha256": {
+          "description": "SHA-256 of manifests/secrets.json as the collector read it, lower-case hex.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "required": {
+          "description": "Ids of every required inventory row. Each must have a required entry in this map, and no other entry may be required.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,63}$" }
+        }
       }
     },
     "entries": {
@@ -67,14 +86,19 @@
           "type": "boolean"
         },
         "mode": {
-          "description": "Linux file mode for VPS destinations, for example 0600.",
+          "description": "Linux file mode for VPS and Docker volume destinations, for example 0600.",
           "type": "string",
           "pattern": "^0[0-7]{3}$"
         },
         "owner": {
-          "description": "Linux owner for VPS destinations.",
+          "description": "Linux owner for VPS and Docker volume destinations: a user name, or a numeric uid inside a volume.",
           "type": "string",
-          "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+          "pattern": "^([a-z_][a-z0-9_-]{0,31}|[0-9]{1,10})$"
+        },
+        "group": {
+          "description": "Linux group for VPS and Docker volume destinations: a group name, or a numeric gid inside a volume.",
+          "type": "string",
+          "pattern": "^([a-z_][a-z0-9_-]{0,31}|[0-9]{1,10})$"
         }
       }
     }
