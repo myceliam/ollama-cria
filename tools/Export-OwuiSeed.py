@@ -23,10 +23,17 @@ Problems and warnings name tables, ids, keys and paths. They never print a
 value.
 
 Modes:
-  --stdout                 one JSON document {"seed": {...}, "secrets": {...}}
-                           on stdout, for a wrapper that runs this with
-                           `docker exec -i` so nothing is written inside the
-                           container. The summary goes to stderr.
+  --stdout                 one line of JSON on stdout,
+                           {"seed": {file name: text}, "secrets_file": text},
+                           for tools/Collect-StackSecrets.ps1, which runs this
+                           with `docker exec -i` so nothing is written inside
+                           the container. "secrets_file" is the exact text of
+                           the folder-03 secrets file. The line is pure ASCII
+                           (JSON unicode escapes), so no code page can change it.
+                           Everything else, OWUI's own log lines included, goes
+                           to stderr. The collector passes the script and the
+                           schema on stdin and calls main(argv, schema_text=...)
+                           so neither has to exist inside the container.
   --seed-out DIR --secrets-out FILE
                            write files. DIR must not exist or be empty; FILE
                            must not exist and is created owner-only. Used by
@@ -47,6 +54,7 @@ import os
 import re
 import sqlite3
 import sys
+import traceback
 from pathlib import Path
 
 SEED_FORMAT = 1
@@ -96,6 +104,10 @@ SHAPES = [
     ('MagicDNS name', r'(?i)\b[a-z0-9-]{1,63}\.[a-z0-9-]{1,63}\.ts\.net\b'),
 ]
 SHAPES = [(name, re.compile(rx)) for name, rx in SHAPES]
+
+# A home-network or Docker address is not a secret, but AGENTS.md keeps
+# private addresses out of the repo, so each one is named in a warning.
+LAN_ADDRESS = re.compile(r'\b(10\.[0-9]{1,3}|192\.168|172\.(1[6-9]|2[0-9]|3[01]))\.[0-9]{1,3}\.[0-9]{1,3}\b')
 
 COLUMN_CLASSES = {'safe', 'json', 'owner', 'valves', 'excluded'}
 SEEDED_ORDER = ['tool', 'function', 'model', 'skill', 'prompt', 'group', 'group_member', 'access_grant']
@@ -421,6 +433,8 @@ class Export:
                 if v in text:
                     self.problems.append(f'seed {path}: contains the value of a secret reference')
                     break
+            if LAN_ADDRESS.search(text):
+                self.warnings.append(f'seed {path}: holds a private LAN or Docker address; check it belongs in the repo')
 
     def walk_secret_strings(self, items):
         for item in items:
@@ -445,6 +459,22 @@ class Export:
 
 # ---- outside world ------------------------------------------------------
 
+def secret_key_from_file() -> None:
+    """Find WEBUI_SECRET_KEY the way OWUI's start.sh does.
+
+    `docker exec` does not run start.sh, which reads the key from
+    .webui_secret_key in OWUI's working folder when the environment has none
+    and exports it before OWUI starts. Without the same step, importing
+    open_webui.env stops the process, or the Valve codec would use another key.
+    """
+    if os.environ.get('WEBUI_SECRET_KEY') or os.environ.get('WEBUI_JWT_SECRET_KEY'):
+        return
+    key_file = Path.cwd() / '.webui_secret_key'
+    if key_file.is_file():
+        # start.sh reads it with $(cat), which drops the trailing newline.
+        os.environ['WEBUI_SECRET_KEY'] = key_file.read_text(encoding='utf-8').rstrip('\n')
+
+
 def load_codec():
     """OWUI's own Valve decryption, with failures raised instead of hidden.
 
@@ -454,6 +484,8 @@ def load_codec():
     try:
         from open_webui.utils import valves as owui_valves
         from open_webui.utils.json_codec import JSONCodec
+    except SystemExit:
+        raise Stop('open_webui stopped while it was imported; is WEBUI_SECRET_KEY set in the container?') from None
     except Exception:
         return None
     fernet = owui_valves._fernet()
@@ -464,6 +496,8 @@ def owui_version() -> str | None:
     try:
         from open_webui.env import VERSION
         return VERSION
+    except SystemExit:
+        raise Stop('open_webui stopped while it was imported; is WEBUI_SECRET_KEY set in the container?') from None
     except Exception:
         return None
 
@@ -506,12 +540,18 @@ def write_files(seed: dict, secrets: dict, seed_dir: str, secrets_file: str) -> 
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0)
     fd = os.open(sf, flags, 0o600)
     with os.fdopen(fd, 'w', encoding='utf-8', newline='\n') as f:
-        f.write(dump({'owui_seed_secrets': SEED_FORMAT, 'refs': secrets}))
+        f.write(secrets_text(secrets))
 
 
-def main(argv: list[str] | None = None) -> int:
+def secrets_text(secrets: dict) -> str:
+    return dump({'owui_seed_secrets': SEED_FORMAT, 'refs': secrets})
+
+
+def main(argv: list[str] | None = None, schema_text: str | None = None) -> int:
+    """schema_text: the schema itself, for a caller that has no file to point
+    --schema at (the collector, through docker exec)."""
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
-    ap.add_argument('--schema', required=True, help='manifests/owui-seed/schema.json')
+    ap.add_argument('--schema', help='manifests/owui-seed/schema.json')
     ap.add_argument('--db', default=DEFAULT_DB)
     ap.add_argument('--endpoint', action='append', default=[], metavar='NAME=VALUE',
                     help='replace VALUE with {{NAME}} everywhere, e.g. PC_TS_IP=<the PC tailnet IP>')
@@ -524,6 +564,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.stdout == bool(args.seed_out or args.secrets_out) or (not args.stdout and not (args.seed_out and args.secrets_out)):
         ap.error('use --stdout, or both --seed-out and --secrets-out')
+    if bool(args.schema) == (schema_text is not None):
+        ap.error('give the schema once: --schema, or schema_text from the caller')
     endpoints = {}
     for item in args.endpoint:
         name, sep, value = item.partition('=')
@@ -532,8 +574,15 @@ def main(argv: list[str] | None = None) -> int:
         endpoints[name] = value
 
     log = sys.stderr if args.stdout else sys.stdout
+    # In --stdout mode the document must be the only thing on stdout. OWUI
+    # logs to sys.stdout when it is imported (load_codec, owui_version), so
+    # stdout points at stderr until the document is written.
+    document = sys.stdout
+    if args.stdout:
+        sys.stdout = sys.stderr
     try:
-        schema = json.loads(Path(args.schema).read_text(encoding='utf-8'))
+        schema = json.loads(schema_text if schema_text is not None else Path(args.schema).read_text(encoding='utf-8'))
+        secret_key_from_file()
         version = owui_version() or args.owui_version
         if not version:
             raise Stop('OWUI version unknown: open_webui is not importable and --owui-version was not given')
@@ -548,8 +597,10 @@ def main(argv: list[str] | None = None) -> int:
             for w in export.warnings:
                 print(f'WARN    {w}', file=log)
         if args.stdout:
-            sys.stdout.write(json.dumps({'seed': seed_files(seed), 'secrets': export.secrets}, sort_keys=True))
-            sys.stdout.write('\n')
+            document.write(json.dumps({'seed': seed_files(seed), 'secrets_file': secrets_text(export.secrets)},
+                                      sort_keys=True, ensure_ascii=True))
+            document.write('\n')
+            document.flush()
         else:
             write_files(seed, export.secrets, args.seed_out, args.secrets_out)
         counts = ', '.join(f'{k} {v}' for k, v in seed['provenance']['counts'].items())
@@ -564,6 +615,15 @@ def main(argv: list[str] | None = None) -> int:
         print(text if text.startswith('PROBLEM') else f'PROBLEM {text}', file=log)
         print('STOPPED nothing was written', file=log)
         return 1
+    except Exception as err:
+        # The collector shows only these lines, so name what failed and where,
+        # never the message, which could echo a value.
+        frame = traceback.extract_tb(err.__traceback__)[-1]
+        print(f'PROBLEM unexpected {type(err).__name__} at {Path(frame.filename).name} line {frame.lineno}', file=log)
+        print('STOPPED nothing was written', file=log)
+        return 1
+    finally:
+        sys.stdout = document
 
 
 if __name__ == '__main__':

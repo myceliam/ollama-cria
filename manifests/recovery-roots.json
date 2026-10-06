@@ -48,7 +48,7 @@
       "kind": "consumed",
       "host": "pc",
       "consumer": "tools/Import-OwuiSeed.py (Stage 7d)",
-      "purpose": "Secret values the OWUI seed refers to (bundle folder 03)"
+      "purpose": "Secret values the OWUI seed refers to (bundle folder 03), written by the collector's seed export and read in place, never placed"
     }
   }
 }

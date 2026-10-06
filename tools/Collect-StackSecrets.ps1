@@ -17,16 +17,17 @@
     Two modes:
 
       Plan (the default). Offline. Reads the manifests, checks that each PC
-      row exists, runs the folder audits and reads the BitLocker state of
-      the staging drive and, when there are volume rows, of the drives that
-      can hold paged memory. It never calls ssh, scp or docker (C-09).
+      row exists, runs the folder audits, checks -SeedOut and reads the
+      BitLocker state of the staging drive and, when there are volume or
+      seed rows, of the drives that can hold paged memory. It never calls
+      ssh, scp, docker or tailscale (C-09).
 
       -Execute. Collects every row into a new folder under -StagingRoot,
       writes 00-RESTORE-MAP.json, re-checks the whole bundle with
       Test-RestoreMap.ps1 against the inventory it came from, writes the ZIP
       inside the same protected folder, reads every member back and checks
-      its SHA-256 against the map, checks every item's permissions, then
-      prints the ZIP's SHA-256 (C-05, C-08).
+      its SHA-256 against the map, checks every item's permissions, writes
+      the OWUI seed to -SeedOut, then prints the ZIP's SHA-256 (C-05, C-08).
 
     Rules it keeps:
 
@@ -80,8 +81,22 @@
         secret value, and never native error text, which could echo one
         (C-50).
 
-    Not collected here yet: folder 03, the OWUI secret values the seed refers
-    to. Export-OwuiSeed.py writes those in Module 3.
+      - The OWUI seed (bundle folder 03 and -SeedOut). The row whose kind is
+        'owui-seed' runs tools/Export-OwuiSeed.py inside the running OWUI
+        container with 'docker exec -i': the script, the schema and the
+        arguments go in on stdin, so nothing is written inside the
+        container and no address is on a command line. Every tailnet
+        address and MagicDNS name of this tailnet, read from
+        'tailscale status --json', is passed as a placeholder (PC_TS_IP,
+        VPS_TS_IP, PC_TS_NAME, ...), so the seed carries none of them; the
+        image digest is recorded. The export's secrets file goes into the
+        bundle like any other row. The seed itself is checked here too: it
+        must be the expected set of files, carry no value from the secrets
+        file, and name exactly the references the secrets file holds. It is
+        written last: first into the run folder, where tools/Test-NoSecrets.ps1
+        scans it, then into -SeedOut, replacing an earlier seed. Only the
+        exporter's own WARN, PROBLEM and OK lines are passed on; any other
+        error output is counted, never shown (C-50).
 
 .PARAMETER Execute
     Collect for real. Without it the script only plans, offline.
@@ -102,6 +117,14 @@
 .PARAMETER SshHost
     The SSH alias of the VPS, from the current user's SSH config.
 
+.PARAMETER SeedOut
+    Where the OWUI seed is written, for committing to the repo. Defaults to
+    manifests/owui-seed/seed in this repo. It must be a new folder or hold
+    only the files of an earlier seed, which are replaced.
+
+.PARAMETER OwuiContainer
+    The running Open WebUI container the seed is exported from.
+
 .PARAMETER HelperImage
     The image for the throw-away volume reader. It must already be on this
     machine and must have python3; the collector never pulls it.
@@ -120,7 +143,8 @@
 
 .OUTPUTS
     With -PassThru: [pscustomobject] with Mode, IsValid, Rows, Problems,
-    Warnings, BitLocker, RunFolder, ZipPath and ZipSha256.
+    Warnings, BitLocker, RunFolder, ZipPath, ZipSha256, SeedOut, SeedFiles
+    and SeedSummary.
 
 .EXAMPLE
     ./tools/Collect-StackSecrets.ps1
@@ -148,13 +172,17 @@ param(
 
     [string]$HelperImage = 'python:3.12-slim',
 
+    [string]$SeedOut = (Join-Path $PSScriptRoot '../manifests/owui-seed/seed'),
+
+    [string]$OwuiContainer = 'open-webui',
+
     [switch]$AllowUnencryptedStaging,
 
     [switch]$KeepOnFailure,
 
     [switch]$PassThru,
 
-    # Test seams: the programs used to reach the VPS and Docker.
+    # Test seams: the programs used to reach the VPS, Docker and Tailscale.
     [Parameter(DontShow)]
     [string]$SshCommand = 'ssh',
 
@@ -162,16 +190,22 @@ param(
     [string]$ScpCommand = 'scp',
 
     [Parameter(DontShow)]
-    [string]$DockerCommand = 'docker'
+    [string]$DockerCommand = 'docker',
+
+    [Parameter(DontShow)]
+    [string]$TailscaleCommand = 'tailscale'
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$collectorVersion = '2.0.0'
+$collectorVersion = '2.1.0'
 $repo = Split-Path $PSScriptRoot -Parent
 $testPath = Join-Path $PSScriptRoot 'Test-RecoveryPath.ps1'
 $testMap = Join-Path $PSScriptRoot 'Test-RestoreMap.ps1'
+$scanTool = Join-Path $PSScriptRoot 'Test-NoSecrets.ps1'
+$exporter = Join-Path $PSScriptRoot 'Export-OwuiSeed.py'
+$seedSchema = Join-Path $repo 'manifests/owui-seed/schema.json'
 $schemaDir = Join-Path $repo 'manifests/schemas'
 $mapFileName = '00-RESTORE-MAP.json'
 $onWindows = [Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([Runtime.InteropServices.OSPlatform]::Windows)
@@ -186,11 +220,17 @@ $problems = [Collections.Generic.List[string]]::new()
 $warnings = [Collections.Generic.List[string]]::new()
 $rowResults = [Collections.Generic.List[object]]::new()
 $run = [pscustomobject]@{
-    BitLocker = 'NotChecked'
-    RunFolder = $null
-    ZipPath   = $null
-    ZipSha256 = $null
+    BitLocker   = 'NotChecked'
+    RunFolder   = $null
+    ZipPath     = $null
+    ZipSha256   = $null
+    SeedOut     = $null
+    SeedFiles   = 0
+    SeedSummary = $null
 }
+# Kept out of the result: tailnet addresses are private, and the seed texts
+# are written to -SeedOut only once the whole run has passed.
+$owui = @{ Image = $null; Endpoints = $null; Seed = $null; Target = $null }
 
 # Runs on the VPS through one ssh call. For each base64 path argument it prints
 # one line: 'ok <bytes> <sha256>', or why the file cannot be collected. It
@@ -261,19 +301,34 @@ for i in range(0, len(text), 76):
     print(text[i:i + 76])
 '@
 
+# Runs inside the OWUI container as 'python3 -c': reads one JSON document
+# from stdin with the exporter's text, the schema's text and its arguments,
+# and runs it there. Only double-quote-free Python, so no quoting can matter.
+$seedBoot = "import json,sys;e=json.loads(sys.stdin.read());g={'__name__':'owui_seed_export'};" +
+    "exec(compile(e['script'],'Export-OwuiSeed.py','exec'),g);" +
+    "sys.exit(g['main'](e['argv'],schema_text=e['schema']))"
+
+# The files one export gives, and the name rule for any seed file.
+$seedFileNames = @('access_grant', 'config', 'function', 'group', 'group_member', 'model', 'prompt',
+    'provenance', 'secret_refs', 'skill', 'tool', 'user_settings') | ForEach-Object { "$_.json" }
+$seedFileName = '^[a-z][a-z_]{0,40}\.json$'
+
 # ---------- Helpers ----------
 
 function Get-RunResult {
     [pscustomobject]@{
-        Mode      = $(if ($Execute) { 'Execute' } else { 'Plan' })
-        IsValid   = ($problems.Count -eq 0)
-        Rows      = $rowResults.ToArray()
-        Problems  = $problems.ToArray()
-        Warnings  = $warnings.ToArray()
-        BitLocker = $run.BitLocker
-        RunFolder = $run.RunFolder
-        ZipPath   = $run.ZipPath
-        ZipSha256 = $run.ZipSha256
+        Mode        = $(if ($Execute) { 'Execute' } else { 'Plan' })
+        IsValid     = ($problems.Count -eq 0)
+        Rows        = $rowResults.ToArray()
+        Problems    = $problems.ToArray()
+        Warnings    = $warnings.ToArray()
+        BitLocker   = $run.BitLocker
+        RunFolder   = $run.RunFolder
+        ZipPath     = $run.ZipPath
+        ZipSha256   = $run.ZipSha256
+        SeedOut     = $run.SeedOut
+        SeedFiles   = $run.SeedFiles
+        SeedSummary = $run.SeedSummary
     }
 }
 
@@ -457,14 +512,18 @@ function Read-Manifest {
             $problems.Add("${label}: folder $($m.folder) must come from a $($rule.host) '$($rule.kind)' root, not '$rootName'")
             continue
         }
-        if ($root.kind -eq 'consumed') {
-            $problems.Add("${label}: '$rootName' rows are written by Export-OwuiSeed.py, not this collector")
+        if ($root.kind -eq 'consumed' -and $m.kind -ne 'owui-seed') {
+            $problems.Add("${label}: '$rootName' is filled by the OWUI seed export, so its row must have kind 'owui-seed'")
+            continue
+        }
+        if ($m.kind -eq 'owui-seed' -and $root.kind -ne 'consumed') {
+            $problems.Add("${label}: kind 'owui-seed' is only for a 'consumed' root")
             continue
         }
         if ($m.kind -eq 'sqlite' -and $root.kind -ne 'volume') { $problems.Add("${label}: kind 'sqlite' is only for Docker volume roots") }
         if (($null -ne $mode -or $null -ne $owner) -and $root.host -ne 'vps') { $problems.Add("${label}: mode and owner are only for VPS rows") }
 
-        $source = if ($root.kind -eq 'volume') { 'volume' } else { $root.host }
+        $source = switch ($root.kind) { 'volume' { 'volume' } 'consumed' { 'owui' } default { $root.host } }
         if ($source -ne 'pc' -and ($relative -replace '\\', '/') -notmatch $plainPath) {
             $problems.Add("${label}: VPS and volume locations may only use letters, digits and . _ / -")
         }
@@ -478,7 +537,7 @@ function Read-Manifest {
             if ($root.path -notmatch '^/' -or $root.path -notmatch $plainPath) { $problems.Add("${label}: root '$rootName' must be an absolute plain Linux path") }
             $remotePath = $root.path.TrimEnd('/') + '/' + ($relative -replace '\\', '/')
         }
-        else {
+        elseif ($source -eq 'volume') {
             $volume = $root.volume
             if ($volume -notmatch '^[A-Za-z0-9][A-Za-z0-9_.-]+$') { $problems.Add("${label}: volume name '$volume' is not a plain Docker volume name") }
         }
@@ -509,6 +568,8 @@ function Read-Manifest {
             $problems.Add("manifest: audit '$($a.location)' must name a PC folder root")
         }
     }
+
+    if (@($rows | Where-Object Source -EQ 'owui').Count -gt 1) { $problems.Add("manifest: only one row may have kind 'owui-seed'") }
 
     if ($problems.Count -gt 0) { return $null }
     return [pscustomobject]@{
@@ -717,6 +778,258 @@ function Test-DockerReady($Rows) {
         if ($LASTEXITCODE -ne 0) { Add-MissingRow $r; $r | Add-Member -NotePropertyName Skip -NotePropertyValue $true -Force; continue }
         $r | Add-Member -NotePropertyName VolumeCreated -NotePropertyValue ([string]($created | Select-Object -First 1)) -Force
     }
+}
+
+# ---------- The OWUI seed ----------
+
+function Get-NodeLabel($Node) {
+    # The first label of a node's MagicDNS name ('pc' in pc.<tailnet>.ts.net).
+    $dns = [string]$Node['DNSName']
+    if ($dns) { return ($dns -split '\.')[0].ToLowerInvariant() }
+    return ([string]$Node['HostName']).ToLowerInvariant()
+}
+
+function Get-TailnetEndpoint {
+    # Every tailnet address and MagicDNS name in this tailnet, by placeholder
+    # name: this machine is PC, the -SshHost node is VPS, any other node is
+    # named after its first label. The exporter swaps each value for its
+    # {{NAME}}, so the seed carries none of them; Stage 4a renders them back.
+    # Returns an ordered table, or $null after recording a problem. The
+    # values are private: they go to the exporter on stdin, never anywhere else.
+    $raw = @(& $TailscaleCommand status --json 2>$null)
+    if ($LASTEXITCODE -ne 0 -or -not $raw) {
+        $problems.Add('seed: ''tailscale status --json'' failed; is Tailscale running and signed in?')
+        return $null
+    }
+    try { $status = ConvertFrom-Json -InputObject ($raw -join "`n") -AsHashtable -ErrorAction Stop }
+    catch { $problems.Add('seed: the Tailscale status could not be read'); return $null }
+    $suffix = ([string]$status['MagicDNSSuffix']).TrimEnd('.')
+    if (-not $status['Self'] -or $suffix -notmatch '^[a-z0-9-]+(\.[a-z0-9-]+)*\.ts\.net$') {
+        $problems.Add('seed: the Tailscale status has no node for this machine or no MagicDNS name')
+        return $null
+    }
+    # Only nodes in this tailnet: shared-in nodes and exit nodes have another suffix.
+    $peers = @(if ($status['Peer']) { $status['Peer'].Values | Where-Object { ([string]$_['DNSName']).TrimEnd('.') -like "*.$suffix" } })
+    $vps = @($peers | Where-Object { (Get-NodeLabel $_) -eq $SshHost.ToLowerInvariant() })
+    if ($vps.Count -ne 1) {
+        $problems.Add("seed: expected one node named '$SshHost' in the tailnet, found $($vps.Count)")
+        return $null
+    }
+    $nodes = [ordered]@{ PC = $status['Self']; VPS = $vps[0] }
+    foreach ($p in $peers | Where-Object { -not [object]::ReferenceEquals($_, $vps[0]) }) {
+        $name = (Get-NodeLabel $p).ToUpperInvariant() -replace '[^A-Z0-9]', '_'
+        if ($name -notmatch '^[A-Z]') { $name = 'NODE_' + $name }
+        for ($n = 2; $nodes.Contains($name); $n++) { $name = ($name -replace '_[0-9]+$', '') + "_$n" }
+        $nodes[$name] = $p
+    }
+    $endpoints = [ordered]@{}
+    foreach ($key in $nodes.Keys) {
+        foreach ($ip in @($nodes[$key]['TailscaleIPs'])) {
+            if ("$ip" -match '^[0-9]{1,3}(\.[0-9]{1,3}){3}$') { $endpoints["${key}_TS_IP"] = "$ip" }
+            elseif ("$ip" -match '^[0-9a-fA-F:]+$') { $endpoints["${key}_TS_IP6"] = "$ip" }
+        }
+        $dns = ([string]$nodes[$key]['DNSName']).TrimEnd('.')
+        if ($dns) { $endpoints["${key}_TS_NAME"] = $dns }
+    }
+    $endpoints['TS_DOMAIN'] = $suffix
+    if (-not ($endpoints.Contains('PC_TS_IP') -and $endpoints.Contains('VPS_TS_IP'))) {
+        $problems.Add('seed: the Tailscale status gives no IPv4 address for this machine or the VPS')
+        return $null
+    }
+    return $endpoints
+}
+
+function Test-SeedOut {
+    # Returns the full -SeedOut path when the seed can be written there: a
+    # new folder, or one holding only the files of an earlier seed.
+    $full = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($SeedOut)
+    $parent = Split-Path $full -Parent
+    if (-not $parent -or -not (Test-Path -LiteralPath $parent -PathType Container)) {
+        $problems.Add('seed: the folder above -SeedOut does not exist')
+        return $null
+    }
+    $check = & $testPath -Path (Split-Path $full -Leaf) -Root $parent -Relative -Detailed
+    if (-not $check.IsValid) { $problems.Add("seed: -SeedOut refused ($($check.Reason))"); return $null }
+    if (Test-Path -LiteralPath $check.FullPath) {
+        if (-not (Test-Path -LiteralPath $check.FullPath -PathType Container)) { $problems.Add('seed: -SeedOut is a file, not a folder'); return $null }
+        $other = @(Get-ChildItem -LiteralPath $check.FullPath -Force | Where-Object {
+                $_.PSIsContainer -or ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $_.Name -cnotmatch $seedFileName })
+        foreach ($item in $other) {
+            $problems.Add("seed: -SeedOut holds '$($item.Name)', which is not part of a seed; move it, or choose another -SeedOut")
+        }
+        if ($other) { return $null }
+    }
+    return $check.FullPath
+}
+
+function Test-OwuiReady($Rows) {
+    # Before the run folder exists: the OWUI container is running, its image
+    # is known, and the tailnet's addresses are read for the exporter.
+    if (-not @($Rows | Where-Object Source -EQ 'owui')) { return }
+    if ($OwuiContainer -notmatch '^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$') {
+        $problems.Add('seed: -OwuiContainer is not a plain container name')
+        return
+    }
+    $state = @(& $DockerCommand inspect --format '{{.State.Running}} {{.Image}}' $OwuiContainer 2>$null)
+    if ($LASTEXITCODE -ne 0) { $problems.Add("seed: container '$OwuiContainer' was not found; is Docker running?"); return }
+    $running, $image = ([string]($state | Select-Object -First 1)).Trim() -split ' ', 2
+    if ($running -ne 'true') { $problems.Add("seed: container '$OwuiContainer' is not running; the seed is read from the running OWUI"); return }
+    if ($image -notmatch '^sha256:[0-9a-f]{64}$') { $problems.Add("seed: the image of container '$OwuiContainer' could not be read"); return }
+    $owui.Image = $image
+    $digests = @(& $DockerCommand image inspect --format '{{json .RepoDigests}}' $image 2>$null)
+    if ($LASTEXITCODE -eq 0) {
+        try { $found = @(ConvertFrom-Json -InputObject ($digests -join "`n") -NoEnumerate -ErrorAction Stop) } catch { $found = @() }
+        $found = @($found | ForEach-Object { $_ } | Where-Object { "$_" -match '^[a-z0-9][a-z0-9./_:-]*@sha256:[0-9a-f]{64}$' })
+        $pick = @(@($found | Where-Object { $_ -like '*open-webui*' }) + $found) | Select-Object -First 1
+        if ($pick) { $owui.Image = [string]$pick }
+    }
+    if ($owui.Image -notlike '*@sha256:*') { $warnings.Add('seed: the OWUI image has no registry digest; the seed records its local image id') }
+    $owui.Endpoints = Get-TailnetEndpoint
+}
+
+function Get-JsonString([Text.Json.JsonElement]$Element) {
+    # Every string anywhere under a JSON value.
+    switch ($Element.ValueKind.ToString()) {
+        'String' { $Element.GetString() }
+        'Array' { foreach ($item in $Element.EnumerateArray()) { Get-JsonString $item } }
+        'Object' { foreach ($p in $Element.EnumerateObject()) { Get-JsonString $p.Value } }
+    }
+}
+
+function Copy-OwuiSeedRow($Row, [string]$Destination) {
+    # Runs the exporter inside the OWUI container and checks its answer. The
+    # secrets file is written to $Destination now; the seed is kept in memory
+    # until Publish-Seed, after the whole bundle has passed.
+    $argv = [Collections.Generic.List[string]]@('--stdout', '--image-digest', $owui.Image)
+    foreach ($key in $owui.Endpoints.Keys) { $argv.Add('--endpoint'); $argv.Add("$key=$($owui.Endpoints[$key])") }
+    $envelope = [ordered]@{
+        argv   = $argv.ToArray()
+        schema = [IO.File]::ReadAllText($seedSchema)
+        script = [IO.File]::ReadAllText($exporter)
+    } | ConvertTo-Json -Compress -Depth 3 -EscapeHandling EscapeNonAscii
+    $answer = @($envelope | & $DockerCommand exec -i $OwuiContainer python3 -c $seedBoot 2>&1)
+    $code = $LASTEXITCODE
+
+    # Only the exporter's own lines are passed on; anything else on its error
+    # output (a traceback, an OWUI log line) could hold a value, so it is counted.
+    $lines = [Collections.Generic.List[string]]::new()
+    $hidden = 0
+    $stopped = $false
+    foreach ($item in $answer) {
+        if ($item -isnot [Management.Automation.ErrorRecord]) { if ("$item".Trim()) { $lines.Add("$item") }; continue }
+        $text = $item.ToString()
+        if ($text -cmatch '^(WARN|PROBLEM|OK|STOPPED) +(\S.*)$') {
+            $kind, $what = $Matches[1], $Matches[2]
+            if ($kind -eq 'WARN') { $warnings.Add("seed: $what") }
+            elseif ($kind -eq 'PROBLEM') { $problems.Add("seed: $what"); $stopped = $true }
+            elseif ($kind -eq 'OK') { $run.SeedSummary = $what }
+        }
+        elseif ($text.Trim()) { $hidden++ }
+    }
+    if ($hidden) { $warnings.Add("seed: $hidden other line(s) of error output from the export were not shown, because they could hold a value") }
+    if ($code -ne 0) {
+        if ($stopped) { return 'failed (the seed export stopped; see its problems)' }
+        return "failed (the seed export ended with exit $code)"
+    }
+
+    $files = [ordered]@{}
+    $secretsText = $null
+    try {
+        if ($lines.Count -ne 1) { throw 'not one document' }
+        $doc = [Text.Json.JsonDocument]::Parse($lines[0])
+        try {
+            $root = $doc.RootElement
+            if ((@($root.EnumerateObject() | ForEach-Object Name | Sort-Object) -join ',') -cne 'secrets_file,seed') { throw 'shape' }
+            foreach ($p in $root.GetProperty('seed').EnumerateObject()) {
+                if ($p.Name -cnotmatch $seedFileName -or $p.Value.ValueKind.ToString() -ne 'String') { throw 'shape' }
+                $files[$p.Name] = $p.Value.GetString()
+            }
+            $secretsText = $root.GetProperty('secrets_file').GetString()
+        }
+        finally { $doc.Dispose() }
+    }
+    catch { return 'failed (the seed export gave no usable answer)' }
+
+    $missing = @($seedFileNames | Where-Object { -not $files.Contains($_) })
+    $extra = @($files.Keys | Where-Object { $seedFileNames -notcontains $_ })
+    if ($missing -or $extra) { return "failed (the seed's files are not the expected set: missing $($missing.Count), unexpected $($extra.Count))" }
+
+    $values = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    try {
+        $sdoc = [Text.Json.JsonDocument]::Parse($secretsText)
+        try {
+            if ($sdoc.RootElement.GetProperty('owui_seed_secrets').GetInt32() -ne 1) { throw 'format' }
+            $refsElement = $sdoc.RootElement.GetProperty('refs')
+            $refs = @($refsElement.EnumerateObject() | ForEach-Object Name)
+            foreach ($v in Get-JsonString $refsElement) { if ($v.Length -ge 8) { $null = $values.Add($v) } }
+        }
+        finally { $sdoc.Dispose() }
+        $listed = @(ConvertFrom-Json -InputObject $files['secret_refs.json'] -NoEnumerate -ErrorAction Stop)
+        $listed = @($listed | ForEach-Object { $_ })
+    }
+    catch { return 'failed (the secrets from the export are not in the expected format)' }
+    $refSet = [Collections.Generic.HashSet[string]]::new([string[]]$refs, [StringComparer]::Ordinal)
+    if ($refs.Count -ne $listed.Count -or @($listed | Where-Object { -not $refSet.Contains([string]$_) })) {
+        return 'failed (the seed and its secrets file do not name the same references)'
+    }
+    # The exporter checks this too; a value from the secrets file must not
+    # appear in the seed, raw or JSON-escaped.
+    foreach ($name in $files.Keys) {
+        foreach ($v in $values) {
+            $escaped = $v.Replace('\', '\\').Replace('"', '\"').Replace("`n", '\n').Replace("`r", '\r').Replace("`t", '\t')
+            if ($files[$name].Contains($v) -or $files[$name].Contains($escaped)) {
+                return "failed (seed file $name holds the value of a secret reference)"
+            }
+        }
+    }
+
+    $bytes = [Text.UTF8Encoding]::new($false).GetBytes($secretsText)
+    $stream = [IO.File]::Open($Destination, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+    try { $stream.Write($bytes, 0, $bytes.Length) } finally { $stream.Dispose() }
+    $owui.Seed = $files
+    return 'collected'
+}
+
+function Publish-Seed([string]$RunFolder) {
+    # Last step. The seed is written into the run folder and scanned with
+    # Test-NoSecrets.ps1, the repo's own gate, then copied into -SeedOut,
+    # replacing an earlier seed file by file.
+    $utf8 = [Text.UTF8Encoding]::new($false)
+    $stage = Join-Path $RunFolder 'seed'
+    Initialize-BundleFolder $stage
+    foreach ($name in $owui.Seed.Keys) {
+        $check = & $testPath -Path $name -Root $stage -Relative -Detailed
+        if (-not $check.IsValid) { $problems.Add("seed: '$name' refused ($($check.Reason))"); return }
+        [IO.File]::WriteAllText($check.FullPath, $owui.Seed[$name], $utf8)
+        Protect-BundleFile $check.FullPath
+    }
+    $findings = @(& $scanTool -Path $stage -PassThru)
+    foreach ($f in $findings) {
+        $problems.Add("seed: the secret scan found '$($f.Rule)' in $($f.File) line $($f.Line); the seed was not written to -SeedOut")
+    }
+    if ($findings) { return }
+
+    $target = $owui.Target
+    if (Test-Path -LiteralPath $target) {
+        $items = @(Get-ChildItem -LiteralPath $target -Force)
+        if (@($items | Where-Object { $_.PSIsContainer -or ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $_.Name -cnotmatch $seedFileName })) {
+            $problems.Add('seed: something other than seed files appeared in -SeedOut during the run; the seed was not written')
+            return
+        }
+        foreach ($old in $items | Where-Object { -not $owui.Seed.Contains($_.Name) }) {
+            $check = & $testPath -Path $old.Name -Root $target -Relative -Detailed
+            if (-not $check.IsValid) { $problems.Add("seed: '$($old.Name)' in -SeedOut refused ($($check.Reason))"); return }
+            Remove-Item -LiteralPath $check.FullPath -Force
+        }
+    }
+    else { $null = [IO.Directory]::CreateDirectory($target) }
+    foreach ($name in $owui.Seed.Keys) {
+        $check = & $testPath -Path $name -Root $target -Relative -Detailed
+        if (-not $check.IsValid) { $problems.Add("seed: '$name' refused in -SeedOut ($($check.Reason))"); return }
+        [IO.File]::WriteAllText($check.FullPath, $owui.Seed[$name], $utf8)
+    }
+    $run.SeedOut = $target
+    $run.SeedFiles = $owui.Seed.Count
 }
 
 function Get-PagingLocation {
@@ -944,6 +1257,8 @@ function Invoke-Collection {
     if (-not $manifest) { return }
 
     Invoke-Audit $manifest
+    $owuiRows = @($manifest.Rows | Where-Object Source -EQ 'owui')
+    if ($owuiRows) { $owui.Target = Test-SeedOut }
     $stagingFull = Test-StagingRoot
     $stagingExisted = [bool]($stagingFull -and (Test-Path -LiteralPath $stagingFull))
     $run.BitLocker = Get-BitLockerState $StagingRoot
@@ -951,7 +1266,7 @@ function Invoke-Collection {
         $note = "staging: BitLocker on the -StagingRoot drive is '$($run.BitLocker)'"
         if ($AllowUnencryptedStaging) { $warnings.Add("$note (allowed by -AllowUnencryptedStaging)") } else { $problems.Add($note) }
     }
-    if (@($manifest.Rows | Where-Object Source -EQ 'volume')) { Test-PagingBoundary }
+    if (@($manifest.Rows | Where-Object Source -In 'volume', 'owui')) { Test-PagingBoundary }
 
     $sources = @{}
     foreach ($r in $manifest.Rows | Where-Object Source -EQ 'pc') {
@@ -964,6 +1279,7 @@ function Invoke-Collection {
     }
 
     Test-DockerReady $manifest.Rows
+    Test-OwuiReady $manifest.Rows
     if ($problems.Count -gt 0) { return }
 
     if (-not $stagingFull) { return }
@@ -992,6 +1308,7 @@ function Invoke-Collection {
             'pc' { Copy-PcRow $sources[$r.Id] $destinations[$r.Id] }
             'vps' { $vpsStatus[$r.Id] }
             'volume' { Copy-VolumeRow $r $destinations[$r.Id] }
+            'owui' { Copy-OwuiSeedRow $r $destinations[$r.Id] }
         }
         if ($status -eq 'missing') { Add-MissingRow $r; continue }
         Add-RowResult $r $status
@@ -1052,6 +1369,10 @@ function Invoke-Collection {
         $why = Get-ProtectionProblem $item.FullName
         if ($why) { $problems.Add("permissions: '$($item.FullName.Substring($runFolder.Length + 1))': $why") }
     }
+    if ($problems.Count -gt 0) { return }
+
+    # The seed goes to the repo only when everything else has passed.
+    if ($owui.Seed) { Publish-Seed $runFolder }
 }
 
 # ---------- Run ----------
@@ -1095,6 +1416,8 @@ foreach ($r in $result.Rows) {
 $tally = ($result.Rows | Group-Object Status | Sort-Object Name | ForEach-Object { "$($_.Count) $($_.Name)" }) -join ', '
 Write-Output "  Rows: $(@($result.Rows).Count) ($tally)"
 Write-Output "  Staging drive BitLocker: $($result.BitLocker)"
+if ($result.SeedSummary) { Write-Output "  OWUI $($result.SeedSummary)" }
+if ($result.SeedOut) { Write-Output "  Seed:     $($result.SeedFiles) file(s) written to $($result.SeedOut)" }
 foreach ($w in $result.Warnings) { Write-Output "  WARN     $w" }
 foreach ($p in $result.Problems) { Write-Output "  PROBLEM  $p" }
 
@@ -1114,3 +1437,4 @@ Write-Output 'Next:'
 Write-Output '  1. Upload the ZIP to its Bitwarden item and put the SHA-256 above in the item''s notes.'
 Write-Output '  2. Download it back into this run folder and check the SHA-256 matches (round trip).'
 Write-Output '  3. Only then delete the run folder. It holds plaintext secrets.'
+if ($result.SeedOut) { Write-Output '  4. Commit the seed folder. It holds no secrets; CI scans it again.' }

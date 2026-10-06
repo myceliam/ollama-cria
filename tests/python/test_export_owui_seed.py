@@ -6,8 +6,10 @@ Every secret here is built at run time ('sk-' + 'A' * 40), and so is the
 tailnet address, so no literal lands in the repo (AGENTS.md).
 """
 
+import contextlib
 import hashlib
 import importlib.util
+import io
 import shutil
 import json
 import os
@@ -298,11 +300,114 @@ class ExportTests(unittest.TestCase):
         run = self.run_export(stdout=True)
         self.assertEqual(run.code, 0, run.stderr)
         doc = json.loads(run.stdout)
+        self.assertEqual(sorted(doc), ['secrets_file', 'seed'])
         self.assertIn('config.json', doc['seed'])
-        self.assertEqual(doc['secrets']['config/openai.api_keys'], [OPENAI, ''])
+        secrets = json.loads(doc['secrets_file'])
+        self.assertEqual(secrets['owui_seed_secrets'], 1)
+        self.assertEqual(secrets['refs']['config/openai.api_keys'], [OPENAI, ''])
         self.assertNotIn(OPENAI, ''.join(doc['seed'].values()))
         self.assertFalse(run.seed_dir.exists())
         self.assertIn('OK      seed exported', run.stderr)
+
+    def test_stdout_mode_gives_the_same_files_as_file_mode(self):
+        files = self.run_export()
+        self.assertEqual(files.code, 0, files.text)
+        doc = json.loads(self.run_export(stdout=True).stdout)
+        for name, text in doc['seed'].items():
+            self.assertEqual((files.seed_dir / name).read_text(encoding='utf-8'), text, name)
+        self.assertEqual(sorted(p.name for p in files.seed_dir.iterdir()), sorted(doc['seed']))
+        self.assertEqual(files.secrets_file.read_text(encoding='utf-8'), doc['secrets_file'])
+
+    def test_stdout_mode_prints_ascii_only_and_keeps_other_characters(self):
+        text = 'Tidy this \u00e9 \U0001F415'
+        run = self.run_export(stdout=True, mutate=lambda db: db.execute("UPDATE prompt SET content = ? WHERE id = 'p1'", (text,)))
+        self.assertEqual(run.code, 0, run.stderr)
+        run.stdout.encode('ascii')
+        prompts = json.loads(json.loads(run.stdout)['seed']['prompt.json'])
+        self.assertEqual(prompts[0]['content'], text)
+
+    def test_stdout_mode_keeps_owui_log_lines_off_stdout(self):
+        # OWUI logs to stdout when it is imported; the document must stay alone there.
+        run = self.run_export(stdout=True, env={'FAKE_OWUI_NOISY': '1'})
+        self.assertEqual(run.code, 0, run.stderr)
+        self.assertIn('fake OWUI log line', run.stderr)
+        self.assertEqual(len(run.stdout.splitlines()), 1)
+        json.loads(run.stdout)
+
+    def test_runs_from_stdin_with_the_schema_passed_in(self):
+        # How the collector runs it: docker exec -i <container> python3 -c BOOT,
+        # with the script, the schema and the arguments on stdin (see BOOT in
+        # tools/Collect-StackSecrets.ps1), so nothing has to exist in the container.
+        build_db(self.db, load_schema())
+        boot = ("import json,sys;e=json.loads(sys.stdin.read());g={'__name__':'owui_seed_export'};"
+                "exec(compile(e['script'],'Export-OwuiSeed.py','exec'),g);"
+                "sys.exit(g['main'](e['argv'],schema_text=e['schema']))")
+        envelope = json.dumps({
+            'argv': ['--stdout', '--db', str(self.db), '--endpoint', f'PC_TS_IP={PC_IP}'],
+            'schema': SCHEMA.read_text(encoding='utf-8'),
+            'script': SCRIPT.read_text(encoding='utf-8'),
+        })
+        e = dict(os.environ, PYTHONPATH=str(FAKE), FAKE_OWUI_KEY=KEY)
+        e.pop('DATABASE_URL', None)
+        p = subprocess.run([sys.executable, '-c', boot], input=envelope, capture_output=True, text=True, env=e, timeout=60)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        doc = json.loads(p.stdout)
+        self.assertIn('tool.json', doc['seed'])
+        self.assertNotIn(OPENAI, ''.join(doc['seed'].values()))
+        self.assertEqual(json.loads(doc['secrets_file'])['refs']['config/openai.api_keys'], [OPENAI, ''])
+
+    def run_in(self, cwd, env_update, drop=()):
+        build_db(self.db, load_schema())
+        e = dict(os.environ, PYTHONPATH=str(FAKE))
+        for name in ('FAKE_OWUI_KEY', 'WEBUI_SECRET_KEY', 'WEBUI_JWT_SECRET_KEY', 'DATABASE_URL') + tuple(drop):
+            e.pop(name, None)
+        e.update(env_update)
+        args = [sys.executable, str(SCRIPT), '--schema', str(self.schema_path), '--db', str(self.db),
+                '--endpoint', f'PC_TS_IP={PC_IP}', '--stdout']
+        return subprocess.run(args, capture_output=True, text=True, env=e, cwd=cwd, timeout=60)
+
+    def test_reads_the_secret_key_file_as_owui_start_sh_does(self):
+        # docker exec does not run start.sh; with no key in the environment the
+        # key comes from .webui_secret_key in the working folder.
+        (self.dir / '.webui_secret_key').write_text(KEY + '\n', encoding='utf-8')
+        p = self.run_in(self.dir, {})
+        self.assertEqual(p.returncode, 0, p.stderr)
+        secrets = json.loads(json.loads(p.stdout)['secrets_file'])['refs']
+        self.assertEqual(secrets['tool/brave_search/valves/BRAVE_API_KEY'], BRAVE)
+
+    def test_a_key_in_the_environment_wins_over_the_file(self):
+        (self.dir / '.webui_secret_key').write_text('another-key-' + 'z' * 20, encoding='utf-8')
+        p = self.run_in(self.dir, {'WEBUI_SECRET_KEY': KEY})
+        self.assertEqual(p.returncode, 0, p.stderr)
+
+    def test_stops_when_there_is_no_secret_key_at_all(self):
+        p = self.run_in(self.dir, {})
+        self.assertEqual(p.returncode, 1, p.stderr)
+        self.assertIn('PROBLEM open_webui stopped while it was imported; is WEBUI_SECRET_KEY set in the container?', p.stderr)
+        self.assertEqual(p.stdout, '')
+
+    def test_names_an_unexpected_failure_without_its_message(self):
+        # A schema with a missing entry fails in a way no check plans for.
+        run = self.run_export(stdout=True, schema_edit=lambda s: s.pop('owui_version'))
+        self.assertEqual(run.code, 1, run.text)
+        self.assertRegex(run.stderr, r'PROBLEM unexpected KeyError at Export-OwuiSeed\.py line [0-9]+\n')
+        self.assertNotIn("'owui_version'", run.stderr)
+        self.assertEqual(run.stdout, '')
+
+    def test_warns_about_a_private_lan_address(self):
+        lan = '.'.join(['192', '168', '8', '20'])
+        run = self.run_export(mutate=lambda db: db.execute(
+            "UPDATE config SET value = ? WHERE key = 'ollama.base_urls'", (json.dumps([f'http://{lan}:11434']),)))
+        self.assertEqual(run.code, 0, run.text)
+        self.assertIn('seed /config/ollama.base_urls/0: holds a private LAN or Docker address', run.text)
+
+    def test_refuses_a_schema_given_twice_or_not_at_all(self):
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            with self.assertRaises(SystemExit):
+                exporter.main(['--stdout'])
+            with self.assertRaises(SystemExit):
+                exporter.main(['--stdout', '--schema', str(self.schema_path)], schema_text='{}')
+        self.assertIn('give the schema once', err.getvalue())
 
     @unittest.skipUnless(shutil.which('pwsh'), 'needs PowerShell 7')
     def test_the_seed_passes_the_repo_secret_scan(self):

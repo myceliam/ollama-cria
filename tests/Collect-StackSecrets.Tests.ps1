@@ -8,6 +8,8 @@ BeforeDiscovery {
         docker info *> $null
         $DockerReady = ($LASTEXITCODE -eq 0)
     }
+    # The seed tests run the real exporter with the local Python (CI sets up 3.11).
+    $PythonReady = [bool](Get-Command python3, python -CommandType Application -ErrorAction SilentlyContinue)
 }
 
 BeforeAll {
@@ -21,12 +23,14 @@ BeforeAll {
     # under TestDrive, with a manifest and roots file pointing at it. Content is
     # always 'fake-' plus a GUID: nothing secret-shaped is ever written.
     function New-TestSetup {
-        param([switch]$WithVps, [string]$NtfyVolume, [string]$BoltVolume)
+        param([switch]$WithVps, [string]$NtfyVolume, [string]$BoltVolume, [switch]$WithOwui)
         $base = Join-Path $TestDrive ([guid]::NewGuid().ToString('n'))
         $setup = [pscustomobject]@{
             Pc           = Join-Path $base 'pc'
             Vps          = Join-Path $base 'vps'
             Staging      = Join-Path $base 'staging'
+            SeedOut      = Join-Path $base 'seed'
+            OwuiDb       = $null
             ManifestPath = Join-Path $base 'secrets.json'
             RootsPath    = Join-Path $base 'roots.json'
             Content      = @{}
@@ -71,6 +75,13 @@ BeforeAll {
             $rows.Add([ordered]@{ id = 'bolt-server-keys'; folder = '07'; location = 'bolt-data:server-keys.json'; kind = 'file'; required = $true; purpose = 'test' })
             $roots['bolt-data'] = [ordered]@{ kind = 'volume'; host = 'pc'; volume = $BoltVolume; purpose = 'test' }
         }
+        if ($WithOwui) {
+            $rows.Add([ordered]@{ id = 'owui-seed-secrets'; folder = '03'; location = 'owui-secrets:values.json'; kind = 'owui-seed'; required = $true; purpose = 'test' })
+            $roots['owui-secrets'] = [ordered]@{ kind = 'consumed'; host = 'pc'; consumer = 'test'; purpose = 'test' }
+            New-Item -ItemType Directory -Path $base -Force | Out-Null
+            $setup.OwuiDb = Join-Path $base 'webui.db'
+            New-FakeOwuiDb $setup.OwuiDb
+        }
         $setup.Manifest = [ordered]@{
             formatVersion = 1
             rows          = $rows
@@ -79,6 +90,20 @@ BeforeAll {
         $setup.Roots = [ordered]@{ formatVersion = 1; roots = $roots }
         Save-TestSetup $setup
         return $setup
+    }
+
+    # A fake OWUI 0.11.4 database, built by the Python tests' own builder
+    # (tests/python/test_export_owui_seed.py), with fake secrets made at run time.
+    function Get-TestPython {
+        @(if ($IsWindows) { 'python', 'python3' } else { 'python3', 'python' }) |
+            ForEach-Object { Get-Command $_ -CommandType Application -ErrorAction SilentlyContinue } |
+            Select-Object -First 1 -ExpandProperty Source
+    }
+
+    function New-FakeOwuiDb([string]$Path) {
+        $code = 'import sys; sys.path.insert(0, sys.argv[1]); import test_export_owui_seed as t; t.build_db(t.Path(sys.argv[2]), t.load_schema())'
+        & (Get-TestPython) -c $code (Join-Path $PSScriptRoot 'python') $Path
+        if ($LASTEXITCODE -ne 0) { throw 'could not build the fake OWUI database' }
     }
 
     function Save-TestSetup($Setup) {
@@ -98,6 +123,8 @@ BeforeAll {
             KeepOnFailure           = $KeepOnFailure
             SshCommand              = (Join-Path $script:Fakes 'fake-ssh.ps1')
             ScpCommand              = (Join-Path $script:Fakes 'fake-scp.ps1')
+            TailscaleCommand        = (Join-Path $script:Fakes 'fake-tailscale.ps1')
+            SeedOut                 = $Setup.SeedOut
         }
         foreach ($k in $Extra.Keys) { $params[$k] = $Extra[$k] }
         & $script:Tool @params
@@ -114,8 +141,11 @@ BeforeAll {
         param($Setup, [string]$Mode, [switch]$KeepOnFailure)
         $env:CRIA_FAKE_DOCKER = $Mode
         $env:CRIA_FAKE_STAGING = $Setup.Staging
+        $env:CRIA_FAKE_OWUI_DB = $Setup.OwuiDb
+        # The key the Python tests' builder encrypts Valves with (KEY there).
+        $env:FAKE_OWUI_KEY = 'test-only-key-' + ('k' * 20)
         try { Invoke-Collector $Setup -Execute -KeepOnFailure:$KeepOnFailure -Extra @{ DockerCommand = (Join-Path $script:Fakes 'fake-docker.ps1') } }
-        finally { Remove-Item Env:CRIA_FAKE_DOCKER, Env:CRIA_FAKE_STAGING -ErrorAction SilentlyContinue }
+        finally { Remove-Item Env:CRIA_FAKE_DOCKER, Env:CRIA_FAKE_STAGING, Env:CRIA_FAKE_OWUI_DB, Env:FAKE_OWUI_KEY -ErrorAction SilentlyContinue }
     }
 
     # Loads chosen functions from the collector without running it, so a
@@ -238,11 +268,21 @@ Describe 'Collect-StackSecrets' {
             $r.Rows | Should -BeNullOrEmpty
         }
 
-        It 'refuses rows for the OWUI seed root, which Export-OwuiSeed.py writes' {
+        It 'refuses <Why>, since only the seed export fills the OWUI secrets root' -ForEach @(
+            @{ Why = 'a file row for the OWUI secrets root'; Rows = @(@{ id = 'owui-key'; folder = '03'; location = 'owui-secrets:openai'; kind = 'file' }); Expect = "its row must have kind 'owui-seed'" }
+            @{ Why = 'a seed row on another root'; Rows = @(@{ id = 'owui-x'; folder = '01'; location = 'stack:seed.json'; kind = 'owui-seed' }); Expect = "kind 'owui-seed' is only for a 'consumed' root" }
+            @{ Why = 'two seed rows'; Rows = @(@{ id = 'owui-a'; folder = '03'; location = 'owui-secrets:a.json'; kind = 'owui-seed' }, @{ id = 'owui-b'; folder = '03'; location = 'owui-secrets:b.json'; kind = 'owui-seed' }); Expect = "only one row may have kind 'owui-seed'" }
+        ) {
             $script:S.Roots.roots['owui-secrets'] = [ordered]@{ kind = 'consumed'; host = 'pc'; consumer = 'tools/Import-OwuiSeed.py'; purpose = 'test' }
-            $script:S.Manifest.rows.Add([ordered]@{ id = 'owui-key'; folder = '03'; location = 'owui-secrets:openai'; kind = 'file'; required = $true; purpose = 'test' })
+            foreach ($row in $Rows) {
+                $newRow = [ordered]@{ required = $true; purpose = 'test' }
+                foreach ($k in $row.Keys) { $newRow[$k] = $row[$k] }
+                $script:S.Manifest.rows.Add($newRow)
+            }
             Save-TestSetup $script:S
-            (Invoke-Collector $script:S).Problems | Should -Match 'written by Export-OwuiSeed.py'
+            $r = Invoke-Collector $script:S
+            $r.IsValid | Should -BeFalse
+            ($r.Problems -join "`n") | Should -Match ([regex]::Escape($Expect))
         }
 
         It 'refuses an unknown field (no free text that could carry a secret)' {
@@ -586,6 +626,111 @@ Describe 'Collect-StackSecrets' {
             $row.mode | Should -Be '0640'
             $row.owner | Should -Be '1000'
             $row.group | Should -Be '1000'
+        }
+    }
+
+    Context 'capturing the OWUI seed, with stand-ins for docker and tailscale' -Skip:(-not $PythonReady) {
+        BeforeAll {
+            # Built at run time, as in the Python tests, so no literal lands in a file.
+            $script:OpenAi = 'sk-' + ('A' * 40)
+            $script:PcIp = @('100', '64', '0', '7') -join '.'
+            $script:NoTools = @{ DockerCommand = $script:Missing; TailscaleCommand = $script:Missing; SshCommand = $script:Missing; ScpCommand = $script:Missing }
+        }
+        BeforeEach { $script:S = New-TestSetup -WithOwui }
+
+        It 'puts the seed secrets in folder 03 and writes a seed that holds none of them' {
+            $r = Invoke-WithFakeDocker $script:S 'good'
+            $r.Problems | Should -BeNullOrEmpty
+            ($r.Rows | Where-Object Id -EQ 'owui-seed-secrets').Status | Should -Be 'collected'
+            Get-ZipEntryName $r.ZipPath | Should -Contain '03/owui-secrets/values.json'
+            $secrets = Get-Content -LiteralPath (Join-Path $r.RunFolder 'bundle/03/owui-secrets/values.json') -Raw | ConvertFrom-Json -AsHashtable
+            $secrets.owui_seed_secrets | Should -Be 1
+            $secrets.refs['config/openai.api_keys'][0] | Should -BeExactly $script:OpenAi
+            $r.SeedOut | Should -Be $script:S.SeedOut
+            $r.SeedFiles | Should -Be 12
+            $r.SeedSummary | Should -Match '^seed exported: config [0-9]+'
+            $files = @(Get-ChildItem -LiteralPath $script:S.SeedOut -File)
+            $files | Should -HaveCount 12
+            $text = ($files | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw }) -join "`n"
+            $text | Should -Not -Match ([regex]::Escape($script:OpenAi))
+            $text | Should -Not -Match ([regex]::Escape($script:PcIp))
+            $text | Should -Match '\{\{PC_TS_IP\}\}'
+            $provenance = Get-Content -LiteralPath (Join-Path $script:S.SeedOut 'provenance.json') -Raw | ConvertFrom-Json
+            $provenance.image_digest | Should -Match '^ghcr\.io/open-webui/open-webui@sha256:f{64}$'
+            foreach ($name in 'PC_TS_IP', 'PC_TS_IP6', 'PC_TS_NAME', 'VPS_TS_IP', 'FOLD_TS_NAME', 'TS_DOMAIN') { $provenance.endpoints | Should -Contain $name }
+            @($provenance.endpoints | Where-Object { $_ -like 'GB_*' -or $_ -like 'EXIT*' }) | Should -BeNullOrEmpty
+            # The same check a restore runs, over the bundle as written.
+            $check = & $script:MapTool -MapPath (Join-Path $r.RunFolder 'bundle/00-RESTORE-MAP.json') -RootsPath $script:S.RootsPath `
+                -FoldersPath (Join-Path $script:Manifests 'bundle-folders.json') -InventoryPath $script:S.ManifestPath -BundleRoot (Join-Path $r.RunFolder 'bundle')
+            $check.Problems | Should -BeNullOrEmpty
+        }
+
+        It 'replaces an earlier seed and leaves none of its files behind' {
+            New-Item -ItemType Directory -Path $script:S.SeedOut | Out-Null
+            Set-Content -LiteralPath (Join-Path $script:S.SeedOut 'old_table.json') -Value '[]'
+            Set-Content -LiteralPath (Join-Path $script:S.SeedOut 'tool.json') -Value 'old'
+            $r = Invoke-WithFakeDocker $script:S 'good'
+            $r.Problems | Should -BeNullOrEmpty
+            Test-Path -LiteralPath (Join-Path $script:S.SeedOut 'old_table.json') | Should -BeFalse
+            Get-Content -LiteralPath (Join-Path $script:S.SeedOut 'tool.json') -Raw | Should -Match 'brave_search'
+            @(Get-ChildItem -LiteralPath $script:S.SeedOut) | Should -HaveCount 12
+        }
+
+        It 'plans without docker or tailscale, and refuses a -SeedOut that holds anything else' {
+            $r = Invoke-Collector $script:S -Extra $script:NoTools
+            $r.Problems | Should -BeNullOrEmpty
+            ($r.Rows | Where-Object Id -EQ 'owui-seed-secrets').Status | Should -Be 'checked when collecting'
+            New-Item -ItemType Directory -Path $script:S.SeedOut | Out-Null
+            Set-Content -LiteralPath (Join-Path $script:S.SeedOut 'notes.txt') -Value 'mine'
+            $r = Invoke-Collector $script:S -Extra $script:NoTools
+            $r.IsValid | Should -BeFalse
+            $r.Problems | Should -Contain "seed: -SeedOut holds 'notes.txt', which is not part of a seed; move it, or choose another -SeedOut"
+        }
+
+        It 'stops when the export stops, passes its problems on, and writes nothing' {
+            $r = Invoke-WithFakeDocker $script:S 'seed-stop'
+            $r.IsValid | Should -BeFalse
+            $r.Problems | Should -Contain 'seed: OWUI version is 0.0.1, schema.json is for 0.11.4 (C-40)'
+            $r.Problems | Should -Contain "row 'owui-seed-secrets': failed (the seed export stopped; see its problems)"
+            Test-Path -LiteralPath $script:S.SeedOut | Should -BeFalse
+            $r.RunFolder | Should -BeNullOrEmpty
+        }
+
+        It 'counts any other error output from the export and never shows it' {
+            $r = Invoke-WithFakeDocker $script:S 'seed-noise'
+            $r.Problems | Should -BeNullOrEmpty
+            $r.Warnings | Should -Contain 'seed: 1 other line(s) of error output from the export were not shown, because they could hold a value'
+            ($r | ConvertTo-Json -Depth 6) | Should -Not -Match ([regex]::Escape('sk-' + ('N' * 40)))
+        }
+
+        It 'refuses a seed that holds a value from the secrets file' {
+            $r = Invoke-WithFakeDocker $script:S 'seed-leak'
+            $r.Problems | Should -Contain "row 'owui-seed-secrets': failed (seed file prompt.json holds the value of a secret reference)"
+            Test-Path -LiteralPath $script:S.SeedOut | Should -BeFalse
+            $r.RunFolder | Should -BeNullOrEmpty
+        }
+
+        It 'writes no seed, and keeps no bundle, when the repo secret scan finds something in it' {
+            $r = Invoke-WithFakeDocker $script:S 'seed-scan'
+            ($r.Problems -join "`n") | Should -Match "seed: the secret scan found 'GitHub token' in prompt\.json line [0-9]+; the seed was not written to -SeedOut"
+            Test-Path -LiteralPath $script:S.SeedOut | Should -BeFalse
+            $r.RunFolder | Should -BeNullOrEmpty
+        }
+
+        It 'does not start when OWUI is not running' {
+            $r = Invoke-WithFakeDocker $script:S 'owui-stopped'
+            $r.Problems | Should -Contain "seed: container 'open-webui' is not running; the seed is read from the running OWUI"
+            Test-Path -LiteralPath $script:S.Staging | Should -BeFalse
+        }
+
+        It 'does not start when <Why>' -ForEach @(
+            @{ Why = 'Tailscale is not running'; Mode = 'down'; Expect = "seed: 'tailscale status --json' failed; is Tailscale running and signed in?" }
+            @{ Why = 'the VPS is not in the tailnet'; Mode = 'no-vps'; Expect = "seed: expected one node named 'vps' in the tailnet, found 0" }
+        ) {
+            $env:CRIA_FAKE_TAILSCALE = $Mode
+            try { $r = Invoke-WithFakeDocker $script:S 'good' } finally { Remove-Item Env:CRIA_FAKE_TAILSCALE }
+            $r.Problems | Should -Contain $Expect
+            Test-Path -LiteralPath $script:S.Staging | Should -BeFalse
         }
     }
 

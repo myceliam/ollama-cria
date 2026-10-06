@@ -15,7 +15,7 @@
     "03": {
       "kind": "consumed",
       "host": "pc",
-      "holds": "OWUI secret values the seed refers to; written by Export-OwuiSeed.py (Module 3)"
+      "holds": "OWUI secret values the seed refers to; exported by the collector with Export-OwuiSeed.py, read by Import-OwuiSeed.py in Stage 7"
     },
     "04": {
       "kind": "path",

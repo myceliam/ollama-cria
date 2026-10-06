@@ -10,7 +10,7 @@
 | **The guide** | [`docs/RESTORE.md`](docs/RESTORE.md) (v0.3, ledger `AICL-0132`) |
 | **Status** | 🚧 Being built module by module. Nothing here has been run against a real rebuild yet. |
 | **Secrets** | **None in this repo, ever.** They travel in one bundle kept in Bitwarden. CI scans every file. |
-| **Reviewers** | Claude builds; ChatGPT reviews adversarially; Antigravity checks on the PC; Liam signs off. |
+| **Checks** | Claude builds and reviews its own work before every push; CI runs every test on Windows and Linux; Liam signs off anything that runs against the live machines. (External review rounds ended on 6 October 2026.) |
 
 ---
 
@@ -43,15 +43,16 @@ Built in this order: the **capture side first**, because a restore script can be
 
 | # | Module | What it does | Status |
 |---|---|---|---|
-| 1 | `tools/Test-RecoveryPath.ps1` | The one path check every stage uses before it writes, copies, extracts or deletes anything | 🔍 |
-| 1 | `manifests/schemas/restore-map.schema.json`, `manifests/recovery-roots.json`, `tools/Test-RestoreMap.ps1` | The versioned restore-map format the collector writes and the restorer reads | 🔍 |
-| 1 | `tools/Test-NoSecrets.ps1` | CI guard: refuses secret-shaped strings, private addresses and forbidden files | 🔍 |
-| 2 | `manifests/secrets.json`, `manifests/bundle-folders.json` | The secret inventory (names and logical locations only, never values) and which root each bundle folder restores to | 🚧 |
-| 2 | `tools/Collect-StackSecrets.ps1` | Rewritten collector: plans offline by default; with `-Execute` builds a protected bundle, its restore map and the ZIP | 🚧 |
-| 3 | `tools/Export-OwuiSeed.py`, `manifests/owui-seed/schema.json` | OWUI functional seed exporter, run inside the OWUI container: one read-only snapshot, an allowlist where anything unknown stops the export, Valves decrypted with OWUI's own codec, secrets moved to references for bundle folder 03 | 🚧 |
-| 4+ | Stage modules and the controller | `Invoke-StackRecovery.ps1` and `windows/stages/*`, `linux/stages/*` | ⏳ |
+| 1 | `tools/Test-RecoveryPath.ps1` | The one path check every stage uses before it writes, copies, extracts or deletes anything | ✅ |
+| 1 | `manifests/schemas/restore-map.schema.json`, `manifests/recovery-roots.json`, `tools/Test-RestoreMap.ps1` | The versioned restore-map format the collector writes and the restorer reads | ✅ |
+| 1 | `tools/Test-NoSecrets.ps1` | CI guard: refuses secret-shaped strings, private addresses and forbidden files | ✅ |
+| 2 | `manifests/secrets.json`, `manifests/bundle-folders.json` | The secret inventory (names and logical locations only, never values) and which root each bundle folder restores to | ✅ |
+| 2 | `tools/Collect-StackSecrets.ps1` | Rewritten collector: plans offline by default; with `-Execute` builds a protected bundle, its restore map and the ZIP | ✅ |
+| 3 | `tools/Export-OwuiSeed.py`, `manifests/owui-seed/schema.json` | OWUI functional seed exporter, run inside the OWUI container: one read-only snapshot, an allowlist where anything unknown stops the export, Valves decrypted with OWUI's own codec, secrets moved to references for bundle folder 03 | ✅ |
+| 4 | `tools/Collect-StackSecrets.ps1` (seed row), `manifests/owui-seed/seed/` | The real capture in one run: the collector also exports the OWUI seed through `docker exec -i`, puts its secrets in bundle folder 03, scans the seed and writes it here for committing | 🚧 |
+| 5+ | Restore tools, stage modules and the controller | `Restore-StackSecrets.ps1`, `Import-OwuiSeed.py`, `Invoke-StackRecovery.ps1`, `windows/stages/*`, `linux/stages/*` | ⏳ |
 
-Status key: ✅ done and reviewed · 🔍 built, in review · 🚧 in progress · ⏳ not started.
+Status key: ✅ built, tests green on Windows and Linux · 🚧 in progress · ⏳ not started.
 
 ---
 
@@ -66,7 +67,7 @@ Invoke-Pester ./tests -Output Detailed
 python -m unittest discover -s tests/python -v                 # the seed exporter (Python 3.11, standard library only)
 ```
 
-CI runs all three on Windows and Linux for every push and pull request. The collector's VPS tests use stand-ins for `ssh` and `scp` (`tests/fakes/`) and run on Linux only; its volume tests need a Linux Docker engine, so they run on the Linux runner and are skipped elsewhere. The seed exporter's tests use a stand-in for OWUI's Valve codec (`tests/python/fake_owui/`) and a fake OWUI 0.11.4 database built at run time.
+CI runs all three on Windows and Linux for every push and pull request. The collector's VPS tests use stand-ins for `ssh` and `scp` (`tests/fakes/`) and run on Linux only; its volume tests need a Linux Docker engine, so they run on the Linux runner and are skipped elsewhere. The seed exporter's tests use a stand-in for OWUI's Valve codec (`tests/python/fake_owui/`) and a fake OWUI 0.11.4 database built at run time. The collector's seed tests run the real exporter through stand-ins for `docker` and `tailscale`, so they need Python on the path.
 
 ---
 
