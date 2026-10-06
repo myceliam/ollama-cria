@@ -224,6 +224,16 @@ Describe 'Test-NoSecrets' {
             Get-Finding $d | Should -BeNullOrEmpty
         }
 
+        It 'passes Tailscale''s whole range written as a network, but not a host in it' {
+            $d = New-ScanFolder
+            $net4 = (@('100', '64', '0', '0') -join '.') + '/10'
+            $net6 = 'fd7a:115c:' + 'a1e0::/48'
+            Save-Text $d 'guard.nft' "ip daddr { 10.0.0.0/8, $net4 } reject`nensure_rule -6 5260 to $net6 lookup 52`n" | Out-Null
+            Get-Finding $d | Should -BeNullOrEmpty
+            Save-Text $d 'host.nft' ("ip daddr " + (@('100', '64', '0', '1') -join '.') + "/32 accept`n") | Out-Null
+            (Get-Finding $d).Rule | Should -Contain 'tailnet IP (use {{PC_TS_IP}} or {{VPS_TS_IP}})'
+        }
+
         It 'still finds a tailnet address that only starts like the service address' {
             $d = New-ScanFolder
             Save-Text $d 'net.conf' ("a = " + ((@('100') * 3) -join '.') + ".101`n") | Out-Null
@@ -232,6 +242,37 @@ Describe 'Test-NoSecrets' {
     }
 
     Context 'secret-named settings' {
+        It 'passes <Name>, which only names a secret' -ForEach @(
+            @{ Name = 'a path setting'; Text = '"GOOGLE_CALENDAR_MCP_' + 'TOKEN_PATH": "/app/secrets/token.json",' }
+            @{ Name = 'the name of the variable that holds it'; Text = '"token_' + 'environment_variable": "WINDOWS_POWERSHELL_TOOL_' + 'TOKEN",' }
+            @{ Name = 'a call'; Text = '"client_' + 'secret_present": client_secret_available(),' }
+            @{ Name = 'a call on a dotted name'; Text = 'token = request.headers.get("X-Goog-Channel-' + 'Token")' }
+            @{ Name = 'a dotted name'; Text = '"token": settings.watch_' + 'token,' }
+            @{ Name = 'a keyword argument'; Text = 'include_watch_' + 'token_state=payload.include_watch_token_state,' }
+            @{ Name = 'a placeholder'; Text = 'OWUI_WEBHOOK_' + 'SECRET="paste-a-long-random-string-here"' }
+        ) {
+            $d = New-ScanFolder
+            Save-Text $d 'app.txt' "$Text`n" | Out-Null
+            Get-Finding $d | Should -BeNullOrEmpty
+        }
+
+        It 'passes JSON fields that name where a secret is' {
+            $d = New-ScanFolder
+            Save-Text $d 'cfg.json' ('{"env": {"GOOGLE_' + 'TOKEN_PATH": "/app/secrets/token.json", "token_' + 'environment_variable": "WINDOWS_POWERSHELL_TOOL_' + 'TOKEN", "api_' + 'key": "your-key-goes-here-please"}}' + "`n") | Out-Null
+            Get-Finding $d | Should -BeNullOrEmpty
+        }
+
+        It 'still finds a literal secret written <Name>' -ForEach @(
+            @{ Name = 'unquoted'; Text = 'api_' + 'key = ' + ('Zq7' * 8) }
+            @{ Name = 'quoted'; Text = '$api' + 'Key = "' + ('Zq7' * 8) + '"' }
+            @{ Name = 'under a name that does not say where it is'; Text = 'WATCH_' + 'TOKEN_VALUE' + ': "' + ('Zq7' * 8) + '"' }
+            @{ Name = 'in JSON'; Text = '{"watch_' + 'token' + '": "' + ('Zq7' * 8) + '"}' }
+        ) {
+            $d = New-ScanFolder
+            Save-Text $d 'app.txt' "$Text`n" | Out-Null
+            (Get-Finding $d).Rule | Should -Contain 'secret-named setting with a literal value'
+        }
+
         It 'finds a quoted passphrase in <Name>' -ForEach @(
             @{ Name = 'a .env file'; Text = 'DB_PASS' + 'WORD="correct horse battery staple"' }
             @{ Name = 'JSON'; Text = '"ntfy_pass' + 'word": "it''s a long one, really"' }

@@ -17,6 +17,13 @@
                                                      tailnet (shared in, or an
                                                      exit node)
       {{TS_DOMAIN}}                                  the MagicDNS suffix
+      {{STALE_TS_IP}}, {{STALE_TS_IP6}}              an address in Tailscale's
+                                                     range that no node has
+                                                     now; it renders as a
+                                                     documentation address
+                                                     (RFC 5737, RFC 3849) that
+                                                     goes nowhere, as the old
+                                                     one already does
 
     Get-TailnetEndpoint reads them from 'tailscale status --json'; the same
     names come out on the rebuilt machines as long as the nodes keep their
@@ -43,6 +50,13 @@ $ErrorActionPreference = 'Stop'
 # {{.Names}}, Jinja) is never touched.
 $script:EndpointName = '^(?:[A-Z][A-Z0-9_]*_TS_(?:IP|IP6|NAME)|TS_DOMAIN)$'
 $script:Placeholder = '\{\{([A-Z][A-Z0-9_]*)\}\}'
+
+# Any address left in Tailscale's ranges once every node's own is swapped.
+# Tailscale's service address and the ranges written as networks are the
+# same in every tailnet, so they stay (tools/Test-NoSecrets.ps1 passes them).
+$script:StaleIp = [regex]::new('\b(?!100\.100\.100\.100\b)(?!100\.64\.0\.0/)100\.(?:6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}\b')
+$script:StaleIp6 = [regex]::new('\b(?!fd7a:115c:a1e0::53\b)(?!fd7a:115c:a1e0::/)fd7a:115c:a1e0:[0-9a-f:]*[0-9a-f]', [Text.RegularExpressions.RegexOptions]::IgnoreCase)
+$script:StaleValue = @{ STALE_TS_IP = '192.0.2.1'; STALE_TS_IP6 = '2001:db8::1' }
 
 # Where templated files can live: folders copied to a machine at restore
 # time, and the manifests the stages read. The OWUI seed is rendered by its
@@ -152,10 +166,12 @@ function Get-StackPlaceholder {
 function ConvertTo-StackTemplate {
     <#
     .SYNOPSIS
-        Swaps every endpoint value in -Text for its {{NAME}}. Returns the new
-        text and the placeholders it now holds. Throws, naming the
-        placeholder, when the text already holds one, because it would be
-        filled in at restore time.
+        Swaps every endpoint value in -Text for its {{NAME}}, then any other
+        address in Tailscale's ranges for {{STALE_TS_IP}} or
+        {{STALE_TS_IP6}}. Returns the new text, the placeholders it now
+        holds and the line numbers of the stale addresses. Throws, naming
+        the placeholder, when the text already holds one, because it would
+        be filled in at restore time.
     #>
     [CmdletBinding()]
     [OutputType([pscustomobject])]
@@ -178,14 +194,21 @@ function ConvertTo-StackTemplate {
         if (-not $value) { continue }
         $Text = (Get-EndpointRegex $value).Replace($Text, "{{$key}}")
     }
-    return [pscustomobject]@{ Text = $Text; Placeholders = (Get-StackPlaceholder -Text $Text) }
+    $staleLines = [Collections.Generic.SortedSet[int]]::new()
+    foreach ($m in @($script:StaleIp.Matches($Text)) + @($script:StaleIp6.Matches($Text))) {
+        [void]$staleLines.Add($Text.Substring(0, $m.Index).Split("`n").Count)
+    }
+    $Text = $script:StaleIp.Replace($Text, '{{STALE_TS_IP}}')
+    $Text = $script:StaleIp6.Replace($Text, '{{STALE_TS_IP6}}')
+    return [pscustomobject]@{ Text = $Text; Placeholders = (Get-StackPlaceholder -Text $Text); StaleLines = [int[]]@($staleLines) }
 }
 
 function ConvertFrom-StackTemplate {
     <#
     .SYNOPSIS
-        Fills every endpoint placeholder in -Text from -Endpoint (Stage 4a).
-        Throws, naming it, on a placeholder with no value.
+        Fills every endpoint placeholder in -Text from -Endpoint (Stage 4a),
+        and a stale one with its documentation address. Throws, naming it,
+        on a placeholder with no value.
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -197,15 +220,18 @@ function ConvertFrom-StackTemplate {
         [Parameter(Mandatory)]
         [Collections.IDictionary]$Endpoint
     )
+    $values = @{}
+    foreach ($k in $script:StaleValue.Keys) { $values[$k] = $script:StaleValue[$k] }
+    foreach ($k in $Endpoint.Keys) { $values[[string]$k] = [string]$Endpoint[$k] }
     foreach ($name in (Get-StackPlaceholder -Text $Text)) {
-        if (-not $Endpoint.Contains($name) -or -not [string]$Endpoint[$name]) {
+        if (-not $values.ContainsKey($name) -or -not $values[$name]) {
             throw [InvalidOperationException]::new("{{$name}} has no value; is that node in the tailnet under the same name?")
         }
     }
     return [regex]::Replace($Text, $script:Placeholder, {
             param($m)
             $name = $m.Groups[1].Value
-            if ($name -match $script:EndpointName) { return [string]$Endpoint[$name] }
+            if ($name -match $script:EndpointName) { return $values[$name] }
             return $m.Value
         })
 }

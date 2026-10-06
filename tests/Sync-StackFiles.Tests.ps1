@@ -123,19 +123,28 @@ Describe 'Sync-StackFiles.ps1 on the PC side' {
         Test-Path (Join-Path $c.Repo 'stack') | Should -BeFalse
     }
 
-    It 'stops on a tailnet address that is no node any more' {
-        $c = New-Case -PcFiles @{ 'relay.py' = "VPS = '$($script:StrayIp)'`n" }
+    It 'stores a tailnet address no node has as a stale placeholder, and says where' {
+        $six = 'fd7a:115c:' + 'a1e0::99'
+        $c = New-Case -PcFiles @{ 'relay.py' = "# note`nVPS = '$($script:StrayIp)'`nV6 = '[$six]:80'`n" }
         $r = Invoke-Sync $c -Execute
-        $r.IsValid | Should -BeFalse
-        $r.Problems | Should -Contain 'stack/relay.py:1: tailnet IP (use {{PC_TS_IP}} or {{VPS_TS_IP}})'
+        $r.IsValid | Should -BeTrue
+        Get-RepoText $c 'stack/relay.py' | Should -Be "# note`nVPS = '{{STALE_TS_IP}}'`nV6 = '[{{STALE_TS_IP6}}]:80'`n"
+        $r.Warnings | Should -Contain 'stack/relay.py:2: a tailnet address no node has now; stored as a stale placeholder, which renders as an address that goes nowhere'
+        $r.Warnings | Should -Contain 'stack/relay.py:3: a tailnet address no node has now; stored as a stale placeholder, which renders as an address that goes nowhere'
     }
 
     It 'does not template part of a longer address' {
         $longer = $script:PcIp + '0'
         $c = New-Case -PcFiles @{ 'a.yml' = "x: $longer`n" }
-        $r = Invoke-Sync $c
-        $r.IsValid | Should -BeFalse
-        $r.Problems | Should -Contain 'stack/a.yml:1: tailnet IP (use {{PC_TS_IP}} or {{VPS_TS_IP}})'
+        $r = Invoke-Sync $c -Execute
+        Get-RepoText $c 'stack/a.yml' | Should -Be "x: {{STALE_TS_IP}}`n"
+    }
+
+    It 'keeps Tailscale''s ranges written as networks' {
+        $net = (@('100', '64', '0', '0') -join '.') + '/10'
+        $c = New-Case -PcFiles @{ 'guard.nft' = "ip daddr { $net } reject`n" }
+        (Invoke-Sync $c -Execute).Warnings | Should -BeNullOrEmpty
+        Get-RepoText $c 'stack/guard.nft' | Should -Be "ip daddr { $net } reject`n"
     }
 
     It 'refuses a file that already holds an endpoint placeholder' {
@@ -229,11 +238,15 @@ Describe 'StackCapture.psm1' {
     }
 
     It 'templates whole addresses and names only, in any case, and renders them back' {
-        $text = "a $($script:PcIp) b $($script:PcIp)0 c $($script:PcName.ToUpperInvariant()) d my$($script:PcName) e"
+        $text = "a $($script:PcIp) b 1$($script:PcIp) c $($script:PcName.ToUpperInvariant()) d my$($script:PcName) e"
         $t = ConvertTo-StackTemplate -Text $text -Endpoint $script:Endpoint
-        $t.Text | Should -Be "a {{PC_TS_IP}} b $($script:PcIp)0 c {{PC_TS_NAME}} d mypc.{{TS_DOMAIN}} e"
+        $t.Text | Should -Be "a {{PC_TS_IP}} b 1$($script:PcIp) c {{PC_TS_NAME}} d mypc.{{TS_DOMAIN}} e"
         $t.Placeholders | Should -Be @('PC_TS_IP', 'PC_TS_NAME', 'TS_DOMAIN')
-        ConvertFrom-StackTemplate -Text $t.Text -Endpoint $script:Endpoint | Should -Be "a $($script:PcIp) b $($script:PcIp)0 c $($script:PcName) d my$($script:PcName) e"
+        ConvertFrom-StackTemplate -Text $t.Text -Endpoint $script:Endpoint | Should -Be "a $($script:PcIp) b 1$($script:PcIp) c $($script:PcName) d my$($script:PcName) e"
+    }
+
+    It 'renders a stale placeholder as a documentation address' {
+        ConvertFrom-StackTemplate -Text '{{STALE_TS_IP}} [{{STALE_TS_IP6}}]' -Endpoint $script:Endpoint | Should -Be '192.0.2.1 [2001:db8::1]'
     }
 
     It 'renders only endpoint placeholders and fails on one with no value' {

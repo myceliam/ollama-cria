@@ -84,6 +84,11 @@ $forbiddenNames = @(
 )
 $allowedNames = '\.example$|\.sample$'
 
+# Setting names that say where a secret is, or whether it is set, rather
+# than holding it; and the start of a placeholder value.
+$locatorName = '(?<!_(?:PATH|FILE|DIR|ENV|VAR|VARIABLE|NAME|PRESENT|CONFIGURED|SET|ENABLED|HEADER))'
+$placeholderWord = '(?:paste|your[-_]|change[-_]?me|replace|example|placeholder|dummy|insert|xxx)'
+
 # Quantifiers are bounded so a long line cannot make a rule backtrack for minutes.
 $lineRules = @(
     @{ Rule = 'private key block'; Pattern = '-----BEGIN [A-Z ]*PRIVATE KEY-----' }
@@ -102,7 +107,12 @@ $lineRules = @(
     @{ Rule = 'JWT'; Pattern = '\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}' }
     @{ Rule = 'Discord webhook URL'; Pattern = 'discord(app)?\.com/api/webhooks/[0-9]+/[A-Za-z0-9_-]{20,}' }
     @{ Rule = 'password in a URL'; Pattern = '[a-z][a-z0-9+.-]{0,31}://[^/\s:@''"]+:[^/\s@''"]+@' }
-    @{ Rule = 'secret-named setting with a literal value'; Pattern = '(?i)\b[A-Z0-9_]{0,64}(SECRET|TOKEN|PASSWORD|PASSWD|PASSPHRASE|API_?KEY|PRIVATE_?KEY|PRESHARED_?KEY)[A-Z0-9_]{0,64}["'']?\s*[:=]\s*["'']?[A-Za-z0-9+/=_.-]{16,}' }
+    # Not a secret, so it passes: a setting whose name says it holds where a
+    # secret is rather than the secret (TOKEN_PATH, ..._FILE, ..._ENV,
+    # token_environment_variable, client_secret_present); an unquoted value
+    # that is code (a call, or a dotted name such as settings.watch_token);
+    # and a quoted placeholder ("paste-...", "your-...", "changeme").
+    @{ Rule = 'secret-named setting with a literal value'; Pattern = '(?i)\b[A-Z0-9_]{0,64}(SECRET|TOKEN|PASSWORD|PASSWD|PASSPHRASE|API_?KEY|PRIVATE_?KEY|PRESHARED_?KEY)[A-Z0-9_]{0,64}' + $locatorName + '["'']?\s*[:=]\s*(?:["''](?!' + $placeholderWord + ')|(?![A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\s*\()(?![A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+(?![A-Za-z0-9+/=_-])))[A-Za-z0-9+/=_.-]{16,}' }
     # Quoted values the rule above misses: 8 or more characters with a space or
     # punctuation other than : / \ in them (a passphrase, not a path or a
     # 'root:relative' location). Placeholders ({{X}}, ${X}, $x, <x>, %X%) pass.
@@ -113,9 +123,11 @@ $lineRules = @(
     @{ Rule = 'Civitai key'; Pattern = '(?i)\bcivitai[A-Za-z0-9_]{0,32}["'']?\s*[:=]\s*["'']?[A-Za-z0-9]{32,}' }
     # 100.100.100.100 and fd7a:115c:a1e0::53 are Tailscale's own service
     # address (the MagicDNS resolver), the same in every tailnet, so they pass.
-    @{ Rule = 'tailnet IP (use {{PC_TS_IP}} or {{VPS_TS_IP}})'; Pattern = '\b(?!100\.100\.100\.100\b)100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}\b' }
+    # So does the whole range written as a network (100.64.0.0/10,
+    # fd7a:115c:a1e0::/48), which firewall rules and routes name.
+    @{ Rule = 'tailnet IP (use {{PC_TS_IP}} or {{VPS_TS_IP}})'; Pattern = '\b(?!100\.100\.100\.100\b)(?!100\.64\.0\.0/)100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}\b' }
     # Tailscale gives every node an IPv6 address in one fixed /48.
-    @{ Rule = 'tailnet IPv6 address'; Pattern = '(?i)\b(?!fd7a:115c:a1e0::53\b)fd7a:115c:a1e0:[0-9a-f]{0,4}:' }
+    @{ Rule = 'tailnet IPv6 address'; Pattern = '(?i)\b(?!fd7a:115c:a1e0::53\b)(?!fd7a:115c:a1e0::/)fd7a:115c:a1e0:[0-9a-f]{0,4}:' }
     @{ Rule = 'MagicDNS name'; Pattern = '(?i)\b[a-z0-9-]{1,63}\.[a-z0-9-]{1,63}\.ts\.net\b' }
 )
 
@@ -201,6 +213,7 @@ else {
 # field it sits under, however the file is laid out.
 $jsonOpaqueName = '^(?i)(keys?|auth|credentials?|bearer)$'
 $jsonTellingName = '(?i)(SECRET|TOKEN|PASSWORD|PASSWD|PASSPHRASE|API_?KEY|PRIVATE_?KEY|PRESHARED_?KEY)'
+$jsonLocatorName = '(?i)_(PATH|FILE|DIR|ENV|VAR|VARIABLE|NAME|PRESENT|CONFIGURED|SET|ENABLED|HEADER)$'
 function Get-JsonCredential($Node, [string]$Field, [bool]$Under) {
     # $Field is the nearest property name; $Under is true below a key,
     # keys, auth, credential or bearer property at any depth.
@@ -214,7 +227,7 @@ function Get-JsonCredential($Node, [string]$Field, [bool]$Under) {
         if ($Under -and $Node -match '^[A-Za-z0-9+/=_-]{32,}$') {
             [pscustomobject]@{ Value = $Node; Rule = 'opaque value under a key or credential field' }
         }
-        elseif ($Field -match $jsonTellingName -and $Node -match '^[A-Za-z0-9+/=_.-]{16,}$') {
+        elseif ($Field -match $jsonTellingName -and $Field -notmatch $jsonLocatorName -and $Node -match '^[A-Za-z0-9+/=_.-]{16,}$' -and $Node -notmatch "^(?i)$placeholderWord") {
             [pscustomobject]@{ Value = $Node; Rule = 'secret-named setting with a literal value' }
         }
     }

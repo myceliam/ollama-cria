@@ -30,8 +30,10 @@
       - No private addresses. Every tailnet IPv4 and IPv6 address and every
         MagicDNS name Tailscale reports becomes {{PC_TS_IP}},
         {{VPS_TS_NAME}}, {{TS_DOMAIN}} and so on (tools/StackCapture.psm1).
-        A file that already holds such a placeholder is refused, since it
-        would be filled in at restore time.
+        Any other address in Tailscale's ranges belongs to no node now; it
+        becomes {{STALE_TS_IP}} and is reported by file and line, since the
+        file points at nothing there today. A file that already holds such a
+        placeholder is refused, since it would be filled in at restore time.
       - No secrets. The templated files are written to a private temporary
         folder and scanned with tools/Test-NoSecrets.ps1, the same scan CI
         runs. Any finding (a secret-shaped string, a tailnet address that
@@ -299,6 +301,9 @@ function ConvertTo-RepoByte($Item, $Endpoint) {
     if ($text.Contains([char]0)) { $problems.Add("$($Item.Dest): binary (holds NUL bytes)"); return $null }
     try { $t = ConvertTo-StackTemplate -Text $text -Endpoint $Endpoint }
     catch { $problems.Add("$($Item.Dest): $($_.Exception.Message)"); return $null }
+    foreach ($n in $t.StaleLines) {
+        $warnings.Add("$($Item.Dest):${n}: a tailnet address no node has now; stored as a stale placeholder, which renders as an address that goes nowhere")
+    }
     $text = $t.Text -replace "`r`n", "`n"
     if ($Item.Dest -match $crlfTypes) { $text = $text -replace "`n", "`r`n" }
     $body = [Text.UTF8Encoding]::new($false).GetBytes($text)
