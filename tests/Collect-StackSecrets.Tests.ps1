@@ -658,6 +658,8 @@ Describe 'Collect-StackSecrets' {
             $provenance = Get-Content -LiteralPath (Join-Path $script:S.SeedOut 'provenance.json') -Raw | ConvertFrom-Json
             $provenance.image_digest | Should -Match '^ghcr\.io/open-webui/open-webui@sha256:f{64}$'
             foreach ($name in 'PC_TS_IP', 'PC_TS_IP6', 'PC_TS_NAME', 'VPS_TS_IP', 'FOLD_TS_NAME', 'TS_DOMAIN') { $provenance.endpoints | Should -Contain $name }
+            # A node from another domain (an exit node here) gets its own placeholders.
+            foreach ($name in 'EXT_GB_LON_WG_001_TS_IP', 'EXT_GB_LON_WG_001_TS_NAME') { $provenance.endpoints | Should -Contain $name }
             @($provenance.endpoints | Where-Object { $_ -like 'GB_*' -or $_ -like 'EXIT*' }) | Should -BeNullOrEmpty
             # The same check a restore runs, over the bundle as written.
             $check = & $script:MapTool -MapPath (Join-Path $r.RunFolder 'bundle/00-RESTORE-MAP.json') -RootsPath $script:S.RootsPath `

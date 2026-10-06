@@ -7,7 +7,10 @@ It reads webui.db in one read-only transaction and produces:
   * the seed: repo-safe JSON, one file per table, with no secrets and no
     ciphertext. Owner ids become "{{OWNER}}", tailnet addresses become the
     placeholders given with --endpoint, and every secret becomes a reference
-    {"$bundle": "<ref>"}.
+    {"$bundle": "<ref>"}. A secret value that also turns up inside other
+    text (a tool's source code with the key as a Valve default, a ComfyUI
+    workflow) is swapped there for {{BUNDLE:embedded/<ref>}}, so the
+    importer can put the exact text back.
   * the secrets: {ref: value} for bundle folder 03. Never commit these.
 
 The export stops, and writes nothing, when:
@@ -15,7 +18,11 @@ The export stops, and writes nothing, when:
   * the OWUI version or Alembic revision differs from schema.json (C-40);
   * a table, a column or a config key is not classified in schema.json (C-41);
   * an encrypted Valve cannot be decrypted with OWUI's own codec (C-39);
-  * a seeded row belongs to a user other than the single admin;
+  * a seeded row belongs to a user other than the single admin (an access
+    grant to another account is left out with a warning instead: that
+    account will not exist on the new install);
+  * a string already holds placeholder text the seed uses ({{OWNER}},
+    {{BUNDLE:...}} or an --endpoint name), so it could not come back exactly;
   * anything secret-shaped, any ciphertext, any secret value or any tailnet
     address is left in the seed after classification.
 
@@ -60,6 +67,10 @@ from pathlib import Path
 SEED_FORMAT = 1
 OWNER = '{{OWNER}}'
 SECRET_KEY = '$bundle'
+BUNDLE_MARK = '{{BUNDLE:%s}}'
+EMBEDDED = 'embedded/'
+PLACEHOLDER = re.compile(r'\{\{(BUNDLE:[^{}]*|[A-Z][A-Z0-9_]*)\}\}')
+IPV4 = re.compile(r'[0-9]{1,3}(\.[0-9]{1,3}){3}')
 DEFAULT_DB = '/app/backend/data/webui.db'
 
 # A name that holds a credential. Only a non-empty string, list or object
@@ -99,8 +110,10 @@ SHAPES = [
     ('password in a URL', r'[a-z][a-z0-9+.-]{0,31}://[^/\s:@\'"]+:[^/\s@\'"]+@'),
     ('bearer token', r'(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{20,}'),
     ('Fernet ciphertext (encrypted Valves)', r'\bgAAAAA[A-Za-z0-9_-]{40,}'),
-    ('tailnet IP', r'\b100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}\b'),
-    ('tailnet IPv6 address', r'(?i)\bfd7a:115c:a1e0:[0-9a-f]{0,4}:'),
+    # 100.100.100.100 and fd7a:115c:a1e0::53 are Tailscale's own service
+    # address (the MagicDNS resolver), the same in every tailnet, so they pass.
+    ('tailnet IP', r'\b(?!100\.100\.100\.100\b)100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}\b'),
+    ('tailnet IPv6 address', r'(?i)\b(?!fd7a:115c:a1e0::53\b)fd7a:115c:a1e0:[0-9a-f]{0,4}:'),
     ('MagicDNS name', r'(?i)\b[a-z0-9-]{1,63}\.[a-z0-9-]{1,63}\.ts\.net\b'),
 ]
 SHAPES = [(name, re.compile(rx)) for name, rx in SHAPES]
@@ -127,13 +140,41 @@ class Export:
         self.warnings: list[str] = []
         self.secrets: dict[str, object] = {}
         self.admin_id: str | None = None
+        self.patterns: dict[str, re.Pattern] = {}
 
     # ---- values ---------------------------------------------------------
 
-    def template(self, text: str) -> str:
+    def template(self, text: str, ref: str, check: bool = True) -> str:
+        if check and '{{' in text:
+            names = {name for name, _ in self.endpoints} | {'OWNER'}
+            for m in PLACEHOLDER.finditer(text):
+                name = m.group(1)
+                if name in names or name.startswith('BUNDLE:'):
+                    shown = '{{BUNDLE:...}}' if name.startswith('BUNDLE:') else '{{%s}}' % name
+                    self.problems.append(f'{ref}: already holds the placeholder text {shown}, so it could not be restored exactly')
+                    break
         for name, value in self.endpoints:
-            text = text.replace(value, '{{%s}}' % name)
+            if value in text:
+                text = self.pattern(value).sub(lambda _m, n=name: '{{%s}}' % n, text)
         return text
+
+    def pattern(self, value: str) -> re.Pattern:
+        """Where a value counts as itself: an address ending .1 is not the
+        start of one ending .15, and pc.<tailnet> is not the end of
+        mypc.<tailnet>, so a neighbouring address is never half-replaced (and
+        is still caught by the final scan). A name may follow a dot:
+        x.{{TS_DOMAIN}}."""
+        rx = self.patterns.get(value)
+        if rx is None:
+            v = re.escape(value)
+            if IPV4.fullmatch(value):
+                rx = re.compile(r'(?<![0-9.])' + v + r'(?![0-9]|\.[0-9])')
+            elif ':' in value:
+                rx = re.compile(r'(?<![0-9A-Fa-f:])' + v + r'(?![0-9A-Fa-f:])')
+            else:
+                rx = re.compile(r'(?<![A-Za-z0-9_-])' + v + r'(?![A-Za-z0-9_-])')
+            self.patterns[value] = rx
+        return rx
 
     def add_secret(self, ref: str, value) -> dict:
         if ref in self.secrets:
@@ -156,7 +197,7 @@ class Export:
     def clean(self, value, ref: str, overrides: dict | None = None):
         """Template strings and move secret-named fields to references."""
         if isinstance(value, str):
-            return self.template(value)
+            return self.template(value, ref)
         if isinstance(value, list):
             return [self.clean(v, f'{ref}/{i}') for i, v in enumerate(value)]
         if isinstance(value, dict):
@@ -224,7 +265,7 @@ class Export:
             if cls == 'owner':
                 out[col] = self.owner(value, ref)
             elif cls == 'safe':
-                out[col] = self.template(value) if isinstance(value, str) else value
+                out[col] = self.template(value, ref) if isinstance(value, str) else value
             elif cls == 'json':
                 out[col] = self.clean(self.parse(value, ref), ref)
             elif cls == 'valves':
@@ -381,14 +422,21 @@ class Export:
                 if m.get('group_id') not in seeded_ids['group']:
                     self.problems.append(f'group_member/{m.get("id")}: its group is not in the seed')
 
-            grants, dropped = [], 0
+            accounts = {r[0] for r in db.execute('SELECT id FROM "user"')}
+            grants, dropped, others, gone = [], 0, 0, 0
             for g in (dict(r) for r in db.execute('SELECT * FROM access_grant ORDER BY id')):
                 if g['resource_type'] not in GRANT_RESOURCES or g['resource_id'] not in seeded_ids.get(g['resource_type'], set()):
                     dropped += 1
                     continue
                 ref = f'access_grant/{g["id"]}'
+                if g['principal_type'] == 'user' and g['principal_id'] not in (None, '', self.admin_id):
+                    # Only the admin account is rebuilt; any other account
+                    # signs up afresh with a new id, so its shares are redone.
+                    others += 1
+                    gone += g['principal_id'] not in accounts
+                    continue
                 if g['principal_type'] == 'user':
-                    g['principal_id'] = self.owner(g['principal_id'], ref)
+                    pass  # the admin's own grant: its id becomes {{OWNER}} like any other copy
                 elif g['principal_type'] == 'group':
                     if g['principal_id'] not in seeded_ids['group']:
                         self.problems.append(f'{ref}: its group is not in the seed')
@@ -398,10 +446,15 @@ class Export:
             seed['access_grant'] = grants
             if dropped:
                 self.warnings.append(f'{dropped} access grant(s) left out: their resource is not in the seed')
+            if others:
+                self.warnings.append(f'{others} access grant(s) to accounts other than the admin left out '
+                                     f'({gone} of them to accounts that no longer exist); share again by hand after a restore')
 
             seed['user_settings'] = self.user_settings(admins[0]['settings'])
         finally:
             db.rollback()
+
+        self.embed_secrets(seed)
 
         seed['secret_refs'] = sorted(self.secrets)
         seed['provenance'] = {
@@ -420,10 +473,89 @@ class Export:
             raise Stop('')
         return seed
 
+    def secret_texts(self):
+        """(path, text) for every string of 8 or more characters in a secret
+        value, with the path inside the value; shorter ones are too common to
+        look for in other text."""
+        def walk(value, path):
+            if isinstance(value, str):
+                if len(value) >= 8:
+                    yield path, value
+            elif isinstance(value, list):
+                for i, v in enumerate(value):
+                    yield from walk(v, f'{path}/{i}')
+            elif isinstance(value, dict):
+                for k, v in sorted(value.items()):
+                    yield from walk(v, f'{path}/{k}')
+        for ref in sorted(self.secrets):
+            if not ref.startswith(EMBEDDED):
+                yield from walk(self.secrets[ref], ref)
+
+    def embed_secrets(self, seed: dict) -> None:
+        """Swap each secret value found inside other seed text for
+        {{BUNDLE:embedded/<path>}}, and put that value in the secrets file.
+
+        Seed text has its addresses templated already, so the templated form
+        of each value is what is looked for, and what is kept: the importer
+        fills the marker first and then renders the addresses, so the text
+        comes back exactly as it was, with the new install's addresses."""
+        forms: dict[str, str] = {}
+        raw: dict[str, tuple[str, str]] = {}
+        for path, value in self.secret_texts():
+            form = self.template(value, path, check=False)
+            if len(form) >= 8 and form not in forms:
+                forms[form] = EMBEDDED + path
+                raw[EMBEDDED + path] = (path, value)
+        if not forms:
+            return
+        ordered = sorted(forms.items(), key=lambda kv: (-len(kv[0]), kv[1]))
+        used: set[str] = set()
+
+        def swap(value):
+            if isinstance(value, str):
+                for form, ref in ordered:
+                    if form in value:
+                        value = value.replace(form, BUNDLE_MARK % ref)
+                        used.add(ref)
+                return value
+            if isinstance(value, list):
+                return [swap(v) for v in value]
+            if isinstance(value, dict):
+                if set(value) == {SECRET_KEY}:
+                    return value
+                return {k: swap(v) for k, v in value.items()}
+            return value
+
+        for name in ['config', 'user_settings'] + SEEDED_ORDER:
+            if name in seed:
+                seed[name] = swap(seed[name])
+        for form, ref in ordered:
+            if ref in used:
+                # The marker is filled before addresses are rendered, so the
+                # value itself must not hold placeholder text.
+                self.template(raw[ref][1], raw[ref][0])
+                self.add_secret(ref, form)
+
+    def seed_strings(self, seed: dict):
+        """Every string in the seed, with rows named by their id."""
+        for name, value in seed.items():
+            if name in SEEDED_ORDER and isinstance(value, list):
+                for i, row in enumerate(value):
+                    rid = row.get('id') if isinstance(row, dict) else None
+                    yield from self.strings(row, f'/{name}/{rid if isinstance(rid, (str, int)) else i}')
+            else:
+                yield from self.strings(value, f'/{name}')
+
     def final_scan(self, seed: dict) -> None:
         """Nothing secret-shaped, no ciphertext, no secret value, no tailnet address."""
-        values = sorted({v for v in self.walk_secret_strings(self.secrets.values()) if len(v) >= 8}, key=len, reverse=True)
-        for path, text in self.strings(seed, ''):
+        found = set()
+        for path, v in self.secret_texts():
+            found.add(v)
+            form = self.template(v, path, check=False)
+            if len(form) >= 8:
+                found.add(form)
+        values = sorted(found, key=len, reverse=True)
+        for path, text in self.seed_strings(seed):
             if self.admin_id and str(self.admin_id) in text:
                 self.problems.append(f'seed {path}: still holds the old admin id')
             for name, rx in SHAPES:
@@ -435,15 +567,6 @@ class Export:
                     break
             if LAN_ADDRESS.search(text):
                 self.warnings.append(f'seed {path}: holds a private LAN or Docker address; check it belongs in the repo')
-
-    def walk_secret_strings(self, items):
-        for item in items:
-            if isinstance(item, str):
-                yield item
-            elif isinstance(item, list):
-                yield from self.walk_secret_strings(item)
-            elif isinstance(item, dict):
-                yield from self.walk_secret_strings(item.values())
 
     def strings(self, value, path):
         if isinstance(value, str):

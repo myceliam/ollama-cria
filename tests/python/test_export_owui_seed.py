@@ -459,23 +459,97 @@ class ExportTests(unittest.TestCase):
 
     def test_stops_on_a_secret_shaped_value_under_a_safe_name(self):
         def plant(db):
-            db.execute("UPDATE tool SET content = ? WHERE id = 'local_subagent'", ('KEY = "' + OPENAI + '"\n',))
+            # A key the export has no reference for, so nothing can embed it.
+            db.execute("UPDATE tool SET content = ? WHERE id = 'local_subagent'", ('KEY = "sk-' + 'Q' * 40 + '"\n',))
         run = self.run_export(mutate=plant)
-        self.assert_stopped(run, 'seed /tool/1/content: API key (sk-) left after classification')
+        self.assert_stopped(run, 'seed /tool/local_subagent/content: API key (sk-) left after classification')
 
-    def test_stops_on_a_secret_value_that_reappears_elsewhere(self):
+    def test_a_secret_value_inside_other_text_becomes_a_bundle_marker(self):
+        # Tool code with the key as a Valve default, a workflow with a key in it.
         def plant(db):
-            db.execute("UPDATE skill SET content = ? WHERE id = 's1'", ('use ' + TOOLSERVER,))
+            db.execute("UPDATE skill SET content = ? WHERE id = 's1'", ('use ' + TOOLSERVER + ' and ' + OPENAI,))
+            db.execute("UPDATE tool SET content = ? WHERE id = 'brave_search'",
+                       ('class Valves:\n    BRAVE_API_KEY: str = "' + BRAVE + '"\n',))
         run = self.run_export(mutate=plant)
-        self.assert_stopped(run, 'seed /skill/0/content: contains the value of a secret reference')
+        self.assertEqual(run.code, 0, run.text)
+        skill = run.seed('skill')[0]['content']
+        self.assertEqual(skill, 'use {{BUNDLE:embedded/config/tool_server.connections/0/key}} and {{BUNDLE:embedded/config/openai.api_keys/0}}')
+        tool = {t['id']: t for t in run.seed('tool')}['brave_search']['content']
+        self.assertIn('BRAVE_API_KEY: str = "{{BUNDLE:embedded/config/web.search.brave_search_api_key}}"', tool)
+        secrets = json.loads(run.secrets_file.read_text(encoding='utf-8'))['refs']
+        self.assertEqual(secrets['embedded/config/tool_server.connections/0/key'], TOOLSERVER)
+        self.assertEqual(secrets['embedded/config/openai.api_keys/0'], OPENAI)
+        self.assertEqual(secrets['embedded/config/web.search.brave_search_api_key'], BRAVE)
+        self.assertEqual(sorted(secrets), run.seed('secret_refs'))
+        self.assert_no_secret_printed(run.seed_text())
+
+    def test_a_secret_holding_an_address_is_embedded_in_its_templated_form(self):
+        proxy = 'http://proxy-user:' + SUBAGENT_KEY + '@' + PC_IP + ':3128'
+        def plant(db):
+            db.execute("INSERT INTO config VALUES ('rag.youtube_loader_proxy_url', ?, 1)", (json.dumps(proxy),))
+            db.execute("UPDATE skill SET content = ? WHERE id = 's1'", ('fetch through ' + proxy,))
+        run = self.run_export(mutate=plant)
+        self.assertEqual(run.code, 0, run.text)
+        self.assertEqual(run.seed('skill')[0]['content'], 'fetch through {{BUNDLE:embedded/config/rag.youtube_loader_proxy_url}}')
+        secrets = json.loads(run.secrets_file.read_text(encoding='utf-8'))['refs']
+        self.assertEqual(secrets['config/rag.youtube_loader_proxy_url'], proxy)
+        self.assertEqual(secrets['embedded/config/rag.youtube_loader_proxy_url'], proxy.replace(PC_IP, '{{PC_TS_IP}}'))
+
+    def test_the_final_scan_still_catches_a_secret_value_left_in_the_seed(self):
+        export = exporter.Export(load_schema(), {'PC_TS_IP': PC_IP})
+        export.secrets = {'config/x': TOOLSERVER}
+        export.final_scan({'skill': [{'id': 's1', 'content': 'use ' + TOOLSERVER}]})
+        self.assertEqual(export.problems, ['seed /skill/s1/content: contains the value of a secret reference'])
+
+    def test_stops_on_text_that_already_holds_a_placeholder_the_seed_uses(self):
+        run = self.run_export(mutate=lambda db: db.execute(
+            "UPDATE skill SET content = ? WHERE id = 's1'", ('hello {{OWNER}} at {{PC_TS_IP}}, today is {{CURRENT_DATE}}',)))
+        self.assert_stopped(run, 'skill/s1/content: already holds the placeholder text {{OWNER}}, so it could not be restored exactly')
+        self.assertNotIn('CURRENT_DATE', run.text, "OWUI's own template variables are fine")
 
     def test_stops_on_a_tailnet_address_without_an_endpoint(self):
         run = self.run_export(endpoints=False)
         self.assert_stopped(run, 'tailnet IP left after classification')
 
+    def test_names_the_row_that_holds_a_stray_tailnet_address(self):
+        stray = '.'.join(['100', '90', '1', '2'])
+        run = self.run_export(mutate=lambda db: db.execute(
+            "UPDATE function SET content = ? WHERE id = 'ntfy_push'", (f'URL = "http://{stray}:80"\n',)))
+        self.assert_stopped(run, 'seed /function/ntfy_push/content: tailnet IP left after classification')
+        self.assertNotIn(stray, run.text)
+
+    def test_never_half_replaces_a_neighbouring_address(self):
+        near = PC_IP + '5'  # the PC's address with one more digit
+        run = self.run_export(mutate=lambda db: db.execute(
+            "UPDATE function SET content = ? WHERE id = 'ntfy_push'", (f'A = "{PC_IP}:80"\nB = "{near}:80"\n',)))
+        self.assert_stopped(run, 'seed /function/ntfy_push/content: tailnet IP left after classification')
+        self.assertNotIn(near, run.text)
+        domain = 'tn' + '.ts' + '.net'
+        export = exporter.Export(load_schema(), {'PC_TS_IP': PC_IP, 'PC_TS_NAME': 'pc.' + domain, 'TS_DOMAIN': domain})
+        self.assertEqual(export.template(f'{PC_IP} {near} {PC_IP}.', 'x'), '{{PC_TS_IP}} ' + near + ' {{PC_TS_IP}}.')
+        self.assertEqual(export.template(f'pc.{domain} mypc.{domain}', 'x'), '{{PC_TS_NAME}} mypc.{{TS_DOMAIN}}')
+
+    def test_passes_tailscales_own_service_address(self):
+        quad = '.'.join(['100'] * 4)
+        run = self.run_export(mutate=lambda db: db.execute(
+            "UPDATE function SET content = ? WHERE id = 'ntfy_push'", (f'DNS = "{quad}"\nDNS6 = "fd7a:115c:a1e0::53"\n',)))
+        self.assertEqual(run.code, 0, run.text)
+        self.assertIn(quad, run.seed('function')[0]['content'])
+
     def test_stops_on_a_row_owned_by_another_user(self):
         run = self.run_export(mutate=lambda db: db.execute("UPDATE skill SET user_id = 'someone-else'"))
         self.assert_stopped(run, 'skill/s1/user_id: belongs to a user other than the admin')
+
+    def test_leaves_out_grants_to_other_accounts_with_a_warning(self):
+        def plant(db):
+            db.execute('INSERT INTO "user" (id, role, name) VALUES (?, ?, ?)', ('friend-0003', 'user', 'Friend'))
+            db.execute('INSERT INTO access_grant VALUES (?,?,?,?,?,?,?)', ('a6', 'model', 'qwen-helper', 'user', 'friend-0003', 'read', 1))
+            db.execute('INSERT INTO access_grant VALUES (?,?,?,?,?,?,?)', ('a7', 'tool', 'brave_search', 'user', 'deleted-0004', 'read', 1))
+        run = self.run_export(mutate=plant)
+        self.assertEqual(run.code, 0, run.text)
+        self.assertEqual([g['id'] for g in run.seed('access_grant')], ['a1', 'a2', 'a5'])
+        self.assertIn('2 access grant(s) to accounts other than the admin left out (1 of them to accounts that no longer exist)', run.text)
+        self.assertNotIn('friend-0003', run.seed_text())
 
     def test_stops_unless_there_is_exactly_one_admin(self):
         run = self.run_export(mutate=lambda db: db.execute(

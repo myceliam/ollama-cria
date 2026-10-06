@@ -5,7 +5,7 @@
 #   down    fails, as when Tailscale is not running
 #   no-vps  the VPS is not in the tailnet
 #   anything else: this PC, the VPS, a phone, and an exit node that belongs
-#   to another domain (it must be left out)
+#   to another domain (named EXT_ by the collector)
 if ($env:CRIA_FAKE_TAILSCALE -eq 'down') { exit 1 }
 $domain = 'example-tailnet' + '.ts' + '.net'
 function Get-FakeNode([string]$Label, [string]$Last) {

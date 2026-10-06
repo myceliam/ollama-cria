@@ -204,7 +204,7 @@ Describe 'Test-NoSecrets' {
         It 'finds a tailnet IPv6 address written as <Name>' -ForEach @(
             @{ Name = 'compressed'; Text = 'fd7a:115c:' + 'a1e0::1' }
             @{ Name = 'full'; Text = 'FD7A:115C:' + 'A1E0:AB12:4843:CD96:6258:B240' }
-            @{ Name = 'a URL host'; Text = 'http://[fd7a:115c:' + 'a1e0::53]:8080/' }
+            @{ Name = 'a URL host'; Text = 'http://[fd7a:115c:' + 'a1e0::5c]:8080/' }
         ) {
             $d = New-ScanFolder
             Save-Text $d 'net.conf' "host = $Text`n" | Out-Null
@@ -215,6 +215,19 @@ Describe 'Test-NoSecrets' {
             $d = New-ScanFolder
             Save-Text $d 'net.conf' "a = fd00::1`nb = 2001:db8::1`nc = fd7a:115c:a1e0 /48 is the tailnet range`n" | Out-Null
             Get-Finding $d | Should -BeNullOrEmpty
+        }
+
+        It 'passes Tailscale''s own service address, the same in every tailnet' {
+            $d = New-ScanFolder
+            $quad = (@('100') * 4) -join '.'
+            Save-Text $d 'net.conf' "dns = $quad`ndns6 = [fd7a:115c:a1e0::53]:53`n" | Out-Null
+            Get-Finding $d | Should -BeNullOrEmpty
+        }
+
+        It 'still finds a tailnet address that only starts like the service address' {
+            $d = New-ScanFolder
+            Save-Text $d 'net.conf' ("a = " + ((@('100') * 3) -join '.') + ".101`n") | Out-Null
+            (Get-Finding $d).Rule | Should -Contain 'tailnet IP (use {{PC_TS_IP}} or {{VPS_TS_IP}})'
         }
     }
 

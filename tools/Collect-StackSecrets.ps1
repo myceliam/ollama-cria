@@ -790,10 +790,12 @@ function Get-NodeLabel($Node) {
 }
 
 function Get-TailnetEndpoint {
-    # Every tailnet address and MagicDNS name in this tailnet, by placeholder
-    # name: this machine is PC, the -SshHost node is VPS, any other node is
-    # named after its first label. The exporter swaps each value for its
-    # {{NAME}}, so the seed carries none of them; Stage 4a renders them back.
+    # Every tailnet address and MagicDNS name Tailscale reports, by placeholder
+    # name: this machine is PC, the -SshHost node is VPS, any other node in
+    # this tailnet is named after its first label, and a node from outside it
+    # (shared in, or an exit node) gets EXT_ before its label. The exporter
+    # swaps each value for its {{NAME}}, so the seed carries none of them;
+    # Stage 4a renders them back.
     # Returns an ordered table, or $null after recording a problem. The
     # values are private: they go to the exporter on stdin, never anywhere else.
     $raw = @(& $TailscaleCommand status --json 2>$null)
@@ -808,19 +810,25 @@ function Get-TailnetEndpoint {
         $problems.Add('seed: the Tailscale status has no node for this machine or no MagicDNS name')
         return $null
     }
-    # Only nodes in this tailnet: shared-in nodes and exit nodes have another suffix.
-    $peers = @(if ($status['Peer']) { $status['Peer'].Values | Where-Object { ([string]$_['DNSName']).TrimEnd('.') -like "*.$suffix" } })
+    # Sorted by name, so the numbering of a repeated label is the same each run.
+    $all = @(if ($status['Peer']) { $status['Peer'].Values | Sort-Object { [string]$_['DNSName'] } })
+    # Shared-in nodes and exit nodes have another suffix.
+    $peers = @($all | Where-Object { ([string]$_['DNSName']).TrimEnd('.') -like "*.$suffix" })
+    $outside = @($all | Where-Object { ([string]$_['DNSName']).TrimEnd('.') -notlike "*.$suffix" })
     $vps = @($peers | Where-Object { (Get-NodeLabel $_) -eq $SshHost.ToLowerInvariant() })
     if ($vps.Count -ne 1) {
         $problems.Add("seed: expected one node named '$SshHost' in the tailnet, found $($vps.Count)")
         return $null
     }
     $nodes = [ordered]@{ PC = $status['Self']; VPS = $vps[0] }
-    foreach ($p in $peers | Where-Object { -not [object]::ReferenceEquals($_, $vps[0]) }) {
-        $name = (Get-NodeLabel $p).ToUpperInvariant() -replace '[^A-Z0-9]', '_'
+    $named = @($peers | Where-Object { -not [object]::ReferenceEquals($_, $vps[0]) } | ForEach-Object { @{ Prefix = ''; Node = $_ } }) +
+        @($outside | ForEach-Object { @{ Prefix = 'EXT_'; Node = $_ } })
+    foreach ($item in $named) {
+        $name = (Get-NodeLabel $item.Node).ToUpperInvariant() -replace '[^A-Z0-9]', '_'
         if ($name -notmatch '^[A-Z]') { $name = 'NODE_' + $name }
+        $name = $item.Prefix + $name
         for ($n = 2; $nodes.Contains($name); $n++) { $name = ($name -replace '_[0-9]+$', '') + "_$n" }
-        $nodes[$name] = $p
+        $nodes[$name] = $item.Node
     }
     $endpoints = [ordered]@{}
     foreach ($key in $nodes.Keys) {

@@ -25,6 +25,8 @@
         fields a clearer name rather than weakening the rule;
       - private addresses: tailnet IPv4 and IPv6 addresses and MagicDNS names,
         which belong in templates as {{PC_TS_IP}} and {{VPS_TS_IP}}.
+        Tailscale's own service address (100.100.100.100, fd7a:115c:a1e0::53)
+        is the same in every tailnet and passes.
 
     Every file is scanned, whatever its size. Text is decoded from its byte
     order mark (UTF-8, UTF-16 or UTF-32), or as UTF-16 when the NUL bytes fall
@@ -109,9 +111,11 @@ $lineRules = @(
     # (Bolt's key arrays, exported settings), or under a Civitai setting.
     @{ Rule = 'opaque value under a key or credential field'; Pattern = '(?i)"(?:keys?|auth|credentials?|bearer)"\s*:\s*\[?\s*"[A-Za-z0-9+/=_-]{32,}"' }
     @{ Rule = 'Civitai key'; Pattern = '(?i)\bcivitai[A-Za-z0-9_]{0,32}["'']?\s*[:=]\s*["'']?[A-Za-z0-9]{32,}' }
-    @{ Rule = 'tailnet IP (use {{PC_TS_IP}} or {{VPS_TS_IP}})'; Pattern = '\b100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}\b' }
+    # 100.100.100.100 and fd7a:115c:a1e0::53 are Tailscale's own service
+    # address (the MagicDNS resolver), the same in every tailnet, so they pass.
+    @{ Rule = 'tailnet IP (use {{PC_TS_IP}} or {{VPS_TS_IP}})'; Pattern = '\b(?!100\.100\.100\.100\b)100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}\b' }
     # Tailscale gives every node an IPv6 address in one fixed /48.
-    @{ Rule = 'tailnet IPv6 address'; Pattern = '(?i)\bfd7a:115c:a1e0:[0-9a-f]{0,4}:' }
+    @{ Rule = 'tailnet IPv6 address'; Pattern = '(?i)\b(?!fd7a:115c:a1e0::53\b)fd7a:115c:a1e0:[0-9a-f]{0,4}:' }
     @{ Rule = 'MagicDNS name'; Pattern = '(?i)\b[a-z0-9-]{1,63}\.[a-z0-9-]{1,63}\.ts\.net\b' }
 )
 
