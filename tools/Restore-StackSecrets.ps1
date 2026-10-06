@@ -149,7 +149,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$restorerVersion = '1.0.0'
+$restorerVersion = '1.0.1'
 $Folder = @($Folder | ForEach-Object { ([int]$_).ToString('00') } | Sort-Object -Unique)
 $testPath = Join-Path $PSScriptRoot 'Test-RecoveryPath.ps1'
 $testMap = Join-Path $PSScriptRoot 'Test-RestoreMap.ps1'
@@ -172,8 +172,9 @@ $state = [pscustomobject]@{ BundleRoot = $null }
 
 # Runs on the VPS through ssh, from a private temporary file: bash SCRIPT
 # <path b64> <mode> <owner> <group> <sha256>, with the file as base64 on its
-# input. Prints one word: placed, same, differs, link, notfile, or why it
-# failed. Never prints content.
+# input (with CRLF line ends when PowerShell on Windows sends it). Prints
+# one word: placed, same, differs, link, notfile, or why it failed. Never
+# prints content.
 $remotePlace = @'
 set -u
 drain() { cat > /dev/null; }
@@ -199,7 +200,7 @@ if [ -e "$p" ]; then
   exit 0
 fi
 t=$(mktemp -- "$d/.cria-restore.XXXXXXXX" 2>/dev/null) || { drain; echo tempfile; exit 0; }
-base64 -d > "$t" 2>/dev/null || { rm -f -- "$t"; echo decode; exit 0; }
+tr -d '\r' | base64 -d > "$t" 2>/dev/null || { rm -f -- "$t"; echo decode; exit 0; }
 h=$(sha256sum -- "$t" 2>/dev/null) || { rm -f -- "$t"; echo unreadable; exit 0; }
 [ "${h%% *}" = "$want" ] || { rm -f -- "$t"; echo mismatch; exit 0; }
 chmod "$mode" -- "$t" 2>/dev/null || { rm -f -- "$t"; echo chmod; exit 0; }
