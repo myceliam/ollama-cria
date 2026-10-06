@@ -97,6 +97,26 @@ Describe 'Test-NoSecrets' {
         }
     }
 
+    Context 'folders that are not Git work trees' {
+        It 'names and reads every file when the folder is given as a Windows short path' -Skip:(-not $IsWindows) {
+            $d = New-ScanFolder
+            Save-Text $d 'seed.json' ('{"k": "sk-' + ('A' * 40) + '"}' + "`n") | Out-Null
+            $short = (New-Object -ComObject Scripting.FileSystemObject).GetFolder($d).ShortPath
+            $found = @(& $script:Tool -Path $short -PassThru)
+            $found | Should -HaveCount 1
+            $found[0].File | Should -Be 'seed.json'
+            $found[0].Rule | Should -Be 'API key (sk-)'
+        }
+
+        It 'skips files inside a .git folder' {
+            $d = New-ScanFolder
+            New-Item -ItemType Directory -Path (Join-Path $d 'sub/.git') -Force | Out-Null
+            Save-Text $d 'sub/.git/HEAD' ('sk-' + ('A' * 40) + "`n") | Out-Null
+            Save-Text $d 'sub/ok.txt' "fine`n" | Out-Null
+            Get-Finding $d | Should -BeNullOrEmpty
+        }
+    }
+
     Context 'Git work trees' {
         It 'scans a tracked file whose name Git would quote (<Label>)' -ForEach @(
             @{ Label = 'non-ASCII'; Name = 'caf' + [char]0xE9 + '.txt'; LinuxOnly = $false }
