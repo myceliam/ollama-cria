@@ -119,7 +119,7 @@ function Get-TailnetEndpoint {
     return $endpoints
 }
 
-function Get-EndpointRegex([string]) {
+function Get-EndpointRegex([string]$Value) {
     # A whole address or name only: an address must not match inside a longer
     # one that adds a digit, and pc.<tailnet>.ts.net not inside
     # mypc.<tailnet>.ts.net.
