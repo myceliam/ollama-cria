@@ -41,6 +41,12 @@
       Export-EndpointManifest writes manifests/endpoints.json: every templated
                               file in the folders that are deployed or read by
                               a stage, and the placeholders it holds
+      Test-RepoContent        scans files bound for the repo with
+                              tools/Test-NoSecrets.ps1 in a private temporary
+                              folder, before any of them reaches the repo
+      Get-RepoFileStatus      new, changed or unchanged against the repo,
+                              ignoring a checkout's line endings
+      Write-RepoFile          writes one file under a root, path checked
 #>
 
 Set-StrictMode -Version Latest
@@ -236,6 +242,102 @@ function ConvertFrom-StackTemplate {
         })
 }
 
+function Write-RepoFile {
+    <#
+    .SYNOPSIS
+        Writes -Bytes to -Relative under -Root, after
+        tools/Test-RecoveryPath.ps1 has checked the path (no '..', no link on
+        the way). Creates the folders above it.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Root,
+
+        [Parameter(Mandatory)]
+        [string]$Relative,
+
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [byte[]]$Bytes
+    )
+    $pathCheck = & (Join-Path $PSScriptRoot 'Test-RecoveryPath.ps1') -Path $Relative -Root $Root -Relative -Detailed
+    if (-not $pathCheck.IsValid) { throw [InvalidOperationException]::new("$Relative refused ($($pathCheck.Reason))") }
+    $parent = Split-Path $pathCheck.FullPath -Parent
+    if (-not (Test-Path -LiteralPath $parent -PathType Container)) { [void](New-Item -ItemType Directory -Path $parent -Force) }
+    [IO.File]::WriteAllBytes($pathCheck.FullPath, $Bytes)
+}
+
+function Get-RepoFileStatus {
+    <#
+    .SYNOPSIS
+        'new', 'changed' or 'unchanged' for -Bytes against -Relative in the
+        repo. CRLF counts as LF, so a Windows checkout is not a change.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [string]$RepoPath,
+
+        [Parameter(Mandatory)]
+        [string]$Relative,
+
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [byte[]]$Bytes
+    )
+    $pathCheck = & (Join-Path $PSScriptRoot 'Test-RecoveryPath.ps1') -Path $Relative -Root $RepoPath -Relative -Detailed
+    if (-not $pathCheck.IsValid) { throw [InvalidOperationException]::new("$Relative refused in the repo ($($pathCheck.Reason))") }
+    if (-not (Test-Path -LiteralPath $pathCheck.FullPath -PathType Leaf)) { return 'new' }
+    # Latin-1 maps every byte to one character and back.
+    $latin = [Text.Encoding]::Latin1
+    $old = $latin.GetString([IO.File]::ReadAllBytes($pathCheck.FullPath)).Replace("`r`n", "`n")
+    $new = $latin.GetString($Bytes).Replace("`r`n", "`n")
+    if ($old -ceq $new) { return 'unchanged' }
+    return 'changed'
+}
+
+function Test-RepoContent {
+    <#
+    .SYNOPSIS
+        Scans files bound for the repo before any of them is written there.
+        -Item is a list of objects with Dest (the repo path) and Bytes. They
+        are written to a new temporary folder only the current user can
+        read, scanned with tools/Test-NoSecrets.ps1, and the folder is
+        removed. Returns one line per finding: '<repo path>:<line>: <rule>'.
+        Never the matched text.
+    #>
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [object[]]$Item
+    )
+    $testPath = Join-Path $PSScriptRoot 'Test-RecoveryPath.ps1'
+    $base = [IO.Path]::GetTempPath()
+    $name = 'cria-scan-' + [guid]::NewGuid().ToString('N')
+    $pathCheck = & $testPath -Path $name -Root $base -Relative -Detailed
+    if (-not $pathCheck.IsValid) { throw [InvalidOperationException]::new("the temporary folder was refused ($($pathCheck.Reason))") }
+    $stage = $pathCheck.FullPath
+    if ($IsWindows) { [void](New-Item -ItemType Directory -Path $stage) }
+    else { [void][IO.Directory]::CreateDirectory($stage, [IO.UnixFileMode]'UserRead, UserWrite, UserExecute') }
+    $found = [Collections.Generic.List[string]]::new()
+    try {
+        foreach ($i in $Item) { Write-RepoFile -Root $stage -Relative $i.Dest -Bytes $i.Bytes }
+        foreach ($f in @(& (Join-Path $PSScriptRoot 'Test-NoSecrets.ps1') -Path $stage -PassThru)) {
+            $where = if ($f.Line) { "$($f.File):$($f.Line)" } else { $f.File }
+            $found.Add("${where}: $($f.Rule)")
+        }
+    }
+    finally {
+        $again = & $testPath -Path $name -Root $base -Relative -Detailed
+        if ($again.IsValid -and $again.FullPath -eq $stage -and (Test-Path -LiteralPath $stage)) { Remove-Item -LiteralPath $stage -Recurse -Force }
+    }
+    return , $found.ToArray()
+}
+
 function Get-EndpointListRow([string]$RepoPath) {
     $rows = [Collections.Generic.List[object]]::new()
     $utf8 = [Text.UTF8Encoding]::new($false, $true)
@@ -302,4 +404,5 @@ function Export-EndpointManifest {
     return $false
 }
 
-Export-ModuleMember -Function Get-TailnetEndpoint, ConvertTo-StackTemplate, ConvertFrom-StackTemplate, Get-StackPlaceholder, Export-EndpointManifest
+Export-ModuleMember -Function Get-TailnetEndpoint, ConvertTo-StackTemplate, ConvertFrom-StackTemplate, Get-StackPlaceholder, Export-EndpointManifest,
+    Write-RepoFile, Get-RepoFileStatus, Test-RepoContent

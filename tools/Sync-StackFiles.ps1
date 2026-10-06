@@ -112,7 +112,6 @@ $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path $PSScriptRoot 'StackCapture.psm1') -Force
 $testPath = Join-Path $PSScriptRoot 'Test-RecoveryPath.ps1'
-$scanScript = Join-Path $PSScriptRoot 'Test-NoSecrets.ps1'
 $schemaPath = Join-Path $PSScriptRoot '../manifests/schemas/stack-files.schema.json'
 $maxFileBytes = 1MB
 $crlfTypes = '(?i)\.(ps1|psm1|psd1|vbs|bat|cmd)$'
@@ -175,13 +174,6 @@ function Get-RunResult {
 
 function ConvertTo-Base64([string]$Text) {
     [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Text))
-}
-
-function Test-SameByte([byte[]]$A, [byte[]]$B) {
-    # Equal once CRLF is read as LF, so a checkout's line endings do not count
-    # as a change. Latin-1 maps every byte to one character and back.
-    $latin = [Text.Encoding]::Latin1
-    return ($latin.GetString($A).Replace("`r`n", "`n") -ceq $latin.GetString($B).Replace("`r`n", "`n"))
 }
 
 # ---------- The file list ----------
@@ -312,32 +304,6 @@ function ConvertTo-RepoByte($Item, $Endpoint) {
     return , [byte[]]$body
 }
 
-function Write-CheckedFile([string]$Root, [string]$Relative, [byte[]]$Bytes) {
-    $check = & $testPath -Path $Relative -Root $Root -Relative -Detailed
-    if (-not $check.IsValid) { throw [InvalidOperationException]::new("$Relative refused ($($check.Reason))") }
-    $parent = Split-Path $check.FullPath -Parent
-    if (-not (Test-Path -LiteralPath $parent -PathType Container)) { [void](New-Item -ItemType Directory -Path $parent -Force) }
-    [IO.File]::WriteAllBytes($check.FullPath, $Bytes)
-}
-
-function Initialize-Staging {
-    $base = [IO.Path]::GetTempPath()
-    $name = 'cria-sync-' + [guid]::NewGuid().ToString('N')
-    $check = & $testPath -Path $name -Root $base -Relative -Detailed
-    if (-not $check.IsValid) { throw [InvalidOperationException]::new("the temporary folder was refused ($($check.Reason))") }
-    if ($IsWindows) { [void](New-Item -ItemType Directory -Path $check.FullPath) }
-    else { [void][IO.Directory]::CreateDirectory($check.FullPath, [IO.UnixFileMode]'UserRead, UserWrite, UserExecute') }
-    return $check.FullPath
-}
-
-function Clear-Staging([string]$Path) {
-    if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return }
-    $base = [IO.Path]::GetTempPath()
-    $check = & $testPath -Path (Split-Path $Path -Leaf) -Root $base -Relative -Detailed
-    if ($check.IsValid -and $check.FullPath -eq $Path) { Remove-Item -LiteralPath $Path -Recurse -Force }
-    else { $warnings.Add('the temporary folder could not be checked, so it was left in place') }
-}
-
 # ---------- The run ----------
 
 function Invoke-Sync {
@@ -363,26 +329,15 @@ function Invoke-Sync {
     }
     if ($problems.Count -gt 0) { return }
 
-    $stage = Initialize-Staging
-    try {
-        foreach ($item in $fetched) { Write-CheckedFile $stage $item.Dest $item.RepoBytes }
-        foreach ($f in @(& $scanScript -Path $stage -PassThru)) {
-            $where = if ($f.Line) { "$($f.File):$($f.Line)" } else { $f.File }
-            $problems.Add("${where}: $($f.Rule)")
-        }
-    }
-    finally { Clear-Staging $stage }
+    $scanItems = @($fetched | ForEach-Object { [pscustomobject]@{ Dest = $_.Dest; Bytes = $_.RepoBytes } })
+    foreach ($f in (Test-RepoContent -Item $scanItems)) { $problems.Add($f) }
     if ($problems.Count -gt 0) { return }
 
     $listed = @{}
     foreach ($item in $fetched) {
         $listed[$item.Dest.ToLowerInvariant()] = $true
-        $check = & $testPath -Path $item.Dest -Root $RepoPath -Relative -Detailed
-        if (-not $check.IsValid) { $problems.Add("$($item.Dest): refused in the repo ($($check.Reason))"); continue }
-        $status = 'new'
-        if (Test-Path -LiteralPath $check.FullPath -PathType Leaf) {
-            $status = if (Test-SameByte ([IO.File]::ReadAllBytes($check.FullPath)) $item.RepoBytes) { 'unchanged' } else { 'changed' }
-        }
+        try { $status = Get-RepoFileStatus -RepoPath $RepoPath -Relative $item.Dest -Bytes $item.RepoBytes }
+        catch { $problems.Add("$($item.Dest): $($_.Exception.Message)"); continue }
         $rows.Add([pscustomobject]@{ Source = $item.Source; File = $item.Dest; Status = $status; Placeholders = $item.Placeholders })
     }
     foreach ($src in $sources) {
@@ -397,7 +352,7 @@ function Invoke-Sync {
 
     foreach ($item in $fetched) {
         $row = $rows | Where-Object { $_.File -eq $item.Dest } | Select-Object -First 1
-        if ($row.Status -ne 'unchanged') { Write-CheckedFile $RepoPath $item.Dest $item.RepoBytes }
+        if ($row.Status -ne 'unchanged') { Write-RepoFile -Root $RepoPath -Relative $item.Dest -Bytes $item.RepoBytes }
     }
     $state.EndpointsWritten = -not (Export-EndpointManifest -RepoPath $RepoPath)
 }
