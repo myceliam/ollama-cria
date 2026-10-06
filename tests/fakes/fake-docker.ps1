@@ -7,10 +7,15 @@
 #   stuck      answers well, but the container never goes away ('rm' fails)
 #   lock       makes the newest run folder's bundle folder read-only, then
 #              exits 1, so the collector cannot delete it (Linux only)
+#   appear     creates the staging root while the image is checked, as
+#              another account could between the check and the run
 #   anything else: a good answer
 $mode = $env:CRIA_FAKE_DOCKER
 $command = $args[0]
-if ($command -eq 'image') { exit 0 }
+if ($command -eq 'image') {
+    if ($mode -eq 'appear') { New-Item -ItemType Directory -Path $env:CRIA_FAKE_STAGING | Out-Null }
+    exit 0
+}
 if ($command -eq 'volume') { 'fake-created-time'; exit 0 }
 if ($command -eq 'rm') { if ($mode -eq 'stuck') { exit 1 }; exit 0 }
 if ($command -eq 'ps') {

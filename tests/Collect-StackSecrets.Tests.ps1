@@ -394,14 +394,107 @@ Describe 'Collect-StackSecrets' {
             @(Get-ChildItem -LiteralPath $s.Staging -Force) | Should -BeNullOrEmpty
         }
 
-        It 'warns when a folder above the staging root can be changed by another account' -Skip:$IsWindows {
+        It 'refuses a staging root below a folder another account can change' -Skip:$IsWindows {
+            # R2-02: a writable parent without the sticky bit lets others rename the stage.
             $s = New-TestSetup
             $open = Join-Path $TestDrive ('open-' + [guid]::NewGuid().ToString('n'))
             New-Item -ItemType Directory -Path $open | Out-Null
             [IO.File]::SetUnixFileMode($open, [IO.UnixFileMode]'UserRead, UserWrite, UserExecute, OtherRead, OtherWrite, OtherExecute')
-            $r = Invoke-Collector $s -Extra @{ StagingRoot = (Join-Path $open 'stage') }
-            $r.IsValid | Should -BeTrue
-            $r.Warnings | Should -Contain "staging: '$open' can be changed by everyone (other write), who could move the staging folder"
+            $r = Invoke-Collector $s -Execute -Extra @{ StagingRoot = (Join-Path $open 'stage') }
+            $r.IsValid | Should -BeFalse
+            $r.Problems | Should -Contain "staging: '$open' can be changed by everyone (other write), who could move or replace the staging folder; use a -StagingRoot whose parent folders only your account and administrators can change"
+            Test-Path -LiteralPath (Join-Path $open 'stage') | Should -BeFalse
+        }
+
+        It 'refuses a protected staging root whose parent grants another account <Right>' -Skip:(-not $IsWindows) -ForEach @(
+            @{ Right = 'DeleteSubdirectoriesAndFiles' }
+            @{ Right = 'Delete' }
+            @{ Right = 'ChangePermissions' }
+            @{ Right = 'TakeOwnership' }
+        ) {
+            # R2-02: the stage itself is owner-only; the risk is one level up.
+            $s = New-TestSetup
+            $parent = Join-Path $TestDrive ('parent-' + [guid]::NewGuid().ToString('n'))
+            $stage = Join-Path $parent 'stage'
+            New-Item -ItemType Directory -Path $stage -Force | Out-Null
+            $acl = Get-Acl -LiteralPath $parent
+            $everyone = [Security.Principal.SecurityIdentifier]'S-1-1-0'
+            $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($everyone, $Right, 'None', 'None', 'Allow'))
+            Set-Acl -LiteralPath $parent -AclObject $acl
+            $r = Invoke-Collector $s -Execute -Extra @{ StagingRoot = $stage }
+            $r.IsValid | Should -BeFalse
+            @($r.Problems | Where-Object { $_ -like "staging: '$parent' can be changed by *, who could move or replace the staging folder*" }) | Should -HaveCount 1
+            @(Get-ChildItem -LiteralPath $stage -Force) | Should -BeNullOrEmpty
+        }
+
+        It 'refuses an existing staging root that grants another account the mapped Write right' -Skip:(-not $IsWindows) {
+            # R2-02: 'Write' is 0x116 once mapped, with no generic bit left to see.
+            $s = New-TestSetup
+            New-Item -ItemType Directory -Path $s.Staging | Out-Null
+            $acl = Get-Acl -LiteralPath $s.Staging
+            $everyone = [Security.Principal.SecurityIdentifier]'S-1-1-0'
+            $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($everyone, 'Write', 'None', 'None', 'Allow'))
+            Set-Acl -LiteralPath $s.Staging -AclObject $acl
+            $r = Invoke-Collector $s -Execute
+            $r.IsValid | Should -BeFalse
+            @($r.Problems | Where-Object { $_ -like 'staging: -StagingRoot can be changed by *' }) | Should -HaveCount 1
+        }
+
+        It 'counts each right where it matters: drive root, folder above, staging root' -Skip:(-not $IsWindows) {
+            # R2-02: creating folders on a drive root is normal; DELETE there means nothing.
+            . ([scriptblock]::Create((Import-CollectorFunction 'Get-ChangeableBy', 'Get-CurrentUserSid')))
+            $onWindows = $true
+            $everyone = [Security.Principal.SecurityIdentifier]'S-1-1-0'
+            $folder = Join-Path $TestDrive ('rights-' + [guid]::NewGuid().ToString('n'))
+            New-Item -ItemType Directory -Path $folder | Out-Null
+            $acl = Get-Acl -LiteralPath $folder
+            $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($everyone, 'CreateDirectories, Delete', 'None', 'None', 'Allow'))
+            Set-Acl -LiteralPath $folder -AclObject $acl
+            @(Get-ChangeableBy $folder -IsDriveRoot) | Should -BeNullOrEmpty
+            @(Get-ChangeableBy $folder) | Should -HaveCount 1
+            $acl = Get-Acl -LiteralPath $folder
+            $acl.RemoveAccessRuleAll([Security.AccessControl.FileSystemAccessRule]::new($everyone, 'Delete', 'None', 'None', 'Allow'))
+            $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($everyone, 'CreateDirectories', 'None', 'None', 'Allow'))
+            Set-Acl -LiteralPath $folder -AclObject $acl
+            @(Get-ChangeableBy $folder) | Should -BeNullOrEmpty
+            @(Get-ChangeableBy $folder -IsStagingRoot) | Should -HaveCount 1
+        }
+
+        It 'refuses a staging root that appears after it was checked' {
+            # R2-02: absent at the check, there before the run folder: never adopted.
+            $s = New-TestSetup -BoltVolume 'cria-test-not-used'
+            $r = Invoke-WithFakeDocker $s 'appear'
+            $r.IsValid | Should -BeFalse
+            $r.Problems | Should -Contain 'staging: -StagingRoot appeared after it was checked; find out what made it, then run again'
+            $r.RunFolder | Should -BeNullOrEmpty
+            @(Get-ChildItem -LiteralPath $s.Staging -Force) | Should -BeNullOrEmpty
+        }
+
+        It 'refuses a staging root it created that does not come out protected' {
+            # R2-02: if another account wins the race to create it, the create is a no-op.
+            . ([scriptblock]::Create((Import-CollectorFunction 'Initialize-RunFolder', 'Get-ProtectionProblem', 'Get-CurrentUserSid')))
+            function Initialize-ProtectedFolder([string]$Path) {
+                New-Item -ItemType Directory -Path $Path | Out-Null
+                if (-not $IsWindows) { [IO.File]::SetUnixFileMode($Path, [IO.UnixFileMode]'UserRead, UserWrite, UserExecute, OtherRead, OtherWrite, OtherExecute') }
+            }
+            function Test-StagingRoot { throw 'not reached' }
+            $onWindows = $IsWindows
+            $problems = [Collections.Generic.List[string]]::new()
+            $root = Join-Path $TestDrive ('raced-' + [guid]::NewGuid().ToString('n'))
+            Initialize-RunFolder $root $false | Should -BeNullOrEmpty
+            @($problems | Where-Object { $_ -like 'staging: the new -StagingRoot is not protected (*)' }) | Should -HaveCount 1
+            @(Get-ChildItem -LiteralPath $root -Force) | Should -BeNullOrEmpty
+        }
+
+        It 'checks the staging root again after creating it' {
+            . ([scriptblock]::Create((Import-CollectorFunction 'Initialize-RunFolder', 'Initialize-ProtectedFolder', 'Get-ProtectionProblem', 'Get-CurrentUserSid')))
+            function Test-StagingRoot { $problems.Add('staging: re-checked'); return $null }
+            $onWindows = $IsWindows
+            $problems = [Collections.Generic.List[string]]::new()
+            $root = Join-Path $TestDrive ('recheck-' + [guid]::NewGuid().ToString('n'))
+            Initialize-RunFolder $root $false | Should -BeNullOrEmpty
+            $problems | Should -Be @('staging: re-checked')
+            @(Get-ChildItem -LiteralPath $root -Force) | Should -BeNullOrEmpty
         }
 
         It 'refuses a relative staging root' {
@@ -419,6 +512,43 @@ Describe 'Collect-StackSecrets' {
             $out = (& $script:Tool @params *>&1 | Out-String)
             $out | Should -Match 'Result: complete'
             foreach ($c in $s.Content.Values) { $out | Should -Not -Match ([regex]::Escape($c)) }
+        }
+    }
+
+    Context 'where the helper''s memory can be paged' {
+        BeforeAll {
+            $script:PagingFunctions = Import-CollectorFunction 'Test-PagingBoundary', 'Get-PagingLocation'
+        }
+
+        It 'refuses a paging drive without BitLocker, and names it' -Skip:(-not $IsWindows) {
+            # R2-04: a tmpfs is memory, and the Docker VM's memory can reach these drives.
+            . ([scriptblock]::Create($script:PagingFunctions))
+            function Get-PagingLocation { 'C:\pagefile.sys'; 'D:\vm\swap.vhdx' }
+            function Get-BitLockerState([string]$Path) { if ($Path -eq 'D:\') { 'Off' } else { 'On' } }
+            $onWindows = $true
+            $AllowUnencryptedStaging = $false
+            $problems = [Collections.Generic.List[string]]::new()
+            $warnings = [Collections.Generic.List[string]]::new()
+            Test-PagingBoundary
+            $problems | Should -Be @("docker: memory can be paged to drive 'D:\', where BitLocker is 'Off'")
+            $warnings | Should -BeNullOrEmpty
+        }
+
+        It 'reads the WSL swap file from .wslconfig, and leaves it out when swap is 0' {
+            . ([scriptblock]::Create($script:PagingFunctions))
+            $saved = $env:USERPROFILE
+            $env:USERPROFILE = Join-Path $TestDrive ('profile-' + [guid]::NewGuid().ToString('n'))
+            try {
+                New-Item -ItemType Directory -Path $env:USERPROFILE | Out-Null
+                $config = Join-Path $env:USERPROFILE '.wslconfig'
+                Set-Content -LiteralPath $config -Value "[wsl2]`nmemory=8GB`nswapfile=D:\\vm\\swap.vhdx # moved`n[experimental]`nswap=0"
+                @(Get-PagingLocation) | Should -Contain 'D:\vm\swap.vhdx'
+                Set-Content -LiteralPath $config -Value "[wsl2]`nswap=0"
+                @(Get-PagingLocation | Where-Object { $_ -like '*swap.vhdx' }) | Should -BeNullOrEmpty
+                Remove-Item -LiteralPath $config -Force
+                @(Get-PagingLocation) | Should -Contain (Join-Path $env:USERPROFILE 'AppData\Local\Temp\swap.vhdx')
+            }
+            finally { $env:USERPROFILE = $saved }
         }
     }
 
