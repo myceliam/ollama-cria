@@ -33,8 +33,14 @@
       6. Completeness: the map's inventory block lists every required row of
          the inventory it was collected from. Each of those ids has a required
          entry, and no other entry is required. With -InventoryPath, the
-         block's SHA-256 must match that file, and every required row in the
-         file must be in the map; an optional row that is absent is a warning.
+         block's SHA-256 must match that file, and the file, not the map,
+         decides: its required rows must be exactly the map's required list,
+         every entry must be one of its rows with the same required flag,
+         folder, destination (its location) and any mode, owner or group it
+         prescribes, and every required row must be in the map; an optional
+         row that is absent is a warning. Without -InventoryPath the check
+         proves only that the map agrees with itself, so a restorer must
+         always pass the inventory it trusts.
       7. With -BundleRoot: the bundle's own 00-RESTORE-MAP.json exists and is
          byte for byte the map that was checked, so a restorer reading it
          reads exactly what passed; every required row's file is in the
@@ -293,13 +299,45 @@ if ($InventoryPath) {
     else {
         $inventoryHash = (Get-FileHash -LiteralPath $InventoryPath -Algorithm SHA256).Hash.ToLowerInvariant()
         if ($inventoryHash -ne $map.inventory.sha256) { $problems.Add('inventory: the map was collected from a different inventory') }
-        foreach ($row in @((Get-Content -LiteralPath $InventoryPath -Raw | ConvertFrom-Json).rows)) {
-            if ($entryById.ContainsKey($row.id.ToLowerInvariant())) { continue }
+        $rows = $null
+        try { $rows = @((Get-Content -LiteralPath $InventoryPath -Raw | ConvertFrom-Json).rows) } catch { $rows = $null }
+        if (-not $rows -or @($rows | Where-Object { -not $_.id }).Count) {
+            $problems.Add('inventory: the file could not be read as an inventory')
+            $rows = @()
+        }
+        # The map's own required list and flags only prove self-consistency. The
+        # trusted file decides which rows are required and where each one goes
+        # (R2-01), so a map cannot downgrade or move a row and still pass.
+        $rowById = @{}
+        foreach ($row in $rows) { $rowById[$row.id.ToLowerInvariant()] = $row }
+        foreach ($row in $rows) {
+            $key = $row.id.ToLowerInvariant()
+            if ($row.required -and -not $listedRequired.ContainsKey($key)) {
+                $problems.Add("inventory: required row '$($row.id)' is not in the map's required list")
+            }
+            if ($entryById.ContainsKey($key)) { continue }
             if ($row.required) {
                 # Already reported above when the map's own list names it.
-                if (-not $listedRequired.ContainsKey($row.id.ToLowerInvariant())) { $problems.Add("inventory: required row '$($row.id)' has no entry in the map") }
+                if (-not $listedRequired.ContainsKey($key)) { $problems.Add("inventory: required row '$($row.id)' has no entry in the map") }
             }
             else { $warnings.Add("inventory: optional row '$($row.id)' is not in the map") }
+        }
+        foreach ($id in @($map.inventory.required)) {
+            $row = $rowById[$id.ToLowerInvariant()]
+            if ($row -and -not $row.required) { $problems.Add("inventory: '$id' is required in the map but optional in the inventory") }
+        }
+        foreach ($e in $map.entries) {
+            $row = $rowById[$e.id.ToLowerInvariant()]
+            if (-not $row) { $problems.Add("entry '$($e.id)': not a row of the inventory"); continue }
+            if ([bool]$e.required -ne [bool]$row.required) { $problems.Add("entry '$($e.id)': required does not match the inventory") }
+            if ($e.folder -cne $row.folder) { $problems.Add("entry '$($e.id)': folder does not match the inventory") }
+            if ($e.destination -cne $row.location) { $problems.Add("entry '$($e.id)': destination does not match the inventory") }
+            foreach ($field in 'mode', 'owner', 'group') {
+                $want = Get-OptionalProperty $row $field
+                if ($null -ne $want -and [string](Get-OptionalProperty $e $field) -cne [string]$want) {
+                    $problems.Add("entry '$($e.id)': $field does not match the inventory")
+                }
+            }
         }
     }
 }
