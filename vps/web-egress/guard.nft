@@ -1,0 +1,26 @@
+# Loaded atomically by guard.sh. This table is independent of Docker's chains.
+table inet owui_web {
+  chain forward {
+    type filter hook forward priority -10; policy accept;
+    iifname "br-owui-web" oifname "br-owui-web" accept
+    # Replies to the one authorised PC are allowed; new tailnet requests are not.
+    iifname "br-owui-web" oifname "tailscale0" ip daddr {{PC_TS_IP}} ct state established,related accept
+    iifname "br-owui-web" ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/4, 240.0.0.0/4 } counter reject
+    iifname "br-owui-web" meta nfproto ipv6 counter reject
+    iifname "br-owui-web" oifname "tailscale0" counter accept
+    # The one plaintext WAN exception: Gluetun's WireGuard handshake to the
+    # Mullvad multihop entry endpoint/port. Everything else remains rejected.
+    iifname "br-owui-web" ip daddr 89.37.63.66 udp dport 3377 counter accept
+    # VPN unavailable / route removed: never permit ordinary WAN egress.
+    iifname "br-owui-web" counter reject
+    oifname "br-owui-web" ct state established,related accept
+    # New connections may arrive only from Liam's PC, only to named services.
+    oifname "br-owui-web" iifname "tailscale0" ip saddr {{PC_TS_IP}} tcp dport { 8080, 3000, 3055, 8889, 13100 } counter accept
+    oifname "br-owui-web" counter reject
+  }
+  chain input {
+    type filter hook input priority -10; policy accept;
+    # Prevent a fetched URL from reaching services on the VPS host itself.
+    iifname "br-owui-web" counter reject
+  }
+}

@@ -1,0 +1,19 @@
+﻿# Kokoro TTS — migrated from the PC 2026-09-19.
+# Was: E:\ai\ollama\docker-compose.yml, published 127.0.0.1:8880 (loopback-only).
+# Now: bound to the TAILSCALE IP so open-webui on the PC can reach it directly.
+# NOT on 0.0.0.0 — UFW would block it anyway, but tailnet-only is the correct shape.
+# Deliberately NOT behind the owui-web-egress Mullvad guard: Kokoro needs no internet.
+services:
+  kokoro-tts:
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:v0.5.0
+    container_name: kokoro-tts
+    ports:
+      - "{{VPS_TS_IP}}:8880:8880"
+    environment:
+      KOKORO_STREAM: "false"
+      # PC ran 4 threads on a contended 9950X. This box has 12 idle EPYC cores,
+      # so 8 gives faster synthesis while leaving headroom for searxng/jina.
+      OMP_NUM_THREADS: "8"
+    mem_limit: 4g
+    restart: unless-stopped
+

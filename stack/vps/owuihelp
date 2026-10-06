@@ -1,0 +1,779 @@
+#!/usr/bin/env bash
+# ============================================================================
+#  owuihelp  (VPS edition)  -  the far half of the AI-stack toolkit
+#
+#  Host          : {{VPS_TS_NAME}}   (IONOS, London)
+#  Installed at  : ~/bin/owuihelp
+#  Source of truth: E:\ai\ollama\vps\owuihelp on the PC. EDIT THERE, then run
+#                   'owuihelp vps-install' from the PC to redeploy. Editing the
+#                   copy on the VPS means the next install silently reverts it.
+#
+#  USE
+#    owuihelp                 the menu
+#    owuihelp <cmd> [args]    run a command
+#    owuihelp <cmd> ?         explain it WITHOUT running (dry run)
+#    owuihelp find <text>     search commands by name or description
+#
+#  FROM THE PC
+#    owuihelp vps             this menu, over SSH
+#    owuihelp vps <cmd>       run <cmd> here      e.g.  owuihelp vps status
+#    vps <cmd>                short form
+#
+#  SUDO: this file uses the FULL 'sudo', never the 's' alias. Aliases only
+#  expand in interactive shells, so 's docker ...' would break every time this
+#  is called as 'ssh vps owuihelp ...'. Liam is not in the docker group here,
+#  so docker genuinely does need sudo on this box (it does not on the PC).
+#
+#  DESTRUCTIVE COMMANDS over a non-interactive SSH call cannot prompt, so they
+#  refuse unless you pass -y. That is deliberate: 'owuihelp vps down' from the
+#  PC should not be able to silently take the stack offline.
+# ============================================================================
+set -uo pipefail
+
+OWUIHELP_VERSION='1.2.0 (2026-08-19) +netdiag/exit-node'
+
+# ---- paths / constants (edit here if anything ever moves) ------------------
+STACK_DIR="${OWUI_STACK_DIR:-$HOME/ollama}"
+COMPOSE_FILE="$STACK_DIR/docker-compose.yml"
+BACKUP_DIR="${OWUI_BACKUP_DIR:-$HOME/owuibackup}"
+PC_TS_IP="${OWUI_PC_IP:-{{PC_TS_IP}}}"          # {{PC_TS_NAME}}
+PC_OLLAMA_PORT=11434
+
+# service -> published loopback port. tika (9998) and searxng-mcp (3055) are
+# deliberately absent: they publish nothing and are only reachable on the
+# compose network, so they are checked by container state instead of by port.
+PORT_NAMES=(open-webui mcpo-core searxng jina-reader playwright-mcp kokoro-tts dozzle ntfy gcal-owui-bridge gmail-owui-bridge)
+PORT_NUMS=(3000       18000     8080    3001        8931           8880       18088  8090 18100            18101)
+
+SERVICES=(open-webui tika searxng jina-reader searxng-mcp playwright-mcp mcpo-core kokoro-tts dozzle ntfy gcal-owui-bridge gmail-owui-bridge)
+
+# ---- colour (auto-off when piped, so logs stay clean) ----------------------
+if [ -t 1 ] || [ "${OWUI_COLOR:-0}" = "1" ]; then
+    C0=$'\033[0m'; CY=$'\033[36m'; DCY=$'\033[36;2m'; YE=$'\033[33m'
+    GR=$'\033[32m'; RE=$'\033[31m'; GY=$'\033[90m'; WH=$'\033[97m'
+else
+    C0=''; CY=''; DCY=''; YE=''; GR=''; RE=''; GY=''; WH=''
+fi
+
+_head () { printf '\n  %s%s%s\n  %s%s%s\n' "$CY" "$1" "$C0" "$DCY" "$(printf '%*s' "${#1}" '' | tr ' ' '-')" "$C0"; }
+_ok   () { printf '    %s%s%s\n' "$GR" "$1" "$C0"; }
+_warn () { printf '    %s%s%s\n' "$YE" "$1" "$C0"; }
+_err  () { printf '    %s%s%s\n' "$RE" "$1" "$C0"; }
+_dim  () { printf '    %s%s%s\n' "$GY" "$1" "$C0"; }
+
+# docker needs root here. Wrapped so there is exactly one place to change it.
+_dk () { sudo docker "$@"; }
+# compose is run from STACK_DIR: build contexts, env_file and the ./workspace
+# bind mount are all RELATIVE paths, so -f alone from another cwd breaks them.
+_dc () {
+    if [ ! -f "$COMPOSE_FILE" ]; then
+        _err "no compose file at $COMPOSE_FILE"
+        _dim 'if the stack moved, export OWUI_STACK_DIR=/path/to/it'
+        return 1
+    fi
+    ( cd "$STACK_DIR" && sudo docker compose "$@" )
+}
+
+# TCP probe with no extra binaries. Returns 0 if something is listening.
+_port () { timeout 2 bash -c ">/dev/tcp/127.0.0.1/$1" 2>/dev/null; }
+
+_port_row () {   # name port
+    if _port "$2"; then printf '    %-20s :%-6s %sUP%s\n'   "$1" "$2" "$GR" "$C0"
+    else                printf '    %-20s :%-6s %sDOWN%s\n' "$1" "$2" "$RE" "$C0"; fi
+}
+
+_have () { command -v "$1" >/dev/null 2>&1; }
+
+_confirm () {   # $1 = command name. Honours -y/--force via OWUI_FORCE.
+    [ "${OWUI_FORCE:-0}" = "1" ] && return 0
+    if [ ! -t 0 ]; then
+        _err "'$1' is disruptive and there is no terminal to confirm on."
+        _dim "re-run with -y   e.g.  owuihelp vps $1 -y"
+        return 1
+    fi
+    printf "  %s'%s' is disruptive. Continue? (y/N) %s" "$YE" "$1" "$C0"
+    read -r ans
+    case "$ans" in y|Y|yes|YES) return 0 ;; *) _dim 'cancelled.'; return 1 ;; esac
+}
+
+_age () {   # $1 = epoch seconds
+    local d=$(( $(date +%s) - $1 ))
+    if   [ "$d" -lt 3600  ]; then echo "$(( d / 60 ))m ago"
+    elif [ "$d" -lt 86400 ]; then echo "$(( d / 3600 ))h ago"
+    else echo "$(( d / 86400 ))d ago"; fi
+}
+
+# ============================================================================
+#  COMMAND BODIES
+# ============================================================================
+
+c_status () {
+    _head 'Containers'
+    _dc ps --format 'table {{.Service}}\t{{.State}}\t{{.Status}}' 2>/dev/null |
+        sed 's/^/    /' || _err 'docker compose ps failed'
+
+    _head 'Local endpoints (all pinned to 127.0.0.1 on purpose)'
+    local i=0
+    while [ $i -lt ${#PORT_NAMES[@]} ]; do
+        _port_row "${PORT_NAMES[$i]}" "${PORT_NUMS[$i]}"
+        i=$(( i + 1 ))
+    done
+
+    # The single most common cross-host failure: the PC asleep, or Ollama not
+    # bound to the tailnet. OWUI looks "up" and every chat still fails.
+    _head "Cross-host: Ollama on the PC ($PC_TS_IP:$PC_OLLAMA_PORT)"
+    local tags
+    if tags=$(curl -fsS -m 6 "http://$PC_TS_IP:$PC_OLLAMA_PORT/api/tags" 2>/dev/null); then
+        local n
+        n=$(printf '%s' "$tags" | grep -o '"name"' | wc -l)
+        _ok "reachable - $n models"
+    else
+        _err 'UNREACHABLE - chats will fail. Is the PC awake and Ollama bound to the tailnet?'
+    fi
+
+    _head 'Box'
+    _dim "$(uptime | sed 's/^ *//')"
+    free -h  | awk 'NR==2 {printf "    RAM   %s used / %s total  (%s avail)\n", $3, $2, $7}'
+    df -h /  | awk 'NR==2 {printf "    Disk  %s used / %s total  (%s free, %s)\n", $3, $2, $4, $5}'
+    [ -f /var/run/reboot-required ] && _warn 'reboot required (kernel or libc updated)'
+    return 0
+}
+
+c_health () {
+    _head 'Docker health states'
+    local c st
+    for c in "${SERVICES[@]}"; do
+        st=$(_dk inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$c" 2>/dev/null) || st='absent'
+        case "$st" in
+            healthy|running) printf '    %-20s %s%s%s\n' "$c" "$GR" "$st" "$C0" ;;
+            starting)        printf '    %-20s %s%s%s\n' "$c" "$YE" "$st" "$C0" ;;
+            *)               printf '    %-20s %s%s%s\n' "$c" "$RE" "$st" "$C0" ;;
+        esac
+    done
+
+    _head 'Application probes'
+    if curl -fsS -m 8 -o /dev/null http://127.0.0.1:18000/openapi.json 2>/dev/null
+        then _ok  'mcpo-core  /openapi.json  200'
+        else _err 'mcpo-core  /openapi.json  FAILED  (tools will be missing in OWUI)'; fi
+    if curl -fsS -m 8 -o /dev/null http://127.0.0.1:3000/health 2>/dev/null
+        then _ok  'open-webui /health         200'
+        else _err 'open-webui /health         FAILED'; fi
+    if curl -fsS -m 8 -o /dev/null http://127.0.0.1:8880/v1/models 2>/dev/null
+        then _ok  'kokoro-tts /v1/models      200'
+        else _warn 'kokoro-tts /v1/models     no answer (TTS will be silent)'; fi
+    return 0
+}
+
+# Tool count is the fast way to spot the boot-order bug: OWUI caches the tool
+# list with no TTL and only refetches when it is COMPLETELY empty, so if mcpo
+# was still booting when OWUI started you get ~7 tools instead of the full set
+# and Admin Settings still shows every server present and enabled.
+c_tools () {
+    _head 'Tools mcpo-core is actually serving'
+    local spec
+    if ! spec=$(curl -fsS -m 15 http://127.0.0.1:18000/openapi.json 2>/dev/null); then
+        _err 'could not fetch /openapi.json - is mcpo-core up?'
+        return 1
+    fi
+    local n
+    if _have python3; then
+        n=$(printf '%s' "$spec" | python3 -c 'import sys,json; print(len(json.load(sys.stdin).get("paths",{})))' 2>/dev/null)
+    else
+        n=$(printf '%s' "$spec" | grep -o '"/[^"]*":{' | wc -l)
+    fi
+    _ok "$n tool endpoints"
+    _dim 'If OWUI shows far fewer than this in the chat + menu, run: owuihelp mcpo-heal'
+    return 0
+}
+
+c_ollama () {
+    _head "Ollama on the PC ($PC_TS_IP:$PC_OLLAMA_PORT)"
+    local t0 t1
+    t0=$(date +%s%N)
+    if curl -fsS -m 10 "http://$PC_TS_IP:$PC_OLLAMA_PORT/api/tags" >/tmp/.owui_tags 2>/dev/null; then
+        t1=$(date +%s%N)
+        _ok "reachable in $(( (t1 - t0) / 1000000 ))ms"
+        grep -o '"name":"[^"]*"' /tmp/.owui_tags | sed 's/"name":"//;s/"$//' | sort | sed 's/^/      /'
+        rm -f /tmp/.owui_tags
+    else
+        _err 'UNREACHABLE'
+        _dim 'PC asleep, Tailscale down, or Ollama not bound to 0.0.0.0/the tailnet.'
+    fi
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# THE ONE THAT MATTERS ON THIS HOST.
+# This box has a public IP. Docker writes its own iptables rules AHEAD of UFW,
+# so a container published as "3000:8080" is on the open internet while
+# `ufw status` still cheerfully reports DENY. Every published port in
+# docker-compose.yml is pinned to 127.0.0.1 for exactly that reason.
+# ---------------------------------------------------------------------------
+c_exposure () {
+    local bad=0
+
+    _head 'Published container ports'
+    local line
+    while IFS= read -r line; do
+        local name ports
+        name=${line%%$'\t'*}; ports=${line#*$'\t'}
+        [ -z "$ports" ] && { printf '    %-22s %s(none published)%s\n' "$name" "$GY" "$C0"; continue; }
+        if printf '%s' "$ports" | grep -Eq '(^|,[[:space:]]*)(0\.0\.0\.0|\[::\]|:::)'; then
+            printf '    %-22s %s%s%s  <-- PUBLIC\n' "$name" "$RE" "$ports" "$C0"; bad=1
+        else
+            printf '    %-22s %s%s%s\n' "$name" "$GY" "$ports" "$C0"
+        fi
+    done < <(_dk ps --format '{{.Names}}\t{{.Ports}}' 2>/dev/null)
+
+    _head 'Host sockets listening off-loopback'
+    local any=0
+    while IFS= read -r line; do
+        printf '    %s%s%s\n' "$YE" "$line" "$C0"; any=1
+    done < <(sudo ss -tlnH 2>/dev/null | awk '{print $4"  "$1}' | grep -Ev '^(127\.0\.0\.1|\[::1\]|127\.0\.0\.53)')
+    [ "$any" = 0 ] && _dim '(nothing - everything is loopback or tailnet-served)'
+
+    if [ -x "$STACK_DIR/check-docker-exposure.sh" ]; then
+        _head 'check-docker-exposure.sh'
+        ( cd "$STACK_DIR" && ./check-docker-exposure.sh ) 2>&1 | sed 's/^/    /'
+    fi
+
+    echo
+    if [ "$bad" = 1 ]; then
+        _err 'A container is published on 0.0.0.0. Fix the ports: line in docker-compose.yml'
+        _dim 'It must read "127.0.0.1:HOST:CONTAINER". External access is tailscale serve only.'
+        return 1
+    fi
+    _ok 'No container is published beyond loopback.'
+    return 0
+}
+
+# Every tailnet URL, what it proxies to, and whether that target answers.
+# A mapping pointing at a dead local port looks identical to a working one
+# until you try it from the phone.
+c_serve () {
+    _head 'Tailnet mappings (tailscale serve)'
+    if ! _have tailscale; then _err 'tailscale not on PATH'; return 1; fi
+    local out
+    out=$(sudo tailscale serve status 2>/dev/null || tailscale serve status 2>/dev/null)
+    if [ -z "$out" ] || printf '%s' "$out" | grep -qi 'no serve config'; then
+        _dim '(nothing served)'; return 0
+    fi
+    local url='' tgt port
+    while IFS= read -r line; do
+        line=$(printf '%s' "$line" | sed 's/^[[:space:]]*//')
+        case "$line" in
+            https://*|http://*) url=${line%% *}; url=${url%/} ;;
+            *proxy\ http*)
+                tgt=$(printf '%s' "$line" | grep -oE 'https?://[^ ]+' | tail -n1)
+                port=$(printf '%s' "$tgt" | grep -oE ':[0-9]+' | tr -d ':' | tail -n1)
+                if [ -n "$port" ] && _port "$port"
+                    then printf '    %-44s -> %-26s %sup%s\n'   "$url" "$tgt" "$GR" "$C0"
+                    else printf '    %-44s -> %-26s %sDOWN%s\n' "$url" "$tgt" "$RE" "$C0"; fi
+                url='' ;;
+        esac
+    done < <(printf '%s\n' "$out")
+    echo
+    _dim 'add:    sudo tailscale serve --bg --https <port> http://127.0.0.1:<local>'
+    _dim 'remove: sudo tailscale serve --https=<port> off'
+    return 0
+}
+
+c_ports () { _head 'Listening TCP sockets'; sudo ss -tlnp 2>/dev/null | sed 's/^/    /'; }
+
+c_sys () {
+    _head 'Uptime / load'
+    _dim "$(uptime | sed 's/^ *//')"
+    _head 'Memory'
+    free -h | sed 's/^/    /'
+    _head 'Disk'
+    df -h / /var/lib/docker 2>/dev/null | sed 's/^/    /'
+    _head 'Docker disk usage'
+    _dk system df 2>/dev/null | sed 's/^/    /'
+    _head 'Top 5 processes by memory'
+    ps -eo rss,comm --sort=-rss | head -6 | awk 'NR>1 {printf "    %6d MB  %s\n", $1/1024, $2}'
+    return 0
+}
+
+c_updates () {
+    _head 'Pending apt updates'
+    local all sec
+    all=$(apt list --upgradable 2>/dev/null | tail -n +2)
+    if [ -z "$all" ]; then _ok 'up to date'; else
+        sec=$(printf '%s\n' "$all" | grep -ci security)
+        _warn "$(printf '%s\n' "$all" | wc -l) packages upgradable ($sec security)"
+        printf '%s\n' "$all" | head -15 | sed 's/^/      /'
+        _dim 'apply with:  sudo apt update && sudo apt upgrade'
+    fi
+    [ -f /var/run/reboot-required ] && _warn 'reboot required'
+    _head 'Docker image drift'
+    _dim "compare with:  owuihelp pull   (pulls, does not restart anything)"
+    return 0
+}
+
+c_backups () {
+    _head "Offsite backups pushed from the PC ($BACKUP_DIR)"
+    if [ ! -d "$BACKUP_DIR" ]; then _warn 'directory does not exist yet'; return 0; fi
+    local f newest='' cnt=0
+    while IFS= read -r f; do
+        [ -z "$f" ] && continue
+        cnt=$(( cnt + 1 ))
+        local sz mt
+        sz=$(du -h "$f" 2>/dev/null | cut -f1)
+        mt=$(stat -c %Y "$f" 2>/dev/null)
+        if [ -z "$newest" ]; then
+            printf '    %-44s %6s  %s  %s<-- NEWEST%s\n' "$(basename "$f")" "$sz" "$(_age "$mt")" "$GR" "$C0"
+            newest=$f
+        else
+            printf '    %-44s %6s  %s\n' "$(basename "$f")" "$sz" "$(_age "$mt")"
+        fi
+    done < <(ls -1t "$BACKUP_DIR"/* 2>/dev/null | head -20)
+    [ "$cnt" = 0 ] && _warn 'no backups here at all - the weekly push may be broken'
+    echo
+    _dim 'These arrive FROM the PC (push-vps.ps1). Nothing on this box creates them.'
+    _dim 'Post-migration the live data is HERE, so this direction is now backwards.'
+    return 0
+}
+
+c_env () {
+    _head "Secrets present in $STACK_DIR/.env  (names only, never values)"
+    local f="$STACK_DIR/.env"
+    [ -f "$f" ] || { _err 'no .env found'; return 1; }
+    local k
+    for k in WEBUI_SECRET_KEY MCPO_API_KEY MCP_ADMIN_TOKEN SHODAN_API_KEY VT_API_KEY \
+             ST_API_KEY CENSYS_PAT NVD_API_KEY SEMGREP_APP_TOKEN CH_API_KEY GITHUB_PAT; do
+        if grep -qE "^${k}=.+" "$f"; then printf '    %-22s %sset%s\n'     "$k" "$GR" "$C0"
+        else                              printf '    %-22s %smissing%s\n' "$k" "$YE" "$C0"; fi
+    done
+    _dim 'GITHUB_PAT missing is fine - the github MCP is deliberately not registered.'
+    return 0
+}
+
+# ---- stack control --------------------------------------------------------
+c_up      () { _head 'docker compose up -d'; _dc up -d "$@"; }
+c_ps      () { _head 'docker compose ps';    _dc ps; }
+c_restart () { _head "restart ${*:-<whole stack>}"; _dc restart "$@"; }
+c_pull    () { _head 'docker compose pull';  _dc pull "$@"; echo; _dim 'Nothing restarted. Apply with: owuihelp recreate -y'; }
+c_config  () { _head 'resolved compose config'; _dc config; }
+
+c_down () {
+    _confirm down || return 1
+    _head 'docker compose down'
+    _dim 'Named volumes are NOT touched. This never passes -v, on purpose.'
+    _dc down
+}
+
+c_recreate () {
+    _confirm recreate || return 1
+    _head "up -d --force-recreate ${*:-<whole stack>}"
+    _dc up -d --force-recreate "$@"
+}
+
+# mcpo-core alone is not enough. open-webui caches the tool-server list with no
+# TTL and only refetches when that list is COMPLETELY empty - and the gmail/gcal
+# bridges always answer, so it never is. Restarting mcpo without then restarting
+# OWUI leaves you with a stale, short tool list and no error anywhere.
+c_mcpo_heal () {
+    _head 'Step 1/3 - restart mcpo-core'
+    _dc restart mcpo-core || return 1
+    _head 'Step 2/3 - wait for mcpo-core to report healthy'
+    local i=0 st=''
+    while [ $i -lt 40 ]; do
+        st=$(_dk inspect --format '{{.State.Health.Status}}' mcpo-core 2>/dev/null)
+        [ "$st" = healthy ] && break
+        printf '    %s...%s\r' "$GY" "$C0"; sleep 3; i=$(( i + 1 ))
+    done
+    if [ "$st" != healthy ]; then
+        _err "mcpo-core is '$st' after 2 minutes - NOT restarting open-webui."
+        _dim 'Look at why first:  owuihelp logs mcpo-core'
+        return 1
+    fi
+    _ok 'healthy'
+    _head 'Step 3/3 - restart open-webui so it re-reads the tool servers'
+    _dc restart open-webui
+    echo; _dim 'Verify the full set came back with:  owuihelp tools'
+}
+
+c_bridges () {
+    _head 'Gmail + Calendar bridges'
+    _dc up -d gcal-owui-bridge gmail-owui-bridge
+    sleep 2
+    _port_row gcal-owui-bridge 18100
+    _port_row gmail-owui-bridge 18101
+    _dim 'Both are first-class services in this project now - no orphan compose files.'
+}
+
+# logs <service> [lines]. No service = the whole stack. Follows only when there
+# is a terminal, so 'owuihelp vps logs open-webui' from the PC returns instead
+# of hanging on a stream you cannot Ctrl+C cleanly.
+c_logs () {
+    local svc="${1:-}" n="${2:-120}"
+    if [ -n "$svc" ] && [ "$svc" -eq "$svc" ] 2>/dev/null; then n=$svc; svc=''; fi
+    _head "logs ${svc:-<all services>} (last $n)"
+    if [ -t 1 ]; then _dc logs --tail "$n" -f $svc
+    else              _dc logs --tail "$n" $svc; fi
+}
+
+# NEVER passes --volumes. On 2026-07-13 an unidentified container was killed and
+# the owui-data volume went with it; that lesson is baked in here permanently.
+c_prune () {
+    _confirm prune || return 1
+    _head 'docker system prune -f  (images + build cache + stopped containers)'
+    _dim 'Volumes are excluded. If you want a volume gone, remove it by name, deliberately.'
+    _dk system prune -f
+    echo; _dk system df | sed 's/^/    /'
+}
+
+c_workspace () {
+    _head "MCP workspace ($STACK_DIR/workspace)"
+    if [ ! -d "$STACK_DIR/workspace" ]; then
+        _warn 'missing - the filesystem MCP server serves this. Create it: mkdir -p ~/ollama/workspace'
+        return 1
+    fi
+    ls -lh "$STACK_DIR/workspace" | sed 's/^/    /'
+    echo
+    _dim 'This is VPS-local. It is NOT the PC workspace bolt writes to - they diverged 2026-08-14.'
+}
+
+# ---------------------------------------------------------------------------
+# Added 2026-08-19 after mcpo-core died on every boot with the Mullvad exit node
+# enabled while every other container was fine.
+#
+# WHY ONLY MCPO CARES: it is the only container that needs working outbound DNS
+# and TLS DURING STARTUP. It spawns ~15 stdio servers via npx/uvx (baked, but
+# prefer-offline still revalidates against the registry) and then handshakes two
+# INTERNET streamable_http servers, censys and github. mcpo initialises servers
+# in config order inside a SHARED TaskGroup, so one hanging handshake does not
+# degrade - it cancels the parent scope and takes the whole set with it.
+# Everything else in the stack is a baked binary that boots and listens.
+#
+# This compares the HOST against a container on the stack's own network. If the
+# host is fine and the container is not, the exit node is not the problem -
+# Docker's inheritance of the host resolver, or the 1280 MTU, is.
+# ---------------------------------------------------------------------------
+c_netdiag () {
+    local net img
+    net="$(basename "$STACK_DIR")_default"
+    img='mcpo-core-baked:pinned'
+    _dk network inspect "$net" >/dev/null 2>&1 || net='bridge'
+
+    _head 'Exit node'
+    if _have tailscale; then
+        tailscale status 2>/dev/null | head -2 | sed 's/^/    /'
+        if sudo ip route show table 52 2>/dev/null | grep -q .; then
+            _warn 'exit-node routes ARE installed (table 52)'
+            sudo ip route show table 52 | grep -E '^(default|throw)' | sed 's/^/      /'
+
+            # THE ONE THAT BIT US, 2026-08-19. With --exit-node-allow-lan-access
+            # false (the default) Tailscale does not merely omit the local
+            # subnets - it installs "172.x.0.0/16 dev tailscale0" and routes
+            # Docker's bridges INTO the tunnel. Container replies then get
+            # de-NATed to 172.18.0.x, matched against that route, and re-emitted
+            # on tailscale0 instead of reaching the bridge. Every container TCP
+            # connection dies at connect(); DNS still works because dockerd
+            # proxies 127.0.0.11 from the HOST namespace, which is unaffected.
+            if sudo ip route show table 52 | grep -qE '^(172|10|192\.168)\.[0-9.]+/[0-9]+ dev tailscale0'; then
+                echo
+                _err 'LOCAL SUBNETS ARE BEING ROUTED INTO THE TUNNEL:'
+                sudo ip route show table 52 | grep -E '^(172|10|192\.168)\.' | sed 's/^/      /'
+                _dim 'FIX: sudo tailscale set --exit-node=<ip> --exit-node-allow-lan-access=true'
+                _dim 'Those lines must read "throw 172.x.0.0/16", not "dev tailscale0".'
+            elif sudo ip route show table 52 | grep -q '^throw 172\.'; then
+                _ok 'docker subnets have throw routes - allow-lan-access is on'
+            fi
+        else
+            _dim 'no routes in table 52 - exit node appears OFF'
+        fi
+    else _err 'tailscale not on PATH'; fi
+
+    _head 'MTU and MSS clamp'
+    ip -o link show 2>/dev/null |
+        awk '/tailscale0|docker0|br-/ {gsub(/:/,"",$2); printf "    %-18s mtu %s\n", $2, $5}'
+    if sudo iptables -t mangle -S FORWARD 2>/dev/null | grep -q TCPMSS; then
+        _ok 'MSS clamp present on FORWARD'
+    else
+        _warn 'NO MSS clamp on FORWARD - TLS from containers can stall at 1280 MTU'
+        _dim 'sudo iptables -t mangle -A FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu'
+    fi
+
+    _head 'HOST resolver and egress'
+    grep -E '^nameserver' /etc/resolv.conf | sed 's/^/    /'
+    if getent hosts registry.npmjs.org >/dev/null 2>&1; then _ok 'DNS ok'; else _err 'DNS FAILED'; fi
+    curl -s -m 15 -o /dev/null -w '    https://registry.npmjs.org  %{http_code} in %{time_total}s\n' \
+        https://registry.npmjs.org/ 2>/dev/null || _err '    https FAILED or timed out'
+    printf '    egress IP: %s\n' "$(curl -s -m 15 https://am.i.mullvad.net/json 2>/dev/null |
+        tr ',' '\n' | grep -E '"(ip|mullvad_exit_ip|country)"' | tr -d '"' | paste -sd' ' - )"
+
+    _head "CONTAINER resolver and egress (network: $net)"
+    if ! _dk image inspect "$img" >/dev/null 2>&1; then
+        _warn "image $img not present - skipping the container half"
+        return 0
+    fi
+    _dk run --rm --network "$net" --entrypoint sh "$img" -c '
+        grep -E "^nameserver" /etc/resolv.conf | sed "s/^/    /"
+        if getent hosts registry.npmjs.org >/dev/null 2>&1; then echo "    DNS ok"; else echo "    DNS FAILED"; fi
+        curl -s -m 15 -o /dev/null -w "    https://registry.npmjs.org  %{http_code} in %{time_total}s\n" https://registry.npmjs.org/ || echo "    https FAILED or timed out"
+        curl -s -m 15 -o /dev/null -w "    https://pypi.org            %{http_code} in %{time_total}s\n" https://pypi.org/simple/ || echo "    pypi FAILED or timed out"
+        printf "    egress IP: %s\n" "$(curl -s -m 15 https://am.i.mullvad.net/json | tr "," "\n" | grep -E "\"(ip|mullvad_exit_ip|country)\"" | tr -d "\"" | paste -sd" " -)"
+    ' 2>&1
+
+    _head 'Reading it'
+    _dim 'host ok + container DNS FAILED      -> Docker inherited 100.100.100.100. Pin dns in daemon.json.'
+    _dim 'host ok + container DNS ok + https   -> MTU black hole. Add the MSS clamp above.'
+    _dim '  stalls at ~15s'
+    _dim 'both show mullvad_exit_ip true       -> egress is going where you wanted it to.'
+    return 0
+}
+
+c_version () { printf '  owuihelp (VPS) %s\n  stack: %s\n' "$OWUIHELP_VERSION" "$COMPOSE_FILE"; }
+
+# ============================================================================
+#  COMMAND REGISTRY
+#  reg <name> <aliases,csv> <group> <flags> <blurb> <function>
+#  flags:  d = destructive (prompts, or demands -y when there is no terminal)
+#  Blurbs must not contain a pipe - it is the field separator.
+# ============================================================================
+# NOT named GROUPS: that is a bash special variable (the caller's unix groups)
+# and assignment to it is silently ignored, which turns the menu into a list of
+# gid numbers. Found the hard way, 2026-08-19.
+OWUI_GROUPS=('Stack (Docker)' 'Health & logs' 'Network & exposure' 'System' 'Maintenance')
+CMDS=()
+reg () { CMDS+=("$1|$2|$3|$4|$5|$6"); }
+
+reg up        ''                'Stack (Docker)'      ''  'Bring the stack online (idempotent). Optional service names'                    c_up
+reg ps        'list'            'Stack (Docker)'      ''  'docker compose ps - what is running right now'                                  c_ps
+reg restart   ''                'Stack (Docker)'      ''  'Restart the stack, or just the services you name'                               c_restart
+reg recreate  ''                'Stack (Docker)'      'd' 'Force-recreate containers (applies image or compose changes)'                   c_recreate
+reg down      'stop'            'Stack (Docker)'      'd' 'Stop and remove containers. Never touches volumes'                              c_down
+reg pull      ''                'Stack (Docker)'      ''  'Pull newer images WITHOUT restarting anything'                                  c_pull
+reg mcpo-heal 'heal,mcpo'       'Stack (Docker)'      ''  'Fix a short tool list - restart mcpo, wait healthy, then restart OWUI'          c_mcpo_heal
+reg bridges   ''                'Stack (Docker)'      ''  'Start or revive the Gmail + Calendar bridges'                                   c_bridges
+reg config    ''                'Stack (Docker)'      ''  'Show the fully resolved compose config (env vars substituted)'                  c_config
+
+reg status    'st'              'Health & logs'       ''  'One-glance health - containers, ports, the PC link, disk and RAM'               c_status
+reg health    'hc'              'Health & logs'       ''  'Docker healthcheck states plus live probes of OWUI, mcpo and Kokoro'            c_health
+reg tools     ''                'Health & logs'       ''  'How many tool endpoints mcpo is really serving (catches the boot-order bug)'    c_tools
+reg ollama    'pc'              'Health & logs'       ''  'Can this box reach Ollama on the PC over Tailscale, and how fast'               c_ollama
+reg logs      'log,tail'        'Health & logs'       ''  'Tail logs - owuihelp logs open-webui 200. Follows only on a real terminal'      c_logs
+
+reg exposure  'expose,audit'    'Network & exposure'  ''  'Is anything published beyond loopback. Docker outranks UFW on this box'         c_exposure
+reg serve     'mappings,ts'     'Network & exposure'  ''  'Every tailscale serve route, its local target, and whether that target is up'   c_serve
+reg ports     'sockets'         'Network & exposure'  ''  'Raw listening TCP sockets with owning process'                                  c_ports
+reg netdiag   'exitnode,egress' 'Network & exposure'  ''  'Why containers lose the internet under a Tailscale exit node - host vs container' c_netdiag
+
+reg sys       'box'             'System'              ''  'Uptime, load, RAM, disk, docker disk usage, top memory hogs'                    c_sys
+reg updates   'apt'             'System'              ''  'Pending apt updates and whether a reboot is required'                           c_updates
+reg env       'secrets'         'System'              ''  'Which API keys are present in .env - names only, never values'                  c_env
+
+reg backups   'bk'              'Maintenance'         ''  'List the offsite backups the PC has pushed here, newest marked'                 c_backups
+reg workspace 'ws'              'Maintenance'         ''  'Show the MCP filesystem workspace this box serves'                              c_workspace
+reg prune     ''                'Maintenance'         'd' 'Reclaim disk - prunes images and build cache. Never volumes'                    c_prune
+reg version   'v'               'Maintenance'         ''  'Version of this script and which compose file it drives'                        c_version
+reg find      'search'          'Maintenance'         ''  'Search commands by name or description   e.g. owuihelp find vram'               c_find
+
+# ---- long-form help, shown by 'owuihelp <cmd> ?' underneath the blurb ------
+_details () {
+    case "$1" in
+      exposure) cat <<'EOF'
+WHY THIS EXISTS:
+  This host has a public IP (185.230.216.117). Docker inserts its own iptables
+  rules AHEAD of UFW, so a container published as "3000:8080" is reachable from
+  the whole internet while `ufw status` still reports DENY.
+! Every ports: entry in docker-compose.yml is pinned to 127.0.0.1 deliberately.
+! Do not "simplify" any of them. Run this after every compose edit.
+EOF
+        ;;
+      mcpo-heal) cat <<'EOF'
+THE BUG IT FIXES:
+  Only ~7 tools in the chat + menu while Admin Settings shows all servers
+  present and enabled. OWUI caches the tool-server list with no TTL and only
+  refetches when it is COMPLETELY empty. The gmail/gcal bridges always answer,
+  so it never is - the mcpo-backed servers stay silently dropped.
+! Restarting mcpo alone does NOT fix it. OWUI must restart afterwards.
+  This command does both, in order, and waits for healthy in between.
+EOF
+        ;;
+      prune) cat <<'EOF'
+WHAT IT REMOVES:
+  Stopped containers, dangling images, unused networks, build cache.
+WHAT IT NEVER REMOVES:
+  Volumes. --volumes is not passed and should not be added.
+! On 2026-07-13 an unidentified container was killed and owui-data went with it.
+! If you want a volume gone, name it and remove it deliberately.
+EOF
+        ;;
+      backups) cat <<'EOF'
+DIRECTION MATTERS:
+  These arrive FROM the PC via push-vps.ps1. Nothing on this box creates them.
+! Since the 2026-08-14 migration the LIVE data lives here, so shipping PC ->
+! VPS backs up the stale copy. The push direction still needs reversing.
+EOF
+        ;;
+      down|recreate) cat <<'EOF'
+! Disruptive. Over a non-interactive SSH call this refuses unless you pass -y,
+! so 'owuihelp vps down' from the PC cannot take the stack offline by accident.
+  Volumes are never removed - neither command passes -v.
+EOF
+        ;;
+      netdiag) cat <<'EOF'
+THE SYMPTOM IT EXPLAINS:
+  Turn on a Tailscale exit node and mcpo-core hangs at boot, open-webui
+  never starts (dependency failed to start: mcpo-core is unhealthy), while
+  every other container carries on perfectly.
+CONFIRMED 2026-08-19, exit node {{EXT_SE_STO_WG_201_TS_IP}}:
+  mcpo logged "Initiating connection for server: 'filesystem'" and then
+  NOTHING for 4m38s until SIGTERM. filesystem is the FIRST server and is
+  a pure local stdio server - it needs no network to do its job. The only
+  thing in that code path touching the network is npx resolving
+  @modelcontextprotocol/server-filesystem@2026.1.14 against the registry.
+! So the boot hang is npx, not censys or github, and not the TaskGroup
+! cascade. It never reaches the internet-facing servers at all.
+! Meanwhile `ping google.com` from the HOST worked at 37ms. Host egress is
+! fine; CONTAINER egress is dead. That split is the whole bug.
+WHY IT HANGS RATHER THAN FAILING FAST:
+  npm_config_prefer_offline=true is not offline. npm still revalidates
+  stale metadata, and with a black-holed path it retries with backoff for
+  minutes instead of erroring. Fixed separately: the config now execs the
+  baked binaries directly, so npx is out of the boot path entirely.
+! mitre_attack ALSO fetches at boot - three GETs to raw.githubusercontent
+! .com for the ATT&CK bundles, and that data is not on a volume so it
+! re-downloads on every recreate. Going offline does not cover it.
+
+ROOT CAUSE OF THE EGRESS BREAK - SOLVED 2026-08-19:
+  --exit-node-allow-lan-access defaults to FALSE, and at that setting
+  Tailscale does not merely omit the locally-connected subnets from table
+  52 - it actively installs
+      172.17.0.0/16 dev tailscale0
+      172.18.0.0/16 dev tailscale0
+      172.20.0.0/16 dev tailscale0
+  i.e. it routes Docker's own bridges into the tunnel. tcpdump on
+  tailscale0 showed the whole story: SYN leaves masqueraded as
+  {{VPS_TS_IP}}, Mullvad returns the SYN-ACK, conntrack de-NATs it to
+  172.18.0.12 - and 80us later that de-NATed packet is emitted BACK OUT
+  tailscale0 instead of reaching the bridge. Five SYN retries, then dead.
+! It is a ROUTING fault, not a firewall one. UFW is innocent. A firewall
+! drop is silent; here you can watch the reply leave again.
+! DNS is a RED HERRING - it keeps working because dockerd proxies
+! 127.0.0.11 from the HOST namespace, which was never affected. Never
+! read "container DNS ok" as "container networking ok".
+  MTU was also innocent: connect= was 0.000000, so no TCP ever formed.
+  MSS clamping cannot help a connection that never handshakes.
+THE FIX:
+  sudo tailscale set --exit-node=<ip> --exit-node-allow-lan-access=true
+  Verify: table 52 must read "throw 172.x.0.0/16", not "dev tailscale0".
+EOF
+        ;;
+      *) return 1 ;;
+    esac
+}
+
+# ============================================================================
+#  DISPATCHER
+# ============================================================================
+_field () { printf '%s' "$1" | cut -d'|' -f"$2"; }
+
+_resolve () {   # echoes the matching registry row, or nothing
+    local key="$1" row name aliases a x
+    for row in "${CMDS[@]}"; do
+        name=$(_field "$row" 1); aliases=$(_field "$row" 2)
+        [ "$name" = "$key" ] && { printf '%s' "$row"; return 0; }
+        IFS=',' read -ra a <<< "$aliases"
+        for x in "${a[@]}"; do [ -n "$x" ] && [ "$x" = "$key" ] && { printf '%s' "$row"; return 0; }; done
+    done
+    return 1
+}
+
+c_find () {
+    local t="${1:-}"
+    [ -z "$t" ] && { _warn 'usage: owuihelp find <text>'; return 1; }
+    _head "Commands matching '$t'"
+    local row hit=0
+    for row in "${CMDS[@]}"; do
+        if printf '%s' "$row" | grep -qi -- "$t"; then
+            printf '    %s%-14s%s %s\n' "$YE" "$(_field "$row" 1)" "$C0" "$(_field "$row" 5)"; hit=1
+        fi
+    done
+    [ "$hit" = 0 ] && _dim '(nothing)'
+    return 0
+}
+
+_menu () {
+    printf '\n  %s AI STACK TOOLKIT - VPS %s   %s%s%s\n' "$WH" "$C0" "$GY" "$(hostname)" "$C0"
+    printf '  %sowuihelp <cmd>   /   owuihelp <cmd> ?  (explain)   /   owuihelp find <text>%s\n' "$GY" "$C0"
+    local g row tag
+    for g in "${OWUI_GROUPS[@]}"; do
+        _head "$g"
+        for row in "${CMDS[@]}"; do
+            [ "$(_field "$row" 3)" = "$g" ] || continue
+            tag=''; [ "$(_field "$row" 4)" = 'd' ] && tag=" $YE(!)$C0"
+            printf '    %s%-14s%s %s%s' "$YE" "$(_field "$row" 1)" "$C0" "$(_field "$row" 5)" "$tag"
+            [ -n "$(_field "$row" 2)" ] && printf ' %s(aka %s)%s' "$GY" "$(_field "$row" 2)" "$C0"
+            printf '\n'
+        done
+    done
+    printf '\n  %s(!) = disruptive, needs -y over SSH        from the PC: owuihelp vps <cmd>%s\n\n' "$GY" "$C0"
+}
+
+_explain () {   # $1 = registry row
+    local name blurb grp aliases flags
+    name=$(_field "$1" 1); aliases=$(_field "$1" 2); grp=$(_field "$1" 3)
+    flags=$(_field "$1" 4); blurb=$(_field "$1" 5)
+    printf '\n  %s%s%s\n    %s\n' "$YE" "$name" "$C0" "$blurb"
+    printf '    %sgroup: %s%s\n' "$GY" "$grp" "$C0"
+    [ -n "$aliases" ] && printf '    %salso:  %s%s\n' "$GY" "$aliases" "$C0"
+    [ "$flags" = 'd' ] && printf '    %snote:  disruptive - prompts, or needs -y when called over SSH%s\n' "$YE" "$C0"
+    if _details "$name" >/dev/null 2>&1; then
+        echo
+        _details "$name" | while IFS= read -r l; do
+            case "$l" in
+                *:) printf '    %s%s%s\n' "$CY" "$l" "$C0" ;;
+                !*) printf '    %s%s%s\n' "$YE" "${l#! }" "$C0" ;;
+                *)  printf '    %s%s%s\n' "$GY" "$l" "$C0" ;;
+            esac
+        done
+    fi
+    echo
+}
+
+owuihelp_main () {
+    [ $# -eq 0 ] && { _menu; return 0; }
+
+    # Strip leading dashes so --status == status, matching the PC toolkit.
+    local key="${1#--}"; key="${key#-}"; key=$(printf '%s' "$key" | tr '[:upper:]' '[:lower:]')
+    shift
+
+    case "$key" in
+        help|menu|'?') _menu; return 0 ;;
+        --version)     c_version; return 0 ;;
+    esac
+
+    local row
+    if ! row=$(_resolve "$key"); then
+        _err "unknown command: '$key'"
+        c_find "$key" >/dev/null 2>&1
+        _dim "run 'owuihelp' for the full menu, or 'owuihelp find $key'"
+        return 1
+    fi
+
+    # '?' as the second token = describe, do not execute.
+    if [ "${1:-}" = '?' ] || [ "${1:-}" = 'help' ] || [ "${1:-}" = 'explain' ]; then
+        _explain "$row"; return 0
+    fi
+
+    # Pull our own control flags out so they never reach the command body.
+    local args=() a
+    for a in "$@"; do
+        case "$a" in
+            -y|--yes|-Force|--force) OWUI_FORCE=1 ;;
+            *) args+=("$a") ;;
+        esac
+    done
+    export OWUI_FORCE="${OWUI_FORCE:-0}"
+
+    # Explicit branch, NOT "${args[@]:-}": on an empty array that idiom passes a
+    # single empty-string argument, which lands in docker compose as a service
+    # name of "" and makes 'owuihelp up' fail with a nonsense error.
+    local fn; fn=$(_field "$row" 6)
+    if [ ${#args[@]} -eq 0 ]; then "$fn"; else "$fn" "${args[@]}"; fi
+}
+
+owuihelp_main "$@"

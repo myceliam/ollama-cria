@@ -1,0 +1,30 @@
+# qwen3.5-agent:9b - tuned for AGENTIC / tool-driving work, not pure codegen.
+#
+# The problem this fixes: paragraph-scale "semantic loops" where the model
+# re-derives the same reasoning over and over in its thinking block.
+#
+# Why the code-tuned variant loops:
+#   * repeat_last_n defaults to 64 tokens. A paragraph loop cycles over ~150+
+#     tokens, so it is OUTSIDE the penalty window - the sampler cannot see it.
+#   * presence_penalty 0 (correct for code, so identifiers can repeat) removes
+#     the only long-range brake.
+#   * temperature 0.3 makes sampling near-deterministic, so once a cycle starts
+#     the same tokens keep winning and there is no escape velocity.
+#
+# Fixes, in order of importance:
+FROM huihui_ai/qwen3.5-abliterated:9b
+
+# Window widened past paragraph scale so repeat_penalty can actually SEE the loop
+PARAMETER repeat_last_n 1024
+PARAMETER repeat_penalty 1.1
+
+# Mild long-range brake. Deliberately NOT 1.5 - that would harm code by
+# penalising reused identifiers. 0.4 discourages re-derivation without that cost.
+PARAMETER presence_penalty 0.4
+
+# Qwen3.5's own recommended thinking-mode temperature. Enough entropy to break
+# out of a cycle; still low enough to be faithful when editing code.
+PARAMETER temperature 0.6
+PARAMETER top_p 0.95
+PARAMETER top_k 20
+PARAMETER min_p 0

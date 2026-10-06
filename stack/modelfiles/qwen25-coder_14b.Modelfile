@@ -1,0 +1,5 @@
+FROM huihui_ai/qwen2.5-coder-abliterate:14b
+PARAMETER temperature 0.2
+PARAMETER top_p 0.9
+PARAMETER top_k 20
+PARAMETER repeat_penalty 1.05

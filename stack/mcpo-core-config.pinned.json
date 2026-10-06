@@ -1,0 +1,175 @@
+{
+  "_README_ordering_matters": "'github' was removed on 2026-08-05 and RESTORED on 2026-08-06 with a fresh token. THE CASCADE: mcpo initialises servers in config order inside a SHARED TaskGroup. When github's HTTP handshake 401'd, it raised CancelledError on the PARENT cancel scope and killed EVERY server initialised after it - mitre_attack, cve_nvd, youtube_transcript, shodan, censys and security_tools all served HTTP 200 with EMPTY paths, for weeks, while looking enabled in OWUI. ROOT CAUSE, now settled: the old PAT was simply DEAD - it returned 401 from plain api.github.com/user too. An earlier theory that api.githubcopilot.com requires a Copilot entitlement was WRONG: probed 2026-08-06 with a valid fine-grained PAT and the endpoint returned HTTP 200 with a full MCP initialize handshake. KEEP THIS ENTRY LAST. Any streamable_http server whose auth can fail belongs at the end of the file, because an HTTP handshake failure cascades whereas a stdio process exiting does not (semgrep fails cleanly with no SEMGREP_APP_TOKEN and breaks nothing). Verify any change with check-mcpo-tools.py. 2026-09-09: 'flatstack' now sits AFTER github and is the new last entry. That is deliberate and it is not a demotion of the github rule - it is the same rule applied harder. flatstack points at a service on the WINDOWS HOST, so it is unreachable whenever that host process is not running (a reboot before the scheduled task fires, a crash, a manual stop). It is therefore the entry MOST likely to fail its handshake, and the cascade only kills entries that come AFTER the failure. Last position costs nothing when flatstack is down; putting it before github would let a stopped host service take github's 47 tools with it. The residual accepted risk is the reverse direction: a github 401 would now also kill flatstack's 3 tools. That is the cheaper of the two failures. If you add another host-backed server, it goes after this one. 2026-09-11: CORRECTION - 'flatstack' was REMOVED (project archived to E:\\ai\\imgstack\\archived). 'github' is the last entry again, which is the original rule. The flatstack paragraph above is kept as the reasoning record, not as a description of the current file. If flatstack is ever restored, it goes back AFTER github for the reasons stated.",
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem@2026.1.14",
+        "/workspace"
+      ]
+    },
+    "memory": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-memory@2026.1.26"
+      ],
+      "env": {
+        "MEMORY_FILE_PATH": "/app/data/memory.json"
+      }
+    },
+    "time": {
+      "command": "uvx",
+      "args": [
+        "--with",
+        "mcp<2",
+        "mcp-server-time@2026.6.4",
+        "--local-timezone=Europe/London"
+      ]
+    },
+    "osint": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "osint-mcp-server@0.2.0"
+      ]
+    },
+    "browser": {
+      "type": "streamable_http",
+      "url": "http://playwright-mcp:8931/mcp"
+    },
+    "web_search": {
+      "command": "python3",
+      "args": [
+        "/app/mcp-servers/web_search_vps_mcp.py"
+      ]
+    },
+    "web_fetch": {
+      "command": "uvx",
+      "args": [
+        "--with",
+        "mcp<2",
+        "mcp-server-fetch@2026.6.4"
+      ]
+    },
+    "jina_reader": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--with",
+        "mcp==1.28.0",
+        "--with",
+        "httpx==0.28.1",
+        "python",
+        "/app/mcp-servers/jina_reader_mcp.py"
+      ],
+      "env": {
+        "JINA_READER_BASE_URL": "http://jina-reader:3000",
+        "JINA_READER_MAX_CHARS": "80000",
+        "ALLOW_PRIVATE_FETCH": "false"
+      }
+    },
+    "companies_house": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--with",
+        "mcp==1.28.0",
+        "--with",
+        "httpx==0.28.1",
+        "python",
+        "/app/mcp-servers/companies_house_mcp.py"
+      ],
+      "env": {
+        "CH_API_KEY": "${CH_API_KEY}"
+      }
+    },
+    "context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp@3.2.1"
+      ]
+    },
+    "sequential_thinking": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking@2026.7.4"
+      ]
+    },
+    "semgrep": {
+      "command": "/root/.local/bin/semgrep",
+      "args": [
+        "mcp",
+        "--transport",
+        "stdio"
+      ],
+      "env": {
+        "SEMGREP_APP_TOKEN": "${SEMGREP_APP_TOKEN}",
+        "PATH": "/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      }
+    },
+    "mcp_risk_scanner": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--with",
+        "mcp==1.28.0",
+        "python",
+        "/app/mcp-servers/mcp_risk_scanner.py"
+      ],
+      "env": {
+        "MCP_RISK_CONFIG_PATH": "/app/data/config.runtime.json",
+        "MCP_RISK_STATIC_CONFIG_PATH": "/app/config.json"
+      }
+    },
+    "mitre_attack": {
+      "command": "uvx",
+      "args": [
+        "--with",
+        "mcp<2",
+        "mitre-mcp@0.3.1"
+      ]
+    },
+    "youtube_transcript": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@sinco-lab/mcp-youtube-transcript@0.0.12"
+      ]
+    },
+    "shodan": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@burtthecoder/mcp-shodan@1.0.22"
+      ],
+      "env": {
+        "SHODAN_API_KEY": "${SHODAN_API_KEY}"
+      }
+    },
+    "censys": {
+      "type": "streamable_http",
+      "url": "https://mcp.platform.censys.io/platform/mcp/",
+      "headers": {
+        "Authorization": "Bearer ${CENSYS_PAT}"
+      }
+    },
+    "security_tools": {
+      "type": "streamable_http",
+      "url": "http://bolt:3001/mcp",
+      "headers": {
+        "Authorization": "Bearer ${MCP_ADMIN_TOKEN}"
+      }
+    },
+    "github": {
+      "type": "streamable_http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": {
+        "Authorization": "Bearer ${GITHUB_PAT}"
+      }
+    }
+  }
+}

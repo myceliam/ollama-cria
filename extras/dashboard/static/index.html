@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Home Lab Status Dashboard v2.0</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/date-fns@3.6.0/cdn.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <style>
+    /* ==================================================================
+       Midnight Blue / Solarized Dark Base + Rainbow Neon Accents
+       ================================================================== */
+    :root {
+      --bg-deep: #0a0c1a;
+      --bg-mid: #0f1228;
+      --card-bg: rgba(15, 23, 42, 0.65);
+    }
+
+    body {
+      background: linear-gradient(135deg, #0a0c1a 0%, #0f1228 40%, #0d1120 100%);
+      min-height: 100vh;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    }
+
+    /* Glassmorphism */
+    .glass {
+      background: rgba(15, 23, 42, 0.65);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+    .glass-heavy {
+      background: rgba(10, 15, 30, 0.85);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
+
+    /* Rainbow border animation */
+    @keyframes rainbow-spin {
+      from { filter: hue-rotate(0deg); }
+      to   { filter: hue-rotate(360deg); }
+    }
+    .card-rainbow {
+      position: relative; border: 2px solid rgba(71,85,105,0.4);
+      transition: border-color 0.3s ease, box-shadow 0.3s ease; z-index: 0; cursor: pointer;
+    }
+    .card-rainbow::before {
+      content: ''; position: absolute; inset: -3px; border-radius: 18px; padding: 3px;
+      background: linear-gradient(135deg, #ff006e, #ff8800, #ffdd00, #00f5d4, #00bbf9, #9b5de5);
+      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor; mask-composite: exclude;
+      opacity: 0; transition: opacity 0.35s; z-index: -1; pointer-events: none;
+    }
+    .card-rainbow:hover::before { opacity: 1; animation: rainbow-spin 3s linear infinite; }
+    .card-rainbow:hover { border-color: transparent; box-shadow: 0 0 24px rgba(139,92,246,0.30), 0 0 48px rgba(6,182,212,0.14); }
+
+    /* Online / Offline pulse dots */
+    @keyframes pulse-online {
+      0%,100% { box-shadow: 0 0 6px #00ff88, 0 0 12px #00ff88, 0 0 20px rgba(0,255,136,0.5); }
+      50% { box-shadow: 0 0 12px #00ff88, 0 0 24px #00ff88, 0 0 36px rgba(0,255,136,0.7); }
+    }
+    @keyframes pulse-offline {
+      0%,100% { box-shadow: 0 0 6px #ff3355, 0 0 12px #ff3355, 0 0 20px rgba(255,51,85,0.5); }
+      50% { box-shadow: 0 0 12px #ff3355, 0 0 24px #ff3355, 0 0 36px rgba(255,51,85,0.7); }
+    }
+    .dot-online { width:14px; height:14px; background:#00ff88; border-radius:50%; animation:pulse-online 2s ease-in-out infinite; display:inline-block; flex-shrink:0; }
+    .dot-offline { width:14px; height:14px; background:#ff3355; border-radius:50%; animation:pulse-offline 2.5s ease-in-out infinite; display:inline-block; flex-shrink:0; }
+
+    /* Timeframe toggle pills */
+    .tf-pill {
+      padding: 6px 18px; border-radius: 999px; font-size: 0.8rem; font-weight: 600;
+      border: 2px solid rgba(71,85,105,0.5); color: #94a3b8; cursor: pointer;
+      transition: all 0.2s; background: transparent;
+    }
+    .tf-pill.active {
+      border-color: transparent; color: #fff;
+      background: linear-gradient(135deg, rgba(6,182,212,0.3), rgba(139,92,246,0.3));
+      box-shadow: 0 0 14px rgba(6,182,212,0.25);
+    }
+    .tf-pill:hover:not(.active) { border-color: rgba(6,182,212,0.5); color: #cbd5e1; }
+
+    /* Refresh button */
+    .btn-refresh {
+      background: linear-gradient(135deg, rgba(6,182,212,0.15), rgba(139,92,246,0.15));
+      border: 2px solid transparent; position: relative; background-clip: padding-box;
+    }
+    .btn-refresh::before {
+      content: ''; position: absolute; inset: -2px; border-radius: inherit; padding: 2px;
+      background: linear-gradient(135deg, #06b6d4, #8b5cf6, #d946ef);
+      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor; mask-composite: exclude;
+    }
+    .btn-refresh:hover { background: linear-gradient(135deg, rgba(6,182,212,0.28), rgba(139,92,246,0.28)); transform: scale(1.04); }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center;
+      background: rgba(5,7,18,0.78); backdrop-filter: blur(8px);
+      opacity: 0; pointer-events: none; transition: opacity 0.3s;
+    }
+    .modal-overlay.open { opacity: 1; pointer-events: auto; }
+    .modal-content {
+      max-width: 720px; width: 95%; max-height: 90vh; overflow-y: auto;
+      border-radius: 24px; padding: 32px;
+      transform: scale(0.92); transition: transform 0.3s;
+    }
+    .modal-overlay.open .modal-content { transform: scale(1); }
+
+    /* Latency color thresholds */
+    .latency-fast  { color: #00ff88; }
+    .latency-mid   { color: #facc15; }
+    .latency-slow  { color: #fb923c; }
+
+    /* Fade-in */
+    @keyframes fadeInUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+    .fade-card { animation: fadeInUp 0.45s ease forwards; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: #0f1228; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+
+    /* Heatmap */
+    .heatmap-cell { width: 14px; height: 14px; border-radius: 3px; transition: transform 0.15s; }
+    .heatmap-cell:hover { transform: scale(1.5); z-index: 5; }
+
+    /* SVG gauge needle transition */
+    #gaugeNeedle { transition: transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1); transform-origin: 100px 90px; }
+  </style>
+</head>
+<body class="text-slate-200 antialiased">
+
+  <!-- ==================================================================
+       HEADER
+       ================================================================== -->
+  <header class="max-w-7xl mx-auto px-4 pt-8 pb-2 sm:px-6 lg:px-8">
+    <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+      <div>
+        <h1 class="text-3xl sm:text-4xl font-bold tracking-tight">
+          <span class="bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">Echo Atlas</span>
+          <span class="text-slate-300 font-light ml-2">Home Lab</span>
+          <span class="text-xs text-slate-600 ml-2 align-super">v2.0</span>
+        </h1>
+        <p class="text-slate-500 text-sm mt-1">Tailscale mesh network — real-time monitoring & historical analytics</p>
+      </div>
+      <div class="flex items-center gap-3 flex-wrap">
+        <div class="countdown-badge text-xs font-mono px-3 py-1.5 rounded-full flex items-center gap-1.5"
+             style="background:rgba(6,182,212,0.12); border:1px solid rgba(6,182,212,0.35); color:#67e8f9;">
+          <span id="countdownText">Next: 15s</span>
+          <span class="relative flex h-2 w-2">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2 w-2 bg-cyan-400"></span>
+          </span>
+        </div>
+        <button id="refreshBtn" onclick="manualRefresh()"
+                class="btn-refresh text-sm font-semibold px-5 py-2 rounded-xl text-cyan-200 transition-all duration-200 active:scale-95 cursor-pointer">
+          <span class="flex items-center gap-2">
+            <svg id="refreshIcon" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5M20 20v-5h-5M4 9a9 9 0 0113.9-5.4M20 15a9 9 0 01-13.9 5.4"/>
+            </svg>
+            Refresh
+          </span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ==================================================================
+       GLOBAL CHART SECTION
+       ================================================================== -->
+  <section class="max-w-7xl mx-auto px-4 pt-4 sm:px-6 lg:px-8">
+    <div class="glass rounded-2xl p-5 sm:p-6 border border-slate-700/50">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+        <h2 class="text-lg font-semibold text-white">Network Latency Over Time</h2>
+        <div class="flex gap-2">
+          <button class="tf-pill active" data-tf="1h" onclick="setTimeframe('1h', this)">1 Hour</button>
+          <button class="tf-pill" data-tf="24h" onclick="setTimeframe('24h', this)">24 Hours</button>
+          <button class="tf-pill" data-tf="7d" onclick="setTimeframe('7d', this)">7 Days</button>
+        </div>
+      </div>
+      <div class="relative" style="height: 380px;">
+        <canvas id="globalChart"></canvas>
+      </div>
+      <p class="text-xs text-slate-600 mt-3 text-center" id="chartNote">Click legend labels to toggle nodes on/off</p>
+    </div>
+  </section>
+
+  <!-- ==================================================================
+       NODE CARDS GRID
+       ================================================================== -->
+  <main class="max-w-7xl mx-auto px-4 pt-6 pb-12 sm:px-6 lg:px-8">
+    <div id="cardGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5"></div>
+    <div id="loadingState" class="flex flex-col items-center justify-center py-20 text-slate-500">
+      <div class="animate-spin rounded-full h-10 w-10 border-2 border-t-cyan-400 border-r-purple-400 border-b-pink-400 border-l-transparent mb-4"></div>
+      <p class="text-sm">Loading node statuses…</p>
+    </div>
+  </main>
+
+  <footer class="max-w-7xl mx-auto px-4 pb-6 text-center text-xs text-slate-600">
+    <span id="lastUpdateFooter">Last update: --</span>
+  </footer>
+
+  <!-- ==================================================================
+       DRILL-DOWN MODAL
+       ================================================================== -->
+  <div id="nodeModal" class="modal-overlay" onclick="closeModal(event)">
+    <div class="modal-content glass-heavy border border-slate-700/60" onclick="event.stopPropagation()">
+      <!-- Close button -->
+      <div class="flex justify-end mb-2">
+        <button onclick="closeModal()" class="text-slate-500 hover:text-pink-400 transition-colors text-2xl leading-none">&times;</button>
+      </div>
+
+      <!-- Modal header -->
+      <div id="modalHeader" class="mb-6"></div>
+
+      <!-- Latency Gauge + Stats row -->
+      <div class="flex flex-col md:flex-row gap-6 mb-6">
+        <div class="flex-shrink-0 flex flex-col items-center">
+          <svg id="gaugeSvg" width="200" height="120" viewBox="0 0 200 120" class="mb-2">
+            <!-- Background arc -->
+            <defs>
+              <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#00ff88"/>
+                <stop offset="30%" stop-color="#facc15"/>
+                <stop offset="65%" stop-color="#fb923c"/>
+                <stop offset="100%" stop-color="#ff3355"/>
+              </linearGradient>
+            </defs>
+            <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="rgba(71,85,105,0.4)" stroke-width="12" stroke-linecap="round"/>
+            <path id="gaugeArc" d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="url(#gaugeGrad)" stroke-width="12" stroke-linecap="round" stroke-dasharray="251" stroke-dashoffset="251"/>
+            <!-- Needle -->
+            <line id="gaugeNeedle" x1="100" y1="90" x2="100" y2="30" stroke="#fff" stroke-width="2.5" stroke-linecap="round" style="transform: rotate(-90deg);"/>
+            <circle cx="100" cy="90" r="5" fill="#fff"/>
+          </svg>
+          <span id="gaugeValue" class="text-2xl font-bold font-mono text-white">-- ms</span>
+        </div>
+
+        <!-- Quick stats -->
+        <div class="grid grid-cols-2 gap-3 flex-1" id="modalQuickStats"></div>
+      </div>
+
+      <!-- 7-Day Heatmap -->
+      <div class="mb-4">
+        <h3 class="text-sm font-semibold text-slate-400 mb-3 uppercase tracking-wider">7-Day Activity Heatmap</h3>
+        <div id="heatmapContainer" class="overflow-x-auto"></div>
+      </div>
+
+      <!-- Advanced stats grid -->
+      <div id="modalAdvStats" class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4"></div>
+    </div>
+  </div>
+
+  <!-- ==================================================================
+       VANILLA JAVASCRIPT — Dashboard + Chart.js + Modal
+       ================================================================== -->
+  <script>
+    // ── Constants ──────────────────────────────────────────────────────
+    const API_STATUS  = '/api/status';
+    const API_HISTORY = '/api/history';
+    const API_NODE    = '/api/node';
+    const REFRESH_INTERVAL = 15; // seconds
+    const NODE_COLORS = {
+      "kais-pc":"#ff006e","router":"#ff8800","liams-tab-s10":"#ffdd00",
+      "minipc":"#00f5d4","mr-fold":"#00bbf9","mumspc":"#9b5de5",
+      "pc":"#00ff88","vps":"#ff6b6b"
+    };
+
+    let globalChart = null;
+    let currentTimeframe = '24h';
+    let autoTimer = null, countdownTimer = null, countdownValue = REFRESH_INTERVAL;
+    let nodeCache = {}; // { nodeId: { sparklineData:[], uptimePct:0 } }
+
+    // ── DOM refs ───────────────────────────────────────────────────────
+    const GRID = document.getElementById('cardGrid');
+    const LOADING = document.getElementById('loadingState');
+    const FOOTER = document.getElementById('lastUpdateFooter');
+    const COUNTER = document.getElementById('countdownText');
+    const REFRESH_ICON = document.getElementById('refreshIcon');
+    const CHART_NOTE = document.getElementById('chartNote');
+
+    // ── Format helpers ─────────────────────────────────────────────────
+    const fmtLatency = ms => {
+      if (ms == null) return '<span class="text-slate-600">--</span>';
+      let c = ms < 25 ? 'latency-fast' : ms < 60 ? 'latency-mid' : 'latency-slow';
+      return `<span class="${c} font-mono font-semibold">${ms.toFixed(1)}ms</span>`;
+    };
+    const fmtTime = iso => iso ? new Date(iso).toLocaleTimeString('en-GB',{hour12:false}) : '--';
+    const fmtDate = iso => iso ? new Date(iso).toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'medium'}) : '--';
+    const fmtPct = v => (v != null ? v.toFixed(2) + '%' : '--');
+
+    // ── Global Chart ───────────────────────────────────────────────────
+    async function initGlobalChart() {
+      const ctx = document.getElementById('globalChart').getContext('2d');
+      const data = await fetchHistory(currentTimeframe);
+
+      const datasets = (data.datasets || []).map(ds => ({
+        label: ds.name,
+        data: ds.data.map(p => ({ x: p.x, y: p.y })),
+        borderColor: ds.color,
+        backgroundColor: ds.color + '22',
+        borderWidth: 2,
+        pointRadius: 0,
+        pointHoverRadius: 5,
+        tension: 0.25,
+        fill: false,
+        spanGaps: true,
+      }));
+
+      if (globalChart) globalChart.destroy();
+
+      globalChart = new Chart(ctx, {
+        type: 'line',
+        data: { datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: { color: '#94a3b8', usePointStyle: true, pointStyleWidth: 10, padding: 20, font: { size: 12 } },
+              onClick: function(e, legendItem, legend) {
+                // Built-in toggle
+                const idx = legendItem.datasetIndex;
+                const meta = legend.chart.getDatasetMeta(idx);
+                meta.hidden = meta.hidden === null ? !legend.chart.data.datasets[idx].hidden : null;
+                legend.chart.update();
+                CHART_NOTE.textContent = 'Click legend labels to toggle nodes on/off';
+              }
+            },
+            tooltip: {
+              backgroundColor: 'rgba(15,23,42,0.95)',
+              titleColor: '#e2e8f0', bodyColor: '#cbd5e1',
+              borderColor: 'rgba(139,92,246,0.4)', borderWidth: 1,
+              callbacks: {
+                label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y != null ? ctx.parsed.y.toFixed(1) + 'ms' : 'offline'}`
+              }
+            }
+          },
+          scales: {
+            x: {
+              type: 'time',
+              time: { unit: currentTimeframe === '7d' ? 'hour' : currentTimeframe === '24h' ? 'minute' : 'minute' },
+              grid: { color: 'rgba(71,85,105,0.15)' },
+              ticks: { color: '#64748b', maxTicksLimit: 12 }
+            },
+            y: {
+              title: { display: true, text: 'Latency (ms)', color: '#64748b' },
+              grid: { color: 'rgba(71,85,105,0.15)' },
+              ticks: { color: '#64748b' },
+              beginAtZero: true
+            }
+          }
+        }
+      });
+    }
+
+    async function fetchHistory(tf) {
+      const resp = await fetch(`${API_HISTORY}?timeframe=${tf}`);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      return resp.json();
+    }
+
+    async function setTimeframe(tf, btn) {
+      currentTimeframe = tf;
+      document.querySelectorAll('.tf-pill').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      try {
+        const data = await fetchHistory(tf);
+        updateChartDatasets(data);
+        CHART_NOTE.textContent = 'Click legend labels to toggle nodes on/off';
+      } catch (e) { console.warn('Chart update failed:', e); }
+    }
+
+    function updateChartDatasets(data) {
+      if (!globalChart) return;
+      const datasets = (data.datasets || []).map(ds => ({
+        label: ds.name,
+        data: ds.data.map(p => ({ x: p.x, y: p.y })),
+        borderColor: ds.color,
+        backgroundColor: ds.color + '22',
+        borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, tension: 0.25, fill: false, spanGaps: true,
+      }));
+      globalChart.data.datasets = datasets;
+      globalChart.options.scales.x.time.unit = currentTimeframe === '7d' ? 'hour' : 'minute';
+      globalChart.update();
+    }
+
+    // ── Node Cards ─────────────────────────────────────────────────────
+    async function fetchStatusAndRender() {
+      try {
+        const resp = await fetch(API_STATUS);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        renderCards(data.nodes);
+        FOOTER.textContent = `Last update: ${fmtDate(data.last_update)}`;
+        resetCountdown();
+      } catch (e) {
+        console.warn('Status fetch error:', e);
+        FOOTER.textContent = 'Fetch error — retrying…';
+      }
+    }
+
+    function renderCards(nodes) {
+      GRID.innerHTML = nodes.map(n => {
+        const online = n.status === 'online';
+        const dotCls = online ? 'dot-online' : 'dot-offline';
+        const statusText = online ? 'Online' : 'Offline';
+        const statusCol = online ? 'text-emerald-400' : 'text-red-400';
+        const lat = fmtLatency(n.latency_ms);
+        const checked = fmtTime(n.last_checked);
+        const port = n.port_22 ? '<span class="text-xs text-emerald-600">SSH ✓</span>' : '<span class="text-xs text-slate-700">SSH ✗</span>';
+        const uptime = nodeCache[n.id] ? fmtPct(nodeCache[n.id].uptimePct) : '--';
+
+        return `
+          <div class="card-rainbow glass rounded-2xl p-5 fade-card flex flex-col gap-3" onclick="openModal('${n.id}')" title="Click for details">
+            <div class="flex items-start justify-between gap-2">
+              <div class="min-w-0">
+                <h3 class="text-base font-semibold text-white truncate">${n.name}</h3>
+                <p class="text-xs text-slate-500 mt-0.5 font-mono truncate">${n.tailscale_ip}</p>
+              </div>
+              <span class="${dotCls}"></span>
+            </div>
+            <div class="flex items-center justify-between text-sm"><span class="${statusCol} font-medium">${statusText}</span><span>${lat}</span></div>
+            <div class="flex items-center justify-between border-t border-slate-800 pt-2.5 text-xs text-slate-500">
+              <span>${port}</span>
+              <span>Uptime ${uptime}</span>
+            </div>
+            <div class="text-xs text-slate-600 flex justify-between">
+              <span>⏱ ${checked}</span>
+            </div>
+            <canvas id="spark-${n.id}" class="w-full" height="30" style="height:30px; opacity:0.5;"></canvas>
+          </div>`;
+      }).join('');
+      LOADING.style.display = 'none';
+
+      // Draw sparklines after DOM update
+      nodes.forEach(n => drawSparkline(n.id));
+    }
+
+    // ── Sparklines ─────────────────────────────────────────────────────
+    async function loadSparklineData(nodeId) {
+      try {
+        const resp = await fetch(`${API_NODE}/${nodeId}`);
+        if (!resp.ok) return;
+        const detail = await resp.json();
+        // Store in cache
+        if (!nodeCache[nodeId]) nodeCache[nodeId] = {};
+        nodeCache[nodeId].uptimePct = detail.stats?.uptime_pct;
+        // Fetch mini-history for sparkline (last 1h)
+        const histResp = await fetch(`${API_HISTORY}?timeframe=1h`);
+        if (!histResp.ok) return;
+        const histData = await histResp.json();
+        const ds = (histData.datasets || []).find(d => d.id === nodeId);
+        nodeCache[nodeId].sparklineData = ds ? ds.data : [];
+      } catch (e) { /* silently fail */ }
+    }
+
+    function drawSparkline(nodeId) {
+      const canvas = document.getElementById('spark-' + nodeId);
+      if (!canvas) return;
+      const data = (nodeCache[nodeId] && nodeCache[nodeId].sparklineData) || [];
+      const values = data.map(d => d.y).filter(y => y != null);
+      if (values.length < 2) {
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, 30);
+        return;
+      }
+
+      // Destroy previous chart instance if any
+      if (canvas._chart) canvas._chart.destroy();
+
+      const color = NODE_COLORS[nodeId] || '#fff';
+      canvas._chart = new Chart(canvas.getContext('2d'), {
+        type: 'line',
+        data: {
+          labels: values.map((_, i) => i),
+          datasets: [{ data: values, borderColor: color, borderWidth: 1.5, pointRadius: 0, tension: 0.4, fill: false }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          animation: false,
+          plugins: { legend: { display: false }, tooltip: { enabled: false } },
+          scales: { x: { display: false }, y: { display: false, min: 0 } },
+          elements: { point: { radius: 0 } }
+        }
+      });
+    }
+
+    // ── Refresh all sparklines every 60s ───────────────────────────────
+    async function refreshAllSparklines() {
+      const promises = [];
+      // Refresh node cache
+      for (const nid of Object.keys(NODE_COLORS)) {
+        promises.push(loadSparklineData(nid));
+      }
+      await Promise.allSettled(promises);
+      // Redraw
+      for (const nid of Object.keys(NODE_COLORS)) {
+        drawSparkline(nid);
+      }
+    }
+
+    // ── Manual Refresh ─────────────────────────────────────────────────
+    async function manualRefresh() {
+      REFRESH_ICON.classList.add('animate-spin');
+      await Promise.allSettled([fetchStatusAndRender(), refreshAllSparklines()]);
+      setTimeout(() => REFRESH_ICON.classList.remove('animate-spin'), 400);
+    }
+
+    // ── Countdown ──────────────────────────────────────────────────────
+    function resetCountdown() {
+      countdownValue = REFRESH_INTERVAL;
+      updateCountdownUI();
+      clearInterval(countdownTimer);
+      countdownTimer = setInterval(() => { countdownValue--; updateCountdownUI(); if (countdownValue <= 0) countdownValue = REFRESH_INTERVAL; }, 1000);
+    }
+    function updateCountdownUI() { COUNTER.textContent = `Next: ${countdownValue}s`; }
+
+    // ── Drill-Down Modal ───────────────────────────────────────────────
+    const MODAL = document.getElementById('nodeModal');
+
+    async function openModal(nodeId) {
+      MODAL.classList.add('open');
+      document.body.style.overflow = 'hidden';
+      MODAL.querySelector('.modal-content').scrollTop = 0;
+
+      // Show loading state
+      document.getElementById('modalHeader').innerHTML = '<p class="text-slate-400">Loading…</p>';
+      document.getElementById('modalQuickStats').innerHTML = '';
+      document.getElementById('modalAdvStats').innerHTML = '';
+      document.getElementById('heatmapContainer').innerHTML = '';
+      document.getElementById('gaugeValue').textContent = '-- ms';
+      document.getElementById('gaugeArc').setAttribute('stroke-dashoffset', '251');
+      document.getElementById('gaugeNeedle').style.transform = 'rotate(-90deg)';
+
+      try {
+        const resp = await fetch(`${API_NODE}/${nodeId}`);
+        if (!resp.ok) throw new Error('Not found');
+        const d = await resp.json();
+        renderModal(d);
+      } catch (e) {
+        document.getElementById('modalHeader').innerHTML = '<p class="text-red-400">Failed to load node data.</p>';
+      }
+    }
+
+    function closeModal(e) {
+      if (e && e.target !== MODAL) return;
+      MODAL.classList.remove('open');
+      document.body.style.overflow = '';
+    }
+
+    function renderModal(d) {
+      const online = d.current?.status === 'online';
+      const dotCls = online ? 'dot-online' : 'dot-offline';
+      const statusText = online ? 'Online' : 'Offline';
+      const statusCol = online ? 'text-emerald-400' : 'text-red-400';
+
+      // Header
+      document.getElementById('modalHeader').innerHTML = `
+        <div class="flex items-start justify-between">
+          <div>
+            <h2 class="text-2xl font-bold text-white">${d.name}</h2>
+            <p class="text-sm text-slate-500 font-mono mt-1">${d.tailscale_ip}</p>
+            <p class="text-xs text-slate-600 font-mono">${d.magicdns}</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="${dotCls}"></span>
+            <span class="${statusCol} font-semibold text-lg">${statusText}</span>
+          </div>
+        </div>`;
+
+      // Quick stats (next to gauge)
+      const s = d.stats || {};
+      document.getElementById('modalQuickStats').innerHTML = `
+        <div class="glass rounded-xl p-3 text-center"><p class="text-xs text-slate-500">Uptime</p><p class="text-lg font-bold text-emerald-400">${fmtPct(s.uptime_pct)}</p></div>
+        <div class="glass rounded-xl p-3 text-center"><p class="text-xs text-slate-500">Avg Latency</p><p class="text-lg font-bold font-mono text-cyan-400">${s.avg_latency != null ? s.avg_latency.toFixed(1)+'ms' : '--'}</p></div>
+        <div class="glass rounded-xl p-3 text-center"><p class="text-xs text-slate-500">Downtime</p><p class="text-lg font-bold text-orange-400">${s.downtime_incidents ?? '--'} incidents</p></div>
+        <div class="glass rounded-xl p-3 text-center"><p class="text-xs text-slate-500">Packet Loss</p><p class="text-lg font-bold text-red-400">${fmtPct(s.packet_loss_pct)}</p></div>`;
+
+      // Advanced stats
+      document.getElementById('modalAdvStats').innerHTML = `
+        <div class="glass rounded-xl p-3 text-center"><p class="text-xs text-slate-500">Min Latency</p><p class="text-sm font-mono text-green-400">${s.min_latency != null ? s.min_latency.toFixed(1)+'ms' : '--'}</p></div>
+        <div class="glass rounded-xl p-3 text-center"><p class="text-xs text-slate-500">Max Latency</p><p class="text-sm font-mono text-red-400">${s.max_latency != null ? s.max_latency.toFixed(1)+'ms' : '--'}</p></div>
+        <div class="glass rounded-xl p-3 text-center"><p class="text-xs text-slate-500">Total Checks</p><p class="text-sm font-mono text-slate-300">${(s.total_checks||0).toLocaleString()}</p></div>
+        <div class="glass rounded-xl p-3 text-center"><p class="text-xs text-slate-500">Last Seen</p><p class="text-sm text-slate-400">${fmtDate(s.last_seen)}</p></div>`;
+
+      // SVG Gauge
+      const lat = d.current?.latency_ms;
+      updateGauge(lat);
+
+      // Heatmap
+      renderHeatmap(d.heatmap || []);
+    }
+
+    function updateGauge(latencyMs) {
+      const arc = document.getElementById('gaugeArc');
+      const needle = document.getElementById('gaugeNeedle');
+      const valEl = document.getElementById('gaugeValue');
+
+      if (latencyMs == null) {
+        arc.setAttribute('stroke-dashoffset', '251');
+        needle.style.transform = 'rotate(-90deg)';
+        valEl.textContent = 'offline';
+        valEl.className = 'text-2xl font-bold font-mono text-red-400';
+        return;
+      }
+
+      // Map latency to angle: 0ms → -90° (left), 200ms → +90° (right)
+      const maxMs = 200;
+      const clamped = Math.min(latencyMs, maxMs);
+      const angle = -90 + (clamped / maxMs) * 180; // degrees
+
+      // Arc dashoffset: circumference ≈ 251, full = 251, empty = 0
+      const fillRatio = clamped / maxMs;
+      const dashOffset = 251 * (1 - fillRatio);
+      arc.setAttribute('stroke-dashoffset', String(Math.max(0, Math.min(251, dashOffset))));
+
+      needle.style.transform = `rotate(${angle}deg)`;
+      valEl.textContent = latencyMs.toFixed(1) + ' ms';
+
+      let cls = latencyMs < 25 ? 'latency-fast' : latencyMs < 60 ? 'latency-mid' : 'latency-slow';
+      valEl.className = `text-2xl font-bold font-mono ${cls}`;
+    }
+
+    function renderHeatmap(heatmap) {
+      const container = document.getElementById('heatmapContainer');
+      if (!heatmap.length) { container.innerHTML = '<p class="text-slate-600 text-sm">No data yet</p>'; return; }
+
+      let html = '<div class="flex gap-1 items-start min-w-max">';
+      // Day labels
+      html += '<div class="flex flex-col gap-1 mr-2 pt-0">';
+      heatmap.forEach(row => { html += `<span class="text-xs text-slate-500 w-8 text-right leading-[14px]">${row.day}</span>`; });
+      html += '</div>';
+      // Hours grid
+      html += '<div class="flex flex-col gap-1">';
+      heatmap.forEach(row => {
+        html += '<div class="flex gap-1">';
+        row.hours.forEach(h => {
+          let bg;
+          if (h.ratio === 0) bg = 'rgba(51,65,85,0.4)'; // no data
+          else if (h.online) { // green gradient
+            const intensity = Math.round(h.ratio * 255);
+            bg = `rgba(0,${Math.min(255, 200 + intensity)},${Math.min(255, 136 + intensity/2)},${0.3 + h.ratio * 0.7})`;
+          } else { // red
+            const intensity = Math.round(h.ratio * 255);
+            bg = `rgba(${Math.min(255, 200 + intensity)},51,85,${0.3 + h.ratio * 0.7})`;
+          }
+          html += `<div class="heatmap-cell" style="background:${bg};" title="Hour ${h.hour}: ${(h.ratio*100).toFixed(0)}% online"></div>`;
+        });
+        html += '</div>';
+      });
+      html += '</div></div>';
+      container.innerHTML = html;
+    }
+
+    // ── Keyboard shortcut ──────────────────────────────────────────────
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+    // ── Init ───────────────────────────────────────────────────────────
+    (async function init() {
+      // Initial data load — fetch cards + sparklines + chart in parallel
+      await Promise.allSettled([
+        fetchStatusAndRender(),
+        initGlobalChart(),
+        refreshAllSparklines()
+      ]);
+
+      // Periodic refresh: cards every 15s, sparklines + chart every 60s
+      autoTimer = setInterval(fetchStatusAndRender, REFRESH_INTERVAL * 1000);
+      setInterval(async () => {
+        await Promise.allSettled([refreshAllSparklines()]);
+        // Re-render cards to update uptime %
+        try {
+          const resp = await fetch(API_STATUS);
+          if (resp.ok) {
+            const data = await resp.json();
+            renderCards(data.nodes);
+          }
+        } catch(e) {}
+      }, 60000);
+      setInterval(async () => {
+        try {
+          const data = await fetchHistory(currentTimeframe);
+          updateChartDatasets(data);
+        } catch(e) {}
+      }, 60000);
+
+      resetCountdown();
+    })();
+  </script>
+</body>
+</html>

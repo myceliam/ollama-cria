@@ -1,0 +1,88 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem@2026.1.14",
+        "/workspace"
+      ]
+    },
+    "memory": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-memory@2026.1.26"
+      ],
+      "env": {
+        "MEMORY_FILE_PATH": "/app/data/memory.json"
+      }
+    },
+    "time": {
+      "command": "uvx",
+      "args": [
+        "mcp-server-time@2026.6.4",
+        "--local-timezone=Europe/London"
+      ]
+    },
+    "web_search": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-searxng@1.6.0"
+      ],
+      "env": {
+        "SEARXNG_URL": "http://searxng:8080"
+      }
+    },
+    "web_fetch": {
+      "command": "uvx",
+      "args": [
+        "mcp-server-fetch@2026.6.4"
+      ]
+    },
+    "jina_reader": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--with",
+        "mcp==1.28.0",
+        "--with",
+        "httpx==0.28.1",
+        "python",
+        "/app/mcp-servers/jina_reader_mcp.py"
+      ],
+      "env": {
+        "JINA_READER_BASE_URL": "http://jina-reader:3000",
+        "JINA_READER_MAX_CHARS": "80000",
+        "ALLOW_PRIVATE_FETCH": "false"
+      }
+    },
+    "context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp@3.2.1"
+      ]
+    },
+    "youtube_transcript": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@sinco-lab/mcp-youtube-transcript@0.0.12"
+      ]
+    },
+    "google_calendar": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@cocal/google-calendar-mcp@2.6.2"
+      ],
+      "env": {
+        "GOOGLE_OAUTH_CREDENTIALS": "/app/secrets/gcp-oauthkeys.json",
+        "GOOGLE_CALENDAR_MCP_TOKEN_PATH": "/app/data/gcal-token.json",
+        "ENABLED_TOOLS": "list-events,search-events,create-event,get-freebusy,get-current-time"
+      }
+    }
+  }
+}

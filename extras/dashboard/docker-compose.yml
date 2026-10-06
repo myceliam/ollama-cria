@@ -1,0 +1,34 @@
+services:
+  dashboard:
+    build: .
+    container_name: homelab-dashboard
+    restart: unless-stopped
+
+    # 1. Bind to loopback ONLY. tailscale serve proxies from 127.0.0.1, and on
+    #    the VPS a 0.0.0.0 bind would expose the dashboard to the public internet.
+    #    Access is always via https://<host>.{{TS_DOMAIN}}:2000 (tailnet only).
+    ports:
+      - "127.0.0.1:6080:6080"
+
+    # 2. Persist the SQLite metrics database so data survives container rebuilds.
+    #    The Tailscale socket mount only works on a LINUX host (the VPS): there it
+    #    gives authoritative per-peer Online status. On Windows/Docker Desktop the
+    #    path doesn't exist, the mount is an empty stub, and the app silently falls
+    #    back to ICMP/TCP probes — expected, not a bug.
+    volumes:
+      - ./data:/app/data
+      - /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock
+
+    # 3. Give the container raw network access so the ping command still works
+    cap_add:
+      - NET_RAW
+
+    # 4. Tell uvicorn to listen on the correct port inside the container
+    command: [ "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "6080", "--no-access-log" ]
+
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6080/api/status')" ]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3

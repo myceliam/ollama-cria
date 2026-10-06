@@ -1,0 +1,49 @@
+# Brave-only compatibility search service.
+# Web Research does not call SearXNG; this remains for Self-OSINT and existing
+# MCP consumers.  The Brave API key and SearXNG signing secret come only from
+# the VPS .env through container environment variables.
+use_default_settings:
+  engines:
+    keep_only:
+      - brave
+
+general:
+  debug: false
+  instance_name: "vps-search"
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "en"
+  formats:
+    - html
+    - json
+
+server:
+  limiter: false
+  image_proxy: false
+  bind_address: "0.0.0.0"
+  port: 8080
+
+ui:
+  static_use_hash: true
+  default_locale: "en"
+  query_in_title: false
+  infinite_scroll: false
+
+outgoing:
+  request_timeout: 10.0
+  max_request_timeout: 20.0
+  pool_connections: 100
+  pool_maxsize: 100
+
+engines:
+  - name: brave
+    engine: braveapi
+    shortcut: br
+    results_per_page: 20
+    disabled: false
+    weight: 3.0
+    country: "GB"
+    search_lang: "en"
+    ui_lang: "en-GB"

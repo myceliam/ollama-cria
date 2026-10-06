@@ -1,0 +1,175 @@
+# ============================================================
+#  Dockerfile.mcpo  —  baked, pinned mcpo image
+#
+#  WHY: `npx -y` / `uvx` re-download each server every time a
+#  child process (re)spawns. A network/registry hiccup or a bad
+#  "latest" release then kills the session -> the 500
+#  "MCP session is not available" you hit. Baking the servers
+#  into the image at PINNED versions means:
+#    * zero spawn-time downloads (offline-safe)
+#    * a poisoned future release can't land silently
+#    * sessions start instantly and stay up
+#
+#  Versions below were resolved live on 2026-06-18. Bump them
+#  deliberately (then rebuild) when you WANT to update.
+# ============================================================
+
+# 1) Base image PINNED to the digest from your 2026-06-18 build.
+#    To refresh later: docker pull ghcr.io/open-webui/mcpo:main
+#    then: docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/open-webui/mcpo:main
+#    and paste the new sha256 below.
+FROM ghcr.io/open-webui/mcpo:main@sha256:1e82c9555c19e50b80745705f32b47a2647589f35279527b5118ecd3a71bd467
+
+# Prefer the local/global copy over the network when npx resolves.
+ENV npm_config_prefer_offline=true \
+    npm_config_fund=false \
+    npm_config_audit=false \
+    PATH="/root/.local/bin:${PATH}"
+
+# ---------------------------------------------------------------
+# 2) CORE servers (the ones that were 500-ing) — installed GLOBAL
+#    so `npx <pkg>` finds them with no download.
+# ---------------------------------------------------------------
+RUN npm install -g \
+      @modelcontextprotocol/server-filesystem@2026.1.14 \
+      @modelcontextprotocol/server-memory@2026.1.26 \
+      @modelcontextprotocol/server-sequential-thinking@2026.7.4 \
+      osint-mcp-server@0.2.0 \
+      mcp-searxng@1.6.0
+
+# ---------------------------------------------------------------
+# 3) Python servers — installed as uv tools (bin on PATH) AND
+#    this warms the uv cache so `uvx <pkg>@<ver>` resolves offline.
+# ---------------------------------------------------------------
+RUN uv tool install mcp-server-time==2026.6.4 \
+ && uv tool install mcp-server-fetch==2026.6.4
+
+# ---------------------------------------------------------------
+# 4) jina_reader uses `uv run --with mcp --with httpx`.
+#    Pre-warm those exact wheels into the uv cache so it's offline too.
+# ---------------------------------------------------------------
+RUN uv run --with mcp==1.28.0 --with httpx==0.28.1 python -c "pass" || true
+
+# ===============================================================
+# 5) ADD-ON servers (baked, pinned) — versions resolved 2026-06-18
+# ===============================================================
+RUN npm install -g \
+      @upstash/context7-mcp@3.2.1 \
+      @burtthecoder/mcp-shodan@1.0.22 \
+      @sinco-lab/mcp-youtube-transcript@0.0.12 \
+      @cocal/google-calendar-mcp@2.6.2 \
+      firecrawl-mcp@3.20.4
+
+# ===============================================================
+# 5a-2) Packages needed by CLINE / Antigravity IDE (added 2026-08-06)
+#
+#  Cline reaches these servers with `docker exec -i mcpo-core npx -y <pkg>`,
+#  which is a SEPARATE process from mcpo - it does not use mcpo's HTTP routes.
+#  Neither package was baked, so every IDE start triggered a live npm download
+#  for FOUR servers (censys, security_tools and github all use mcp-remote; gmail
+#  uses the autoauth package).
+#
+#  Cline verifies its servers SEQUENTIALLY, top to bottom. A slow download early
+#  in the list stalls everything behind it, which is what produced
+#  "MCP error -32001: Request timed out" on servers that were themselves fine.
+#  Baking these makes all 19 start instantly and removes the ordering constraint.
+#
+#  Versions resolved live 2026-08-06. Bump deliberately.
+# ===============================================================
+RUN npm install -g \
+      mcp-remote@0.1.38 \
+      @gongrzhe/server-gmail-autoauth-mcp@1.1.11
+
+RUN uv tool install mitre-mcp==0.3.1
+
+# Semgrep MCP — official Semgrep MCP package, pinned for reproducible local code scanning.
+RUN uv tool install semgrep-mcp==0.9.0
+
+# CVE/NVD server (mukul975) — REMOVED 2026-08-05.
+# It was pinned to commit d666bac and the console script no longer imports:
+#     File ".../bin/cve-mcp", line 6, in <module>
+#         from cve_mcp.server import main
+#     ImportError
+#   -> mcpo: "Failed to connect to MCP server 'cve_nvd': McpError: Connection closed"
+#   -> /cve_nvd/openapi.json returned 200 with an EMPTY "paths": {}
+# It had also been serving zero tools for weeks behind the github cascade
+# (see the _README key in mcpo-core-config.pinned.json).
+# CVE work is covered by the NATIVE OWUI tool `nvd_recent_cves`, which was
+# built precisely because this server's search was keyword-only with no
+# date-range support. If you ever want an MCP CVE server again, pin a
+# release TAG rather than a bare commit, and add it as a LATE entry.
+
+# ===============================================================
+# 5b-2) Semgrep CLI — the BINARY that semgrep-mcp shells out to.
+#     semgrep-mcp (installed in section 5) is only the MCP wrapper; it
+#     execs `semgrep` and exits immediately if the binary is missing.
+#     Symptom when absent: mcpo logs
+#       "Failed to establish connection for server: 'semgrep' - McpError: Connection closed"
+#     and /semgrep/openapi.json returns 200 with an EMPTY "paths": {} —
+#     i.e. a tool server that looks alive but exposes zero tools.
+#     Diagnosed 2026-07-29. NOTE: no API key is needed — semgrep CLI and
+#     the community rules are free/OSS. SEMGREP_APP_TOKEN is only for the
+#     hosted platform and can stay empty.
+# ===============================================================
+RUN uv tool install semgrep==1.172.0
+
+# ===============================================================
+# 5c) Local read-only MCP risk scanner — audits MCPO config exposure.
+#     No Docker socket, no network actions, no secret printing by default.
+# ===============================================================
+COPY mcp-servers/mcp_risk_scanner.py /app/mcp-servers/mcp_risk_scanner.py
+
+# ===============================================================
+# 5d) PATCH: sequential-thinking `nextThoughtNeeded` (added 2026-08-05)
+#
+#  SYMPTOM: every first call to sequentialthinking in a chat returned
+#    HTTP 500 - MCP error -32602: Input validation error:
+#    {"expected":"boolean","path":["nextThoughtNeeded"],
+#     "message":"Invalid input: expected boolean, received undefined"}
+#  The model then retried WITH the field and it worked, so it looked
+#  self-healing — but it re-sent the entire thought text plus the error
+#  payload every time. Roughly double tokens and double latency per call,
+#  on a 27B that is already CPU-offloading.
+#
+#  CAUSE (verified in dist/index.js): upstream defines
+#      const coercedBoolean = z.preprocess(fn, z.boolean());
+#      nextThoughtNeeded: coercedBoolean.describe(...)
+#  z.preprocess produces a ZodEffects. The Zod->JSON-Schema conversion
+#  cannot statically type a ZodEffects, so the field is DROPPED from the
+#  published `required[]` array — while Zod's runtime .parse() still
+#  demands it. The spec says optional, the server says mandatory.
+#  Confirmed live: required was ['thought','thoughtNumber','totalThoughts'].
+#  thoughtNumber/totalThoughts use z.coerce.number() (a plain ZodNumber,
+#  not an effect) which is why THEY stayed required. Neither mcpo nor the
+#  model was at fault — the model correctly treated optional as optional.
+#
+#  FIX: use a plain z.boolean(), which lands in `required[]` and renders
+#  as a clean {"type":"boolean"} for the model.
+#
+#  TRADE-OFF: this drops string coercion for THIS field only, so a model
+#  sending the string "true" instead of true would now be rejected. With
+#  native function calling (Liam's setting) models emit real JSON booleans,
+#  and the current behaviour fails 100% of the time by omission — so this
+#  is a strict improvement. isRevision/needsMoreThoughts keep coercedBoolean;
+#  they are .optional() so the requiredness bug never affected them.
+#
+#  The grep BEFORE the sed makes the build FAIL LOUDLY if a future version
+#  bump changes this line, rather than silently reverting the fix.
+# ===============================================================
+RUN SEQ=/usr/lib/node_modules/@modelcontextprotocol/server-sequential-thinking/dist/index.js \
+ && grep -q 'nextThoughtNeeded: coercedBoolean.describe(' "$SEQ" \
+ && sed -i 's|nextThoughtNeeded: coercedBoolean\.describe(|nextThoughtNeeded: z.boolean().describe(|' "$SEQ" \
+ && grep -q 'nextThoughtNeeded: z.boolean().describe(' "$SEQ" \
+ && echo "[patch ok] sequential-thinking nextThoughtNeeded is now a required boolean"
+
+# ===============================================================
+# 6) Secret injection at startup.
+#    mcpo does NOT expand ${VARS} in its config, so this entrypoint
+#    substitutes env vars into a runtime copy of the config before
+#    launching mcpo. Keeps real secrets (MCP_ADMIN_TOKEN, CENSYS_PAT,
+#    SHODAN_API_KEY, ...) out of the git-committed config.
+# ===============================================================
+COPY mcpo-entrypoint.sh /usr/local/bin/mcpo-entrypoint.sh
+RUN sed -i 's/\r$//' /usr/local/bin/mcpo-entrypoint.sh \
+ && chmod +x /usr/local/bin/mcpo-entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/mcpo-entrypoint.sh"]

@@ -1,0 +1,162 @@
+name: owui-web-egress
+
+# Canonical VPS web-egress stack.
+# Public-web flow: PC -> Tailscale -> VPS -> Gluetun/Mullvad multihop -> Internet.
+# All content-fetching services share Gluetun's network namespace so tunnel loss
+# is a hard failure, never a direct-IONOS fallback.
+services:
+  gluetun:
+    image: qmcgaw/gluetun:v3
+    container_name: vps-web-gluetun
+    cap_add: [NET_ADMIN]
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      # CUSTOM is load-bearing: the Mullvad multihop entry/exit pair is encoded
+      # in the endpoint and is discarded by Gluetun's normal provider mode.
+      VPN_SERVICE_PROVIDER: "custom"
+      VPN_TYPE: "wireguard"
+      VPN_ENDPOINT_IP: "${VPN_ENDPOINT_IP:?set this in .env}"
+      VPN_ENDPOINT_PORT: "${VPN_ENDPOINT_PORT:?set this in .env}"
+      WIREGUARD_PUBLIC_KEY: "${WIREGUARD_PUBLIC_KEY:?set this in .env}"
+      WIREGUARD_PRIVATE_KEY: "${WIREGUARD_PRIVATE_KEY:?set this in .env}"
+      WIREGUARD_ADDRESSES: "${WIREGUARD_ADDRESSES:?set this in .env}"
+      HTTPPROXY: "on"
+      HTTPPROXY_LISTENING_ADDRESS: "0.0.0.0:8888"
+      HTTPPROXY_LOG: "off"
+      FIREWALL_INPUT_PORTS: "8888,13100"
+      FIREWALL: "on"
+      FIREWALL_OUTBOUND_SUBNETS: "100.64.0.0/10,172.16.0.0/12"
+      TZ: "Europe/London"
+      DOT: "on"
+    ports:
+      - "{{VPS_TS_IP}}:18080:8080"   # SearXNG; retained for Self-OSINT compatibility
+      - "{{VPS_TS_IP}}:13000:3000"   # self-hosted Jina Reader
+      - "{{VPS_TS_IP}}:8888:8888"    # Gluetun proxy, namespace-internal quirk
+      - "{{VPS_TS_IP}}:8889:8889"    # usable proxy relay
+      - "{{VPS_TS_IP}}:13055:3055"   # SearXNG MCP; retained for existing consumers
+      - "{{VPS_TS_IP}}:13100:13100"   # Brave/Jina gateway
+    networks: [web]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/gluetun-entrypoint", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    mem_limit: 512m
+
+  proxy-relay:
+    image: alpine/socat:latest
+    container_name: vps-web-proxy-relay
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    command: ["TCP-LISTEN:8889,fork,reuseaddr,bind=0.0.0.0", "TCP:127.0.0.1:8888"]
+    restart: unless-stopped
+    mem_limit: 64m
+
+  searxng:
+    image: searxng/searxng:2026.7.7-f69b22c45
+    container_name: vps-web-searxng
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    environment:
+      # The one unchanged Brave key is sourced from VPS .env. It is no longer
+      # stored in settings.yml or on the PC.
+      BRAVE_API_KEY: "${BRAVE_API_KEY:?set this in .env}"
+      SEARXNG_SECRET: "${SEARXNG_SECRET:?set this in .env}"
+    volumes:
+      - "./settings.yml:/etc/searxng/settings.yml:ro"
+      - "./engines/braveapi.py:/usr/local/searxng/searx/engines/braveapi.py:ro"
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 1g
+
+  jina-reader:
+    # First-party Jina Reader OSS, built from the exact upstream digest in
+    # jina-official/Dockerfile.  The derived layer only closes the upstream
+    # self-hosted SSRF gaps; browser/PDF/Office/image/selector capabilities
+    # remain available.  The previous 2024 community image is retained only in
+    # the dated rollback archive documented in the change ledger.
+    image: jina-reader-official-hardened:2026-09-24
+    container_name: vps-web-jina-reader
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    environment:
+      # Upstream exposes h2c on PORT and HTTP/1.1 on PORT+1.  Keep the existing
+      # internal/published HTTP/1.1 contract on 3000 without taking SearXNG's
+      # namespace-local port 8080.
+      PORT: "2999"
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    shm_size: 1gb
+    pids_limit: 512
+    mem_limit: 4g
+    healthcheck:
+      test: ["CMD", "node", "-e", "const s=require('net').connect(3000,'127.0.0.1',()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),3000)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  brave-jina-gateway:
+    image: python@sha256:dd29372629eeba2dd003fd9e9d35a5b8236c44727875a0364254b5127af88e65
+    container_name: vps-web-brave-jina-gateway
+    command: ["python", "-B", "/app/brave_jina_gateway.py"]
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+      jina-reader:
+        condition: service_healthy
+    environment:
+      BRAVE_API_KEY: "${BRAVE_API_KEY:?set this in .env}"
+    volumes:
+      - "./brave_jina_gateway.py:/app/brave_jina_gateway.py:ro"
+    read_only: true
+    user: "65534:65534"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 96
+    mem_limit: 192m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:13100/health', timeout=3).read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  searxng-mcp:
+    image: sha256:afd7c799fceebdbe3c7209a70ea8f862e4e1a1531c9334b0d32cb9d5d79e8bd4
+    container_name: vps-web-searxng-mcp
+    entrypoint: ["node", "/usr/lib/node_modules/mcp-searxng/dist/cli.js"]
+    environment:
+      SEARXNG_URL: http://127.0.0.1:8080
+      MCP_HTTP_HOST: 0.0.0.0
+      MCP_HTTP_PORT: "3055"
+    network_mode: "service:gluetun"
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    mem_limit: 512m
+    depends_on:
+      gluetun:
+        condition: service_healthy
+
+networks:
+  web:
+    name: owui-web-egress
+    driver: bridge
+    enable_ipv6: false
+    driver_opts:
+      com.docker.network.bridge.name: br-owui-web
+    ipam:
+      config: [{subnet: 172.30.88.0/24}]

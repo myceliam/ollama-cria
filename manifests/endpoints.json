@@ -2,5 +2,124 @@
   "$schema": "./schemas/endpoints.schema.json",
   "formatVersion": 1,
   "note": "Written by tools/Sync-StackFiles.ps1. Every file below holds the placeholders listed; Stage 4a fills them from the new tailnet. Do not edit by hand.",
-  "files": []
+  "files": [
+    {
+      "file": "extras/dashboard/docker-compose.yml",
+      "placeholders": [
+        "TS_DOMAIN"
+      ]
+    },
+    {
+      "file": "extras/dashboard/monitor.py",
+      "placeholders": [
+        "KAIS_PC_TS_IP",
+        "KAIS_PC_TS_NAME",
+        "LIAMS_TAB_S10_TS_IP",
+        "LIAMS_TAB_S10_TS_NAME",
+        "MINIPC_UBUNTU_TS_IP",
+        "MINIPC_UBUNTU_TS_NAME",
+        "MINIPC_WINDOWS_TS_IP",
+        "MINIPC_WINDOWS_TS_NAME",
+        "MR_FOLD_TS_IP",
+        "MR_FOLD_TS_NAME",
+        "PC_TS_IP",
+        "PC_TS_NAME",
+        "ROUTER_TS_IP",
+        "ROUTER_TS_NAME",
+        "STALE_TS_IP",
+        "TS_DOMAIN",
+        "VPS_TS_IP",
+        "VPS_TS_NAME"
+      ]
+    },
+    {
+      "file": "extras/dashboard/README.md",
+      "placeholders": [
+        "KAIS_PC_TS_IP",
+        "KAIS_PC_TS_NAME",
+        "TS_DOMAIN"
+      ]
+    },
+    {
+      "file": "stack/_support/scripts/scheduled/Watch-Fast.ps1",
+      "placeholders": [
+        "VPS_TS_IP",
+        "VPS_TS_NAME"
+      ]
+    },
+    {
+      "file": "stack/docker-compose.yml",
+      "placeholders": [
+        "PC_TS_IP",
+        "PC_TS_NAME",
+        "VPS_TS_IP",
+        "VPS_TS_NAME"
+      ]
+    },
+    {
+      "file": "stack/mcpo-watchdog.ps1",
+      "placeholders": [
+        "PC_TS_NAME"
+      ]
+    },
+    {
+      "file": "stack/owui-toolkit.ps1",
+      "placeholders": [
+        "VPS_TS_NAME"
+      ]
+    },
+    {
+      "file": "stack/start-stack.ps1",
+      "placeholders": [
+        "PC_TS_IP",
+        "PC_TS_NAME"
+      ]
+    },
+    {
+      "file": "stack/vps/owuihelp",
+      "placeholders": [
+        "EXT_SE_STO_WG_201_TS_IP",
+        "PC_TS_IP",
+        "PC_TS_NAME",
+        "VPS_TS_IP",
+        "VPS_TS_NAME"
+      ]
+    },
+    {
+      "file": "stack/web-vps-relay/relay.py",
+      "placeholders": [
+        "VPS_TS_IP"
+      ]
+    },
+    {
+      "file": "stack/windows-powershell-tool/config.json",
+      "placeholders": [
+        "PC_TS_IP"
+      ]
+    },
+    {
+      "file": "vps/kokoro/compose.yml",
+      "placeholders": [
+        "VPS_TS_IP"
+      ]
+    },
+    {
+      "file": "vps/nginx/groq-relay",
+      "placeholders": [
+        "VPS_TS_IP"
+      ]
+    },
+    {
+      "file": "vps/web-egress/compose.yml",
+      "placeholders": [
+        "VPS_TS_IP"
+      ]
+    },
+    {
+      "file": "vps/web-egress/guard.nft",
+      "placeholders": [
+        "PC_TS_IP"
+      ]
+    }
+  ]
 }

@@ -1,0 +1,15 @@
+# Baked bolt image — adds the `sudo` binary the upstream image omits.
+#
+# Why: bolt's executor prepends `sudo` for any tool flagged requiresRoot (e.g. nmap),
+# but the upstream image ships no sudo binary, so those tools 500 with
+#   "Executable not found in $PATH: sudo".
+# The container already runs as root with CAP_NET_RAW/NET_ADMIN, so sudo is a no-op
+# passthrough here — we just need the binary to exist.
+#
+# Base stays pinned by DIGEST (2026-07-13) to preserve the supply-chain pin;
+# this container carries NET_RAW/NET_ADMIN so upstream drift is not acceptable.
+FROM ghcr.io/cyberstrikeus/bolt@sha256:90ef2d10a8e255369981e7ce2eb7b89e1ac337ad6a5cf9f21f803c8585eea277
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends sudo \
+ && rm -rf /var/lib/apt/lists/*

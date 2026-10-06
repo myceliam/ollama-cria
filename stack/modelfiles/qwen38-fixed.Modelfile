@@ -1,0 +1,7 @@
+FROM huihui_ai/Qwen3.8-abliterated:27b
+PARAMETER presence_penalty 1.5
+PARAMETER repeat_penalty 1.1
+PARAMETER temperature 1
+PARAMETER top_k 20
+PARAMETER top_p 0.95
+PARAMETER min_p 0

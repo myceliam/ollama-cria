@@ -1,0 +1,19 @@
+services:
+  gmail-owui-bridge:
+    build: .
+    container_name: gmail-owui-bridge
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18101:18101"
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./data:/data
+      # Reuse the SAME Desktop OAuth client the gcal bridge already uses.
+      - ../secrets:/app/secrets:ro
+      # Read-only access to the shared workspace so /messages/send can attach
+      # files generated there (e.g. /workspace/kais_*.png). Guarded by
+      # ATTACHMENT_ALLOWED_DIRS in the app.
+      - E:/ai/OpenFolders/workspace:/workspace:ro

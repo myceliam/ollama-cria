@@ -1,0 +1,648 @@
+services:
+  open-webui:
+    # ⚠️ 2026-09-04 UNPINNED by owner decision — floating tag, was digest-pinned
+    # to v0.11.1 on 2026-08-28. The running container is unaffected until the
+    # image is explicitly pulled: no script in the stack pulls (verified across
+    # start-stack.ps1, restart-stack.ps1, mcpo-watchdog.ps1, owui-toolkit.ps1),
+    # so a restart or reboot will NOT upgrade. Only an explicit
+    #   docker compose pull open-webui && docker compose up -d open-webui
+    # moves the version.
+    # 🚨 THE STALE-TAG TRAP (found 2026-09-04): start-stack.ps1 runs
+    # 'docker compose up -d --build' at every boot. With a floating tag, that
+    # recreates from whatever ':latest' points to ON DISK - which is whatever was
+    # last pulled, NOT what is newest upstream. A months-old cached ':latest' will
+    # therefore silently DOWNGRADE this service on the next reboot. Keep the local
+    # tag current by upgrading only via 'owuihelp update-owui', never by an
+    # ad-hoc 'up -d' after a long gap without pulling.
+    # 🚨 Before pulling, re-read Ch. 14 (the config DB overrides compose) and
+    # Ch. 10.5 (the untimed tool-server cache). An unplanned major bump can break
+    # both, and a floating tag gives no version in the compose file to roll back to.
+    # Upgrade with 'owuihelp update-owui' - it backs up, pulls BOTH images,
+    # recreates, verifies and prints the digests to paste in below.
+    # Known-good digests for rollback (re-pin by swapping the line below):
+    #   v0.11.3  sha256:8afd2d774834c618a75411b3491cdc5da7396dc464f56a160b937ff2992eb6e4  <- running, pulled 2026-09-04
+    #   v0.11.1  sha256:6bb1fbe8ab0a3e0456067f493044ffb66a30a65a34be47f6a5862176a370dd16
+    #   v0.11.0  sha256:6a773e5c3a246b65cbe74ce942b294292c0e5f81c138f703d111bc162f7d7c3d
+    image: ghcr.io/open-webui/open-webui:latest
+    container_name: open-webui
+
+    # ⚠️ 2026-08-05 TOOL-SERVER BOOT-ORDER FIX — do not remove.
+    # Symptom it cures: only ~7 tools visible in the chat "+" menu while Admin
+    # Settings shows all 21 tool servers present and enabled.
+    # Cause: OWUI's get_tool_servers() caches app.state.TOOL_SERVERS with NO TTL
+    # and only re-fetches when the cached list is COMPLETELY EMPTY. set_tool_servers
+    # silently drops any server that fails to answer. If OWUI boots before mcpo is
+    # serving (mcpo needs ~30s), every mcpo-backed server is dropped, the list is
+    # still non-empty (the gmail/gcal bridges answer instantly), so OWUI never
+    # looks again for the life of the container.
+    # Fix: wait for mcpo-core to report healthy before starting.
+    depends_on:
+      mcpo-core:
+        condition: service_healthy
+
+    ports:
+      - "127.0.0.1:3000:8080"
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    environment:
+      OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
+      WEBUI_SECRET_KEY: "${WEBUI_SECRET_KEY}"
+      # Encrypt native Tool/Function Valve records at rest with WEBUI_SECRET_KEY.
+      # Existing plain-dict records remain readable and are migrated through the
+      # Open WebUI model layer by owui-tools/_migrate_valve_encryption.py.
+      ENABLE_VALVE_ENCRYPTION: "true"
+
+      # Native tools that call mcpo still need this. Web Research no longer
+      # receives the Brave key or calls Stealthwright; it talks only to the
+      # fixed VPS gateway through web-vps-relay.
+      MCPO_API_KEY: "${MCPO_API_KEY:-}"
+      # Dedicated bearer used only by the native Windows PowerShell popup tool.
+      # The value stays in .env; the broker remains non-elevated and tailnet-bound.
+      WINDOWS_POWERSHELL_TOOL_TOKEN: "${WINDOWS_POWERSHELL_TOOL_TOKEN:-}"
+      CORS_ALLOW_ORIGIN: "https://{{PC_TS_NAME}};http://127.0.0.1:3000;http://localhost:3000"
+
+      # Fast local background work: titles, tags and query rewriting. The live
+      # DB ConfigVars are updated alongside this recovery/default value.
+      TASK_MODEL: "qwen2.5:1.5b"
+      TASK_MODEL_EXTERNAL: "qwen2.5:1.5b"
+
+      # Keep long-chat summarisation more capable than the tiny task model,
+      # without paying the 26B model's load/offload cost for every compaction.
+      ENABLE_CONTEXT_COMPACTION: "true"
+      CONTEXT_COMPACTION_MODEL: "huihui_ai/gemma-4-abliterated:12b"
+      CONTEXT_COMPACTION_TOKEN_THRESHOLD: "24000"
+      CONTEXT_COMPACTION_TOKEN_CAP: "24000"
+      CONTEXT_COMPACTION_RETENTION_PERCENTAGE: "40"
+
+      # v0.11.1 performance paths: faster JSON handling and no per-token
+      # WebSocket compression overhead for this tailnet-local deployment.
+      ENABLE_ORJSON: "true"
+      UVICORN_WS_PER_MESSAGE_DEFLATE: "false"
+      ENABLE_COMPRESSION_MIDDLEWARE: "true"
+      ENABLE_TAGS_GENERATION: "true"
+      ENABLE_FOLLOW_UP_GENERATION: "false"
+      ENABLE_AUTOCOMPLETE_GENERATION: "false"
+      ENABLE_RETRIEVAL_QUERY_GENERATION: "false"
+      ENABLE_WEB_SEARCH: "false"
+      ENABLE_SEARCH_QUERY_GENERATION: "false"
+      ENABLE_RAG_HYBRID_SEARCH: "false"
+      RAG_TOP_K: "3"
+      RAG_TOP_K_RERANKER: "3"
+
+      # ⚠️ 2026-07-30 MEMORY FIX — read this before changing RAG settings.
+      # Cause: rag.reranking_model was "BAAI/bge-reranker-v2-m3" (a 568M local
+      # HF model) with rag.enable_hybrid_search=true. That pulled torch +
+      # torchvision + sentencepiece into the OWUI process => VmRSS 7.97 GB.
+      # GOTCHA: ENABLE_PERSISTENT_CONFIG=true means the `config` TABLE in
+      # webui.db OVERRIDES every var below. `docker exec open-webui env` shows
+      # the env value and is therefore MISLEADING. The DB had hybrid_search=true
+      # while this file said "false". To truly change RAG/audio settings, patch
+      # the config table (or use the Admin UI) — editing this file is not enough.
+      # These vars exist to set correct defaults if the DB is ever rebuilt.
+      RAG_EMBEDDING_ENGINE: "ollama"          # embeddings via Ollama, never in-process
+      RAG_EMBEDDING_MODEL: "mxbai-embed-large" # do NOT change without re-indexing
+      RAG_RERANKING_MODEL: ""                 # empty = no local reranker = no torch
+      RAG_RERANKING_ENGINE: ""
+      WHISPER_MODEL: ""                       # STT unused; empty prevents torch load
+      AUDIO_STT_ENGINE: ""
+
+      AIOHTTP_CLIENT_TIMEOUT_MODEL_LIST: "5"
+
+      # Helps prevent first-use MCP/browser handshake failures.
+      MCP_INITIALIZE_TIMEOUT: "60"
+
+      ENABLE_PERSISTENT_CONFIG: "true"
+
+      # Internal Docker-network URL. Keep this as :8000.
+      WEBUI_AGENT_URL: "http://mcpo-core:8000/ws"
+
+      AUDIO_TTS_ENGINE: ""
+
+    volumes:
+      # Migrated 2026-07-05: named volume instead of Windows bind mount.
+      # NTFS bind-mount file locking caused SQLite "database is locked" hangs.
+      # Old data preserved at ./open-webui (rollback = swap this line back).
+      - owui-data:/app/backend/data
+      # 2026-07-15: central generated-media folder. Videos from generate_video /
+      # Studio land here as real files, served to chats at /cache/generated/…
+      # Delete a file here = gone everywhere (no base64 ghost in webui.db).
+      # Plain MP4 writes — the old NTFS/SQLite locking issue doesn't apply.
+      - E:/ai/generated:/app/backend/data/cache/generated
+
+    restart: always
+
+
+  # 📄 Apache Tika — document text extraction for RAG (added 2026-07-30)
+  # Why: OWUI's built-in extractor struggles with multi-column PDFs, tables,
+  # DOCX and PPTX — i.e. exactly what OU course material looks like. Tika
+  # handles all of them properly. OWUI reaches it at rag.tika_server_url,
+  # which was already set to http://tika:9998 in the config table.
+  # Costs ~300-400MB RAM. Loopback-only: no host port published, containers
+  # talk to it over the compose network.
+  tika:
+    image: apache/tika:latest-full
+    container_name: tika
+    restart: always
+    mem_limit: 1g
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:9998/tika || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+
+  open-terminal:
+    # ⚠️ 2026-09-04 UNPINNED by owner decision — floating tag, was digest-pinned
+    # to v0.12.2 on 2026-08-28. As with open-webui: no script pulls, so only an
+    # explicit `docker compose pull open-terminal` moves the version.
+    # 🚨 This container hands out shells. An unreviewed upgrade can change the
+    # image's user/entrypoint assumptions that the hardening below is built around
+    # (user 0:0, cap_drop ALL + the minimal cap_add set). Re-test after any pull.
+    # Known-good digests for rollback (re-pin by swapping the line below):
+    #   v0.12.3   sha256:8f6d2045aa69e348e39d89bf59e6b267773532335333eed14ff16bbc7c964b73  <- running, pulled 2026-09-04
+    #   v0.12.2   sha256:5f48c86bb249dbbd9c18fca92cd4188a53787c50ac6ad0d8412b2b18f7071c61
+    #   v0.11.34  sha256:3af1a1aab49d653d357a5176c9862af0111ccf4b8b3a5f2bbdef109f196aeca7
+    image: ghcr.io/open-webui/open-terminal:latest
+    container_name: open-terminal
+    # Image expects root; contained by no-new-privileges + cap_drop below.
+    user: "0:0"
+
+    # Hardened 2026-07-13: this container hands out shells, so limit what a
+    # compromised shell can do to the host/container runtime.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      # Minimal set for root file ops on the bind mounts.
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETUID
+      - SETGID
+    pids_limit: 256
+    mem_limit: 1g
+
+    # 2026-08-14 ADDED: Tailscale binding so OWUI on the VPS can reach this.
+    # The compose-network name "open-terminal" no longer resolves from there.
+    # Register it in OWUI as http://{{PC_TS_IP}}:18019
+    ports:
+      - "127.0.0.1:18019:8000"
+      - "{{PC_TS_IP}}:18019:8000"
+
+    environment:
+      OPEN_TERMINAL_API_KEY: "${OPEN_TERMINAL_API_KEY}"
+      SHELL: "/bin/bash"
+      HOME: "/workspace"
+      PWD: "/workspace"
+      INIT_CWD: "/workspace"
+
+    working_dir: /workspace
+
+    volumes:
+      # Deliberately scoped to these two folders only — never widen to E:/ai.
+      - E:/ai/OpenFolders/workspace:/workspace:rw
+      - E:/ai/OpenFolders/mcp/intel:/mcp/intel:rw
+
+    restart: unless-stopped
+
+
+  searxng:
+    # Offline rollback only. Live search is on the VPS through web-vps-relay.
+    profiles: ["local-search-rollback"]
+    image: searxng/searxng:2026.7.7-f69b22c45
+    container_name: searxng
+
+    ports:
+      - "127.0.0.1:8080:8080"
+
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+
+    restart: unless-stopped
+
+
+  jina-reader:
+    profiles: ["local-search-rollback"]
+    # Pinned 2026-07-13 to the digest that was running (was :latest).
+    image: ghcr.io/intergalacticalvariable/reader@sha256:1860898a857a2655b3d4c9334f64bc9acb736d854fac488a1fcc81bb284a5b5f
+    container_name: jina-reader
+
+    ports:
+      - "127.0.0.1:3001:3000"
+
+    volumes:
+      - ./jina-storage:/app/local-storage
+
+    restart: unless-stopped
+
+
+  searxng-mcp:
+    profiles: ["local-search-rollback"]
+    image: mcpo-core-baked:pinned
+    container_name: searxng-mcp
+    # mcp-searxng in HTTP/streamable mode as a sidecar — mcpo's stdio path
+    # can't hold this server's session (it emits MCP log notifications), so
+    # we run it over streamable_http like censys/playwright instead.
+    entrypoint: ["/bin/sh", "-lc"]
+    command: ["exec npx -y mcp-searxng@1.6.0"]
+    environment:
+      SEARXNG_URL: "http://searxng:8080"
+      MCP_HTTP_HOST: "0.0.0.0"
+      MCP_HTTP_PORT: "3055"
+    restart: unless-stopped
+
+  web-vps-relay:
+    image: python@sha256:423ed6ab25b1921a477529254bfeeabf5855151dc2c3141699a1bfc852199fbf
+    container_name: web-vps-relay
+    command: ["python", "-B", "/app/relay.py"]
+    environment:
+      VPS_HOST: "{{VPS_TS_IP}}"
+    volumes:
+      - ./web-vps-relay/relay.py:/app/relay.py:ro
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:3001:3000"
+      - "127.0.0.1:13100:13100"
+    networks:
+      default:
+        aliases: [searxng, jina-reader, searxng-mcp, brave-jina-gateway]
+    read_only: true
+    user: "65534:65534"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 96m
+    pids_limit: 64
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; [socket.create_connection(('127.0.0.1',p),2).close() for p in (8080,3000,3055,13100)]"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+
+  playwright-mcp:
+    image: mcr.microsoft.com/playwright/mcp:latest
+    container_name: playwright-mcp
+    init: true
+    # Chromium renderers use /dev/shm; Docker's 64MB default causes tab
+    # crashes that surface upstream as mcpo 500s. 1GB gives plenty of headroom.
+    shm_size: "1gb"
+
+    entrypoint: ["node"]
+
+    command:
+      - "/app/cli.js"
+      - "--headless"
+      - "--browser"
+      - "chromium"
+      - "--no-sandbox"
+      - "--isolated"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8931"
+      - "--allowed-hosts"
+      - "*"
+      - "--timeout-action"
+      - "10000"
+      - "--timeout-navigation"
+      - "90000"
+
+    environment:
+      PLAYWRIGHT_MCP_ALLOWED_HOSTS: "*"
+      PLAYWRIGHT_MCP_ALLOWED_ORIGINS: "*"
+
+    ports:
+      - "127.0.0.1:8931:8931"
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"const net=require('net'); const s=net.createConnection({host:'127.0.0.1',port:8931},()=>process.exit(0)); s.on('error',()=>process.exit(1)); setTimeout(()=>process.exit(1),3000);\""
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+    restart: unless-stopped
+
+
+  # playwright-mcp-headed: REMOVED 2026-09-20.
+  # Was a second Playwright MCP that attached over CDP to a real Chrome on
+  # Windows (--remote-debugging-port=9222), so tool calls drove a visible
+  # window. Removed with the rest of headed browsing - it was opening tabs
+  # across the desktop during ordinary research calls. The headless
+  # `playwright-mcp` above is untouched and still serves the `browser` tool.
+  # Archived in owui-tools/_retired-headed-browser.json. See AICL-0088.
+
+  mcpo-core:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcpo
+    image: mcpo-core-baked:pinned
+    container_name: mcpo-core
+
+    depends_on:
+      web-vps-relay:
+        condition: service_healthy
+      playwright-mcp:
+        condition: service_healthy
+
+    ports:
+      - "127.0.0.1:18000:8000"
+
+    volumes:
+      - E:/ai/OpenFolders/workspace:/workspace:rw
+      - ./${MCPO_CONFIG:-mcpo-core-config.pinned.json}:/app/config.json:ro
+      - ./secrets:/app/secrets:ro
+      # 2026-08-06: was a single-file mount of jina_reader_mcp.py. Now mounts the
+      # whole directory so new stdio MCP servers (e.g. companies_house_mcp.py, used
+      # by Cline via `docker exec`) appear without another compose edit + recreate.
+      - ./mcp-servers:/app/mcp-servers:ro
+      - mcpo-core-data:/app/data
+
+    environment:
+      MCPO_API_KEY: "${MCPO_API_KEY}"
+
+      # General process locale only. Public Brave/Jina localisation is enforced
+      # by the VPS gateway and is not inferred from this container or VPN exit.
+      TZ: "Europe/London"
+      LANG: "en_GB.UTF-8"
+
+      SHODAN_API_KEY: "${SHODAN_API_KEY}"
+      VT_API_KEY: "${VT_API_KEY}"
+      ST_API_KEY: "${ST_API_KEY}"
+
+      # 2026-08-06: CENSYS_API_ID / CENSYS_API_SECRET / CENSYS_ORG_ID removed.
+      # Those belong to the LEGACY Censys v2 API, which is where the "you need an
+      # Org ID" requirement comes from. The config uses the hosted Censys PLATFORM
+      # MCP instead, which takes a PAT in a bearer header and infers the account
+      # from it. Verified live 2026-08-06: get_host returned HTTP 200 on the PAT
+      # alone. Nothing read those three vars.
+      CENSYS_PAT: "${CENSYS_PAT}"
+
+      # The github MCP was dropped on 2026-08-05 after its 401 cascaded through mcpo's
+      # shared TaskGroup and killed five other servers. Root cause confirmed 2026-08-06:
+      # the PAT itself was DEAD - it returned 401 from plain api.github.com/user, not
+      # just the Copilot endpoint, so the earlier "needs a Copilot entitlement" theory
+      # was untested speculation.
+      # Re-armed 2026-08-06 for a fresh token. This var is INERT until GITHUB_PAT is
+      # set in .env - an unset optional var breaks nothing. The github SERVER is still
+      # absent from mcpo-core-config.pinned.json on purpose: add it back only after the
+      # token is proven valid, and add it LAST so an auth failure cannot cascade again.
+      GITHUB_PAT: "${GITHUB_PAT:-}"
+
+      MCP_ADMIN_TOKEN: "${MCP_ADMIN_TOKEN}"
+
+      # 2026-09-09: flatstack (multi-frame image stacking) runs on the Windows
+      # HOST, not in a container - the merge needs more RAM than the 8GB WSL VM
+      # has, and OpenCV is already in the imgstack venv. mcpo reaches it over
+      # host.docker.internal and authenticates with this bearer token, exactly as
+      # it does for bolt and censys. Inert until FLATSTACK_TOKEN is set in .env.
+      FLATSTACK_TOKEN: "${FLATSTACK_TOKEN:-}"
+      NVD_API_KEY: "${NVD_API_KEY:-}"
+      SEMGREP_APP_TOKEN: "${SEMGREP_APP_TOKEN:-}"
+
+      # Companies House REST API key, for companies_house_mcp.py (Cline/MCP clients).
+      # The OWUI NATIVE tool of the same name reads its key from Valves instead —
+      # these are two separate copies of the same credential by design.
+      CH_API_KEY: "${CH_API_KEY:-}"
+
+      SEARXNG_URL: "http://searxng:8080"
+      JINA_READER_BASE_URL: "http://jina-reader:3000"
+      JINA_READER_MAX_CHARS: "160000"
+      ALLOW_PRIVATE_FETCH: "false"
+
+    command:
+      - "mcpo"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--api-key"
+      - "${MCPO_API_KEY}"
+      - "--config"
+      - "/app/data/config.runtime.json"
+
+    # ⚠️ 2026-08-05 — load-bearing for open-webui's depends_on (see that service).
+    # /openapi.json is the aggregate spec and needs no API key, so a plain 200 here
+    # means mcpo has finished spawning its servers and is genuinely serving.
+    # start_period 45s covers mcpo's ~30s cold boot without counting as failures.
+    # curl is present in the baked image (verified 2026-08-05: /usr/bin/curl).
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://127.0.0.1:8000/openapi.json || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+
+    restart: unless-stopped
+
+
+
+
+
+
+  dozzle:
+    image: amir20/dozzle:v10.6.7
+    container_name: dozzle
+
+    ports:
+      - "127.0.0.1:18088:8080"
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+    restart: unless-stopped
+
+
+  bolt:
+    # Baked locally to add the `sudo` binary the upstream image omits (nmap & other
+    # requiresRoot tools 500 without it). Base still pinned by DIGEST 2026-07-13 —
+    # this container carries NET_RAW/NET_ADMIN, so upstream supply-chain risk is not
+    # acceptable. See ./bolt/Dockerfile.bolt.
+    build:
+      context: ./bolt
+      dockerfile: Dockerfile.bolt
+    image: bolt-baked:pinned
+    container_name: bolt
+    environment:
+      - MCP_ADMIN_TOKEN=${MCP_ADMIN_TOKEN}
+      - DATA_DIR=/data
+      - PORT=3001
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+
+    # ⚠️ 2026-08-14 ADDED — required by the VPS migration.
+    # bolt previously had NO published ports: mcpo reached it purely over the
+    # compose network at http://bolt:3001/mcp. mcpo now lives on the VPS, so
+    # that name no longer resolves and the `security_tools` MCP server 500s on
+    # every call.
+    # Bound to the TAILSCALE INTERFACE ONLY ({{PC_TS_IP}}), never 0.0.0.0 —
+    # this container raw-sockets and runs nmap as root, so it must not be
+    # reachable from the LAN. The MCP_ADMIN_TOKEN bearer is the only other
+    # thing guarding it.
+    # NOTE: no 127.0.0.1 binding. jina-reader already owns 127.0.0.1:3001 on
+    # this host (it publishes 127.0.0.1:3001:3000). bolt does not need loopback
+    # anyway — its only consumer is mcpo on the VPS, over Tailscale. Test
+    # locally with http://{{PC_TS_IP}}:3001, which works from this machine.
+    ports:
+      - "{{PC_TS_IP}}:3001:3001"
+
+    volumes:
+      - bolt-data:/data
+      # Shared uptime-monitor workspace (kais_log.sh writes the ledger here;
+      # open-terminal reads the same host folder for the daily report).
+      - E:/ai/OpenFolders/workspace:/workspace
+    restart: unless-stopped
+
+
+  gcal-owui-bridge:
+    build: ./gcal-owui-bridge
+    container_name: gcal-owui-bridge
+
+    ports:
+      - "127.0.0.1:18100:18100"
+
+    env_file:
+      - ./gcal-owui-bridge/.env
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    volumes:
+      - ./gcal-owui-bridge/data:/data
+      # Reuse the existing Desktop OAuth client (same one the old cocal MCP used).
+      - ./secrets:/app/secrets:ro
+
+    restart: unless-stopped
+
+
+  # Followed Discord Announcement channels can be relayed into one private
+  # Discord channel, then curated by an editable Open WebUI Pipe and published
+  # into an Open WebUI Channel through its native webhook API.
+  discord-owui-bridge:
+    # RETIRED 2026-10-05 (Liam): ntfy covers notifications. The 'retired' profile
+    # keeps it out of 'docker compose up'; volume discord-owui-data kept for rollback.
+    profiles: ["retired"]
+    build: ./discord-owui-bridge
+    container_name: discord-owui-bridge
+
+    depends_on:
+      open-webui:
+        condition: service_started
+
+    ports:
+      # Setup/status UI only. Credentials are entered locally and stored in the
+      # named volume; this port must remain loopback-only.
+      - "127.0.0.1:18102:18102"
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    volumes:
+      - discord-owui-data:/data
+
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 512m
+    restart: unless-stopped
+
+
+  # Push-notification bus. OWUI's own notification TARGETS cannot reach this:
+  # utils/webhook.py -> validate_url() rejects any host resolving to a non-global
+  # IP, and Tailscale's 100.64.0.0/10 is CGNAT. Delivery is therefore done by an
+  # OWUI event-type Function (owui-tools/ntfy_push.py), which runs in-process and
+  # never touches validate_url. Do NOT "fix" this with ENABLE_LOCAL_WEB_FETCH=true
+  # - that re-opens SSRF on every URL-fetching feature in OWUI.
+  ntfy:
+    image: binwiederhier/ntfy:v2.27.0
+    container_name: ntfy
+    command: ["serve"]
+
+    # Loopback ONLY. The phone reaches this through `tailscale serve` on :8443,
+    # which terminates TLS with a real ts.net cert and is tailnet-scoped.
+    # Never publish on 0.0.0.0: the tailnet carries other people's machines
+    # (kais-pc), so "on the tailnet" is not the same as "trusted".
+    ports:
+      - "127.0.0.1:8090:80"
+
+    environment:
+      NTFY_BASE_URL: "https://{{PC_TS_NAME}}:8443"
+      NTFY_LISTEN_HTTP: ":80"
+      NTFY_BEHIND_PROXY: "true"
+      NTFY_AUTH_FILE: "/var/lib/ntfy/user.db"
+      # deny-all: an unauthenticated peer can neither read nor publish. Topics
+      # are guessable strings, so this is the only thing stopping a tailnet
+      # neighbour from reading your chat titles.
+      NTFY_AUTH_DEFAULT_ACCESS: "deny-all"
+      NTFY_ENABLE_LOGIN: "true"
+      # Cache so messages sent while the phone is off-tailnet still arrive.
+      NTFY_CACHE_FILE: "/var/lib/ntfy/cache.db"
+      NTFY_CACHE_DURATION: "12h"
+      NTFY_ATTACHMENT_CACHE_DIR: "/var/lib/ntfy/attachments"
+
+    volumes:
+      - ntfy-data:/var/lib/ntfy
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:80/v1/health | grep -Fq '\"healthy\":true' || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    restart: unless-stopped
+
+
+
+
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # kokoro-tts: MOVED TO THE VPS 2026-09-19.
+  # Now runs at /home/liam/kokoro/compose.yml on {{VPS_TS_NAME}}, bound to
+  # the tailnet at {{VPS_TS_IP}}:8880 (NOT 0.0.0.0). OMP_NUM_THREADS raised 4 -> 8
+  # because the VPS has 12 idle EPYC cores vs a 9950X contended by Ollama/ComfyUI.
+  # Reason: it was CPU-only anyway (DeviceRequests: null), so nothing was lost by
+  # moving it, and it freed 1.375 GiB — 18% of this 7.7 GiB Docker VM.
+  # OWUI now points at http://{{VPS_TS_IP}}:8880/v1 (audio.tts.openai.api_base_url).
+  # Verified end to end: HTTP 200, 81,452-byte MP3 in 1.56s, matching local timings.
+  # TO ROLL BACK: uncomment this block, run `docker compose up -d kokoro-tts`, and
+  # set audio.tts.openai.api_base_url back to http://kokoro-tts:8880/v1 (the
+  # container name — host.docker.internal can NEVER work, see AICL-0029).
+  # The v0.5.0 image is still present locally, so rollback needs no pull.
+  #
+  # kokoro-tts:
+  #   image: ghcr.io/remsky/kokoro-fastapi-cpu:v0.5.0
+  #   container_name: kokoro-tts
+  #   ports:
+  #     - "127.0.0.1:8880:8880"
+  #   environment:
+  #     KOKORO_STREAM: "false"
+  #     OMP_NUM_THREADS: "4"
+  #   restart: unless-stopped
+  # ─────────────────────────────────────────────────────────────────────────
+
+
+volumes:
+  mcpo-core-data:
+  bolt-data:
+  ntfy-data:
+  discord-owui-data:
+  owui-data:
+    external: true
+  speaches-cache:

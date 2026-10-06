@@ -1,0 +1,12 @@
+{
+  "bind_host": "{{PC_TS_IP}}",
+  "port": 18110,
+  "default_working_directory": "E:\\ai\\OpenFolders\\workspace",
+  "default_timeout_seconds": 60,
+  "max_timeout_seconds": 300,
+  "max_command_chars": 12000,
+  "max_elevated_command_chars": 6000,
+  "max_output_chars": 100000,
+  "token_environment_variable": "WINDOWS_POWERSHELL_TOOL_TOKEN",
+  "audit_log": "E:\\ai\\ollama\\logs\\windows-powershell-tool.jsonl"
+}

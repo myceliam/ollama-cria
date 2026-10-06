@@ -1,0 +1,13 @@
+[Unit]
+Description=OWUI search subnet Mullvad routing and fail-closed firewall
+Wants=network-online.target tailscaled.service
+After=network-online.target tailscaled.service
+Before=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/home/liam/owui-web-egress/guard.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,80 @@
+# =============================================================================
+#  groq-relay            tailnet-only reverse proxy  ->  https://api.groq.com
+#
+#  WHY THIS EXISTS
+#  Groq refuses Mullvad exit IPs outright:
+#      403 {"error":{"message":"Access denied. Please check your network settings."}}
+#  Liam's Flint 3 tunnels the whole LAN, so every client hits that wall. Punching
+#  a hole in the router's split tunnel would work, but it puts a permanent gap in
+#  a VPN kill switch that is otherwise absolute - and it would expose the home
+#  ISP address for that one service.
+#
+#  This VPS host egresses IONOS London directly (185.230.216.117) and is NOT
+#  tunnelled - only the owui-web-egress docker subnet is. Groq accepts that
+#  address: measured 401 "Invalid API Key", which is the healthy answer.
+#
+#  So: PC -> tailnet (WireGuard) -> this proxy -> Groq. The router VPN stays
+#  fully intact, the home IP is never exposed, and the hop is encrypted.
+#
+#  Bound to the TAILNET address only. It is not reachable from the public
+#  internet: ufw default-denies inbound and permits only tailscale0 plus
+#  Cloudflare on 80/443.
+# =============================================================================
+server {
+    listen {{VPS_TS_IP}}:18099;
+    server_name _;
+
+    # Audio uploads. Groq caps transcription files at 25MB, so 32m leaves room
+    # for multipart overhead without inviting anything silly.
+    client_max_body_size 32m;
+    client_body_timeout 300s;
+
+    access_log /var/log/nginx/groq-relay.access.log;
+    error_log  /var/log/nginx/groq-relay.error.log warn;
+
+    # api.groq.com sits behind Cloudflare and its addresses ROTATE. A literal
+    # hostname in proxy_pass is resolved ONCE at config load, so the proxy would
+    # silently break when the address changed. Using a variable forces nginx to
+    # re-resolve on the TTL below instead.
+    resolver 1.1.1.1 1.0.0.1 valid=60s ipv6=off;
+    resolver_timeout 5s;
+
+    location / {
+        set $groq_host "api.groq.com";
+        proxy_pass https://$groq_host$request_uri;
+
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+
+        # Host AND SNI must both say api.groq.com or Cloudflare rejects the
+        # handshake. proxy_ssl_server_name is off by default - easy to miss.
+        proxy_set_header Host api.groq.com;
+        proxy_ssl_server_name on;
+        proxy_ssl_name api.groq.com;
+        proxy_ssl_verify on;
+        proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+        proxy_ssl_verify_depth 3;
+
+        # The caller's Authorization header passes through untouched by default.
+        # Deliberately DO NOT forward X-Forwarded-For or X-Real-IP: Groq has no
+        # use for them and they would leak the tailnet address of the client.
+        # Cloudflare fronts api.groq.com and returns "error code: 1010" - a
+        # client-fingerprint block - for some library user agents. Proven: the
+        # SAME relay returned 401 for a PowerShell caller and 1010 for a
+        # Python-urllib caller. OWUI's speech-to-text calls from Python, so the
+        # header is normalised here rather than left to each client.
+        proxy_set_header User-Agent "curl/8.5.0";
+
+        proxy_set_header X-Forwarded-For "";
+        proxy_set_header X-Real-IP "";
+
+        proxy_connect_timeout 20s;
+        proxy_send_timeout    300s;
+        proxy_read_timeout    300s;
+
+        # Transcription and chat completions can stream; buffering would hold
+        # the whole response before forwarding a byte.
+        proxy_buffering off;
+        proxy_request_buffering off;
+    }
+}
