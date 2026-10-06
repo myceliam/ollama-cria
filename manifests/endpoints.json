@@ -4,6 +4,14 @@
   "note": "Written by tools/Sync-StackFiles.ps1. Every file below holds the placeholders listed; Stage 4a fills them from the new tailnet. Do not edit by hand.",
   "files": [
     {
+      "file": "extras/dashboard/README.md",
+      "placeholders": [
+        "KAIS_PC_TS_IP",
+        "KAIS_PC_TS_NAME",
+        "TS_DOMAIN"
+      ]
+    },
+    {
       "file": "extras/dashboard/docker-compose.yml",
       "placeholders": [
         "TS_DOMAIN"
@@ -30,14 +38,6 @@
         "TS_DOMAIN",
         "VPS_TS_IP",
         "VPS_TS_NAME"
-      ]
-    },
-    {
-      "file": "extras/dashboard/README.md",
-      "placeholders": [
-        "KAIS_PC_TS_IP",
-        "KAIS_PC_TS_NAME",
-        "TS_DOMAIN"
       ]
     },
     {

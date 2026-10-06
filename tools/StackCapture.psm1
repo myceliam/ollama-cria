@@ -255,7 +255,10 @@ function Get-EndpointListRow([string]$RepoPath) {
             if ($rel -ne $script:EndpointListPath) { $files.Add($rel) }
         }
     }
-    foreach ($rel in ($files | Sort-Object -Unique -CaseSensitive)) {
+    # Ordinal order, so the list is the same on every machine and culture.
+    $sorted = [string[]]@($files | Select-Object -Unique)
+    [Array]::Sort($sorted, [StringComparer]::Ordinal)
+    foreach ($rel in $sorted) {
         $bytes = [IO.File]::ReadAllBytes((Join-Path $RepoPath $rel))
         try { $text = $utf8.GetString($bytes) } catch { continue }   # not text: holds no placeholder
         $names = Get-StackPlaceholder -Text $text
