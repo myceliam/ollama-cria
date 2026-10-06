@@ -169,6 +169,37 @@ Describe 'Test-NoSecrets' {
         }
     }
 
+    Context 'JSON laid out over several lines' {
+        It 'finds <Name>' -ForEach @(
+            @{ Name = 'a keys array split over lines'; Text = '{"keys":[' + "`n" + '"' + ('A' * 48) + '"' + "`n" + ']}'; Rule = 'opaque value under a key or credential field'; Line = 2 }
+            @{ Name = 'a credential after a harmless first item'; Text = '{"auth": [' + "`n" + '  "id",' + "`n" + '  "' + ('Bx' * 20) + '"' + "`n" + ']}'; Rule = 'opaque value under a key or credential field'; Line = 3 }
+            @{ Name = 'a secret-named field with its value on the next line'; Text = '{"settings": {"api' + '_key":' + "`n" + '   "' + ('q7' * 12) + '"}}'; Rule = 'secret-named setting with a literal value'; Line = 2 }
+            @{ Name = 'a nested credentials object'; Text = "{`n  `"credentials`": {`n    `"primary`":`n      `"" + ('Z9' * 20) + "`"`n  }`n}"; Rule = 'opaque value under a key or credential field'; Line = 0 }
+        ) {
+            $d = New-ScanFolder
+            Save-Text $d 'settings.json' "$Text`n" | Out-Null
+            $hits = @(Get-Finding $d | Where-Object Rule -EQ $Rule)
+            $hits | Should -HaveCount 1
+            if ($Line) { $hits[0].Line | Should -Be $Line }
+        }
+
+        It 'passes harmless multi-line JSON and a file that only looks like JSON' {
+            $d = New-ScanFolder
+            Save-Text $d 'ok.json' ('{"keys": [' + "`n" + '"id",' + "`n" + '"name"' + "`n" + '], "max_items":' + "`n" + '4096}' + "`n") | Out-Null
+            Save-Text $d 'notes.txt' ('{ this is not JSON, keys: ' + "`n" + 'nothing here }' + "`n") | Out-Null
+            Get-Finding $d | Should -BeNullOrEmpty
+        }
+
+        It 'reports a split credential once, without printing it' {
+            $d = New-ScanFolder
+            $value = 'C' * 40
+            Save-Text $d 'export.json' ('{"keys":[' + "`n" + '"' + $value + '"]}' + "`n") | Out-Null
+            $out = & $script:Tool -Path $d 2>&1 | Out-String
+            $out | Should -Not -Match $value
+            @(Get-Finding $d) | Should -HaveCount 1
+        }
+    }
+
     Context 'tailnet addresses' {
         It 'finds a tailnet IPv6 address written as <Name>' -ForEach @(
             @{ Name = 'compressed'; Text = 'fd7a:115c:' + 'a1e0::1' }

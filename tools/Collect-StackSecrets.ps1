@@ -17,8 +17,9 @@
     Two modes:
 
       Plan (the default). Offline. Reads the manifests, checks that each PC
-      row exists, runs the folder audits and reads the staging drive's
-      BitLocker state. It never calls ssh, scp or docker (C-09).
+      row exists, runs the folder audits and reads the BitLocker state of
+      the staging drive and, when there are volume rows, of the drives that
+      can hold paged memory. It never calls ssh, scp or docker (C-09).
 
       -Execute. Collects every row into a new folder under -StagingRoot,
       writes 00-RESTORE-MAP.json, re-checks the whole bundle with
@@ -43,7 +44,11 @@
         drive is the drive the files land on. -StagingRoot itself must be
         changeable only by the current user (it is created that way when it
         does not exist). A folder above it that another account could delete,
-        move or re-permission is a warning.
+        move, empty or re-permission stops the run; on the drive root itself
+        DELETE is ignored, and the right to create folders is allowed. A
+        -StagingRoot that appears between the check and the run is refused,
+        and after it is created the whole check runs again, so a folder
+        another account made is never adopted.
       - Paths. Every source and bundle path goes through Test-RecoveryPath.ps1,
         so no junction, symbolic link or path outside its root is followed
         (C-49).
@@ -55,10 +60,18 @@
         Host keys are never accepted automatically: BatchMode and
         StrictHostKeyChecking=yes (C-09, C-10).
       - Volume rows. A throw-away helper container reads the Docker volume:
-        no network, a read-only filesystem, no log, removed when it exits.
-        It holds the copy only in memory (a tmpfs) and sends it back on its
-        output with its size, SHA-256, mode and owner, so nothing is left in
-        Docker's storage. The collector then confirms the container is gone.
+        no network, a read-only filesystem, no log driver, removed when it
+        exits (--rm acts on exit, not when the collector stops). It holds the
+        copy in a tmpfs and sends it back on its output with its size,
+        SHA-256, mode and owner, so no copy is written to the container's
+        writable layer or a log. A tmpfs is memory, and memory can be paged
+        out: on Windows every drive that can hold the Docker VM's paged
+        memory (the page files, the system drive and the WSL swap file) must
+        have BitLocker on, like the staging drive; on Linux, active swap is a
+        warning. The helper ends itself after 300 seconds, so a killed
+        collector cannot leave one running for long, and a helper left from
+        an earlier run stops the next run until it is removed. The collector
+        confirms each helper is gone.
         SQLite files are copied with SQLite's backup API, which includes
         changes still in the -wal file, and integrity-checked (C-03). Each
         volume must exist before the run; if one is re-created during the
@@ -94,7 +107,8 @@
     machine and must have python3; the collector never pulls it.
 
 .PARAMETER AllowUnencryptedStaging
-    Accept a staging drive whose BitLocker state is not 'On'. For tests only.
+    Accept a staging drive, or a drive that can hold paged memory, whose
+    BitLocker state is not 'On'. For tests only.
 
 .PARAMETER KeepOnFailure
     Keep the run folder when the run fails, to inspect it. It holds plaintext
@@ -197,14 +211,19 @@ for b in "$@"; do
 done
 '@
 
-# Runs inside the helper container: argv is kind, then the path inside the
-# volume. The first output line is JSON: a status ('ok', 'missing', 'link',
+# Runs inside the helper container: argv is kind, the path inside the volume,
+# then the most seconds it may run. The first output line is JSON: a status ('ok', 'missing', 'link',
 # 'notfile', 'integrity') and, when ok, the size, SHA-256, mode, uid and gid.
 # The file follows as base64 lines. The only place it is written is /work, a
-# tmpfs, so it never reaches Docker's storage. A SQLite copy is switched to
-# rollback-journal mode, so it is one self-contained file.
+# tmpfs, so it never reaches the container's writable layer (a tmpfs can still
+# be paged to swap). A SQLite copy is switched to rollback-journal mode, so it
+# is one self-contained file. The alarm ends the helper even if the collector
+# was killed; it needs a handler because PID 1 ignores default signals.
+$helperSeconds = 300
 $volumeCopy = @'
-import base64, hashlib, json, os, sqlite3, stat, sys
+import base64, hashlib, json, os, signal, sqlite3, stat, sys
+signal.signal(signal.SIGALRM, lambda *_: os._exit(124))
+signal.alarm(int(sys.argv[3]))
 kind, rel = sys.argv[1], sys.argv[2]
 src = os.path.normpath(os.path.join('/src', rel))
 def say(**fields):
@@ -365,9 +384,10 @@ function Get-ProtectionProblem([string]$Path, [switch]$IsRunFolder) {
         }
         return $null
     }
-    $mode = (Get-Item -LiteralPath $Path -Force).UnixFileMode
+    $item = Get-Item -LiteralPath $Path -Force
+    if ($IsRunFolder -and $item.UnixStat.UserId -ne [int](& id -u)) { return 'it is owned by another account' }
     $others = [IO.UnixFileMode]'GroupRead, GroupWrite, GroupExecute, OtherRead, OtherWrite, OtherExecute'
-    if ($mode -band $others) { return 'group or others have access' }
+    if ($item.UnixFileMode -band $others) { return 'group or others have access' }
     return $null
 }
 
@@ -619,15 +639,16 @@ function Get-HelperLeft([string]$Name) {
 }
 
 function Copy-VolumeRow($Row, [string]$Destination) {
-    # One 'docker run': read-only filesystem, no network, no log, removed on
-    # exit. The copy comes back on the helper's output, never through
-    # Docker's storage, and is checked against the size and hash it reports.
+    # One 'docker run': read-only filesystem, no network, no log driver,
+    # removed on exit, and ended by its own alarm after $helperSeconds. The
+    # copy comes back on the helper's output, not through the container's
+    # writable layer, and is checked against the size and hash it reports.
     $name = 'cria-collect-' + [guid]::NewGuid().ToString('n').Substring(0, 12)
     $mount = if ($Row.Kind -eq 'sqlite') { "$($Row.Volume):/src" } else { "$($Row.Volume):/src:ro" }
     $program = "import base64; exec(base64.b64decode('" + (ConvertTo-Base64 $volumeCopy) + "').decode())"
     $out = @(& $DockerCommand run --rm --name $name --label 'cria.collector=helper' --network none --pull never --read-only `
             --tmpfs '/work:rw,mode=0700,size=512m' --log-driver none -v $mount $HelperImage `
-            python3 -c $program $Row.Kind ($Row.Relative -replace '\\', '/') 2>$null)
+            python3 -c $program $Row.Kind ($Row.Relative -replace '\\', '/') $helperSeconds 2>$null)
     $code = $LASTEXITCODE
     $left = Get-HelperLeft $name
     if ($left) { return $left }
@@ -698,19 +719,71 @@ function Test-DockerReady($Rows) {
     }
 }
 
-function Get-ChangeableBy([string]$Path, [switch]$IsDriveRoot) {
+function Get-PagingLocation {
+    # Windows: where memory, the Docker VM's included, can be written to
+    # disk: each page file, the system drive (hibernation and swap files) and
+    # the WSL 2 swap file, from .wslconfig or its default place. Returns paths.
+    $found = [Collections.Generic.List[string]]::new()
+    $found.Add($env:SystemDrive + '\')
+    try { foreach ($p in @(Get-CimInstance -ClassName Win32_PageFileUsage -ErrorAction Stop)) { $found.Add([string]$p.Name) } }
+    catch { $null = $_ }
+    $swap = Join-Path $env:USERPROFILE 'AppData\Local\Temp\swap.vhdx'
+    $config = Join-Path $env:USERPROFILE '.wslconfig'
+    if (Test-Path -LiteralPath $config -PathType Leaf) {
+        $section = ''
+        foreach ($line in Get-Content -LiteralPath $config) {
+            $l = ($line -replace '[#;].*$', '').Trim()
+            if ($l -match '^\[(.+)\]$') { $section = $Matches[1].Trim().ToLowerInvariant(); continue }
+            if ($section -ne 'wsl2' -or $l -notmatch '^([^=]+)=(.*)$') { continue }
+            $value = $Matches[2].Trim().Trim('"') -replace '\\\\', '\'
+            switch ($Matches[1].Trim().ToLowerInvariant()) {
+                'swapfile' { if ($value) { $swap = $value } }
+                'swap' { if ($value -match '^0+\s*[A-Za-z]*$') { $swap = $null } }
+            }
+        }
+    }
+    if ($swap) { $found.Add($swap) }
+    $found | Where-Object { $_ } | Select-Object -Unique
+}
+
+function Test-PagingBoundary {
+    # The volume helper holds each copy in a tmpfs, which is memory and can
+    # be paged out. On Windows each drive that can hold paged memory needs
+    # BitLocker on, like the staging drive. Elsewhere, active swap is named.
+    if ($onWindows) {
+        $drives = @(Get-PagingLocation | ForEach-Object { [IO.Path]::GetPathRoot($_) } | Where-Object { $_ } | Select-Object -Unique)
+        foreach ($d in $drives) {
+            $state = Get-BitLockerState $d
+            if ($state -eq 'On') { continue }
+            $note = "docker: memory can be paged to drive '$d', where BitLocker is '$state'"
+            if ($AllowUnencryptedStaging) { $warnings.Add("$note (allowed by -AllowUnencryptedStaging)") } else { $problems.Add($note) }
+        }
+        return
+    }
+    $swaps = @(Get-Content -LiteralPath '/proc/swaps' -ErrorAction SilentlyContinue | Select-Object -Skip 1 | Where-Object { $_.Trim() })
+    if ($swaps) { $warnings.Add('docker: this machine has swap on, so a volume copy held in memory can be paged to disk; the swap''s encryption is not checked') }
+}
+
+function Get-ChangeableBy([string]$Path, [switch]$IsDriveRoot, [switch]$IsStagingRoot) {
     # Accounts other than the current user, SYSTEM and Administrators that
     # could delete, move or re-permission $Path or what is in it. Returns a
-    # list of names, empty when there are none.
+    # list of names, empty when there are none. Deny entries are not
+    # subtracted and group membership is not expanded, so this errs towards
+    # naming an account; it is not a full effective-access calculation.
     $names = [Collections.Generic.List[string]]::new()
     if ($onWindows) {
         $me = Get-CurrentUserSid
         $trusted = @($me.Value, 'S-1-5-18', 'S-1-5-32-544', 'S-1-3-0', 'S-1-3-4',
             'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464')
-        # DELETE, FILE_DELETE_CHILD, WRITE_DAC, WRITE_OWNER, GENERIC_WRITE, GENERIC_ALL.
-        # DELETE on a whole drive means nothing, so it is ignored there.
-        $risky = 0x00010000 -bor 0x40 -bor 0x00040000 -bor 0x00080000 -bor 0x40000000 -bor 0x10000000
+        # On any folder: DELETE, FILE_DELETE_CHILD, WRITE_DAC, WRITE_OWNER and
+        # GENERIC_ALL, the rights that move, empty or take over a folder.
+        # DELETE on a whole drive means nothing, so it is ignored there. The
+        # staging root also may not let others add or change what is in it:
+        # FILE_WRITE_DATA (add file), FILE_APPEND_DATA (add folder) and
+        # GENERIC_WRITE. 'Write' and 'Modify' already map to the first two.
+        $risky = 0x00010000 -bor 0x40 -bor 0x00040000 -bor 0x00080000 -bor 0x10000000
         if ($IsDriveRoot) { $risky = $risky -band (-bnot 0x00010000) }
+        if ($IsStagingRoot) { $risky = $risky -bor 0x2 -bor 0x4 -bor 0x40000000 }
         $acl = Get-Acl -LiteralPath $Path
         $owner = $acl.GetOwner([Security.Principal.SecurityIdentifier])
         if ($trusted -notcontains $owner.Value) { $names.Add("$owner (owner)") }
@@ -762,11 +835,14 @@ function Test-StagingRoot {
         $current = [IO.Path]::Combine($current, $segment)
         if (-not (Test-Path -LiteralPath $parent -PathType Container)) { break }
         $who = Get-ChangeableBy $parent -IsDriveRoot:($parent -eq $top)
-        if ($who) { $warnings.Add("staging: '$parent' can be changed by $($who -join ', '), who could move the staging folder") }
+        if ($who) {
+            $problems.Add("staging: '$parent' can be changed by $($who -join ', '), who could move or replace the staging folder; use a -StagingRoot whose parent folders only your account and administrators can change")
+            return $null
+        }
     }
     if (Test-Path -LiteralPath $rootFull) {
         if (-not (Test-Path -LiteralPath $rootFull -PathType Container)) { $problems.Add('staging: -StagingRoot is not a folder'); return $null }
-        $who = Get-ChangeableBy $rootFull
+        $who = Get-ChangeableBy $rootFull -IsStagingRoot
         if ($who) {
             $problems.Add("staging: -StagingRoot can be changed by $($who -join ', '); use a folder only your account can change, or let the collector create it")
             return $null
@@ -775,9 +851,24 @@ function Test-StagingRoot {
     return $rootFull
 }
 
-function Initialize-RunFolder([string]$RootFull) {
+function Initialize-RunFolder([string]$RootFull, [bool]$RootExisted) {
     # Creates <StagingRoot>/stack-secrets-<UTC time>, protected, and returns it.
-    if (-not (Test-Path -LiteralPath $RootFull)) { Initialize-ProtectedFolder $RootFull }
+    # A staging root that was absent at the check and is there now was made by
+    # someone else in between, so it is refused, never adopted. One this run
+    # creates must come out owned and reachable only by the current user, and
+    # then the whole staging check runs again.
+    if (Test-Path -LiteralPath $RootFull) {
+        if (-not $RootExisted) { $problems.Add('staging: -StagingRoot appeared after it was checked; find out what made it, then run again'); return $null }
+    }
+    else {
+        Initialize-ProtectedFolder $RootFull
+        $why = Get-ProtectionProblem $RootFull -IsRunFolder
+        if ($why) { $problems.Add("staging: the new -StagingRoot is not protected ($why)"); return $null }
+    }
+    $before = $problems.Count
+    $again = Test-StagingRoot
+    if ($problems.Count -ne $before) { return $null }
+    if ($again -ne $RootFull) { $problems.Add('staging: -StagingRoot changed after it was checked'); return $null }
 
     $name = 'stack-secrets-' + (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')
     $check = & $testPath -Path $name -Root $RootFull -Relative -Detailed
@@ -854,11 +945,13 @@ function Invoke-Collection {
 
     Invoke-Audit $manifest
     $stagingFull = Test-StagingRoot
+    $stagingExisted = [bool]($stagingFull -and (Test-Path -LiteralPath $stagingFull))
     $run.BitLocker = Get-BitLockerState $StagingRoot
     if ($onWindows -and $run.BitLocker -ne 'On') {
         $note = "staging: BitLocker on the -StagingRoot drive is '$($run.BitLocker)'"
         if ($AllowUnencryptedStaging) { $warnings.Add("$note (allowed by -AllowUnencryptedStaging)") } else { $problems.Add($note) }
     }
+    if (@($manifest.Rows | Where-Object Source -EQ 'volume')) { Test-PagingBoundary }
 
     $sources = @{}
     foreach ($r in $manifest.Rows | Where-Object Source -EQ 'pc') {
@@ -874,7 +967,7 @@ function Invoke-Collection {
     if ($problems.Count -gt 0) { return }
 
     if (-not $stagingFull) { return }
-    $runFolder = Initialize-RunFolder $stagingFull
+    $runFolder = Initialize-RunFolder $stagingFull $stagingExisted
     if (-not $runFolder) { return }
     $bundleDir = Join-Path $runFolder 'bundle'
     Initialize-BundleFolder $bundleDir
