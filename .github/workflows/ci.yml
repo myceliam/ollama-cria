@@ -17,7 +17,11 @@ jobs:
       matrix:
         os: [windows-latest, ubuntu-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'   # the OWUI image's Python
 
       - name: Secret and private-address scan
         shell: pwsh
@@ -35,6 +39,10 @@ jobs:
           $c.Run.Exit = $true
           $c.Output.Verbosity = 'Detailed'
           Invoke-Pester -Configuration $c
+
+      - name: Python tests (OWUI seed exporter)
+        shell: pwsh
+        run: python -m unittest discover -s tests/python -v
 
       - name: PSScriptAnalyzer
         shell: pwsh

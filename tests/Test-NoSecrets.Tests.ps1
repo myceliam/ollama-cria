@@ -134,6 +134,7 @@ Describe 'Test-NoSecrets' {
             @{ Name = 'an API key written with a JSON escape'; Text = '{"value": "sk' + '\u002d' + ('A' * 40) + '"}'; Rule = 'API key (sk-)' }
             @{ Name = 'an opaque value in a keys array'; Text = '{"keys": ["' + ('A' * 48) + '"]}'; Rule = 'opaque value under a key or credential field' }
             @{ Name = 'a Civitai key'; Text = 'civitai: ' + ('a1' * 16); Rule = 'Civitai key' }
+            @{ Name = 'Fernet ciphertext from an OWUI Valve'; Text = '"valves": "gAAAAA' + ('Bx9_' * 20) + '"'; Rule = 'Fernet ciphertext (encrypted OWUI Valves)' }
             @{ Name = 'a WireGuard preshared key'; Text = 'Preshared' + 'Key = ' + ('A' * 43) + '='; Rule = 'secret-named setting with a literal value' }
         ) {
             $d = New-ScanFolder

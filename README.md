@@ -48,7 +48,7 @@ Built in this order: the **capture side first**, because a restore script can be
 | 1 | `tools/Test-NoSecrets.ps1` | CI guard: refuses secret-shaped strings, private addresses and forbidden files | 🔍 |
 | 2 | `manifests/secrets.json`, `manifests/bundle-folders.json` | The secret inventory (names and logical locations only, never values) and which root each bundle folder restores to | 🚧 |
 | 2 | `tools/Collect-StackSecrets.ps1` | Rewritten collector: plans offline by default; with `-Execute` builds a protected bundle, its restore map and the ZIP | 🚧 |
-| 3 | `tools/Export-OwuiSeed.py` | OWUI functional seed exporter, run inside the OWUI container | ⏳ |
+| 3 | `tools/Export-OwuiSeed.py`, `manifests/owui-seed/schema.json` | OWUI functional seed exporter, run inside the OWUI container: one read-only snapshot, an allowlist where anything unknown stops the export, Valves decrypted with OWUI's own codec, secrets moved to references for bundle folder 03 | 🚧 |
 | 4+ | Stage modules and the controller | `Invoke-StackRecovery.ps1` and `windows/stages/*`, `linux/stages/*` | ⏳ |
 
 Status key: ✅ done and reviewed · 🔍 built, in review · 🚧 in progress · ⏳ not started.
@@ -63,9 +63,10 @@ Needs PowerShell 7.4+ and Pester 5.
 Install-Module Pester -MinimumVersion 5.5 -Scope CurrentUser   # once
 Invoke-Pester ./tests -Output Detailed
 ./tools/Test-NoSecrets.ps1                                      # the same scan CI runs
+python -m unittest discover -s tests/python -v                 # the seed exporter (Python 3.11, standard library only)
 ```
 
-CI runs both on Windows and Linux for every push and pull request. The collector's VPS tests use stand-ins for `ssh` and `scp` (`tests/fakes/`) and run on Linux only; its volume tests need a Linux Docker engine, so they run on the Linux runner and are skipped elsewhere.
+CI runs all three on Windows and Linux for every push and pull request. The collector's VPS tests use stand-ins for `ssh` and `scp` (`tests/fakes/`) and run on Linux only; its volume tests need a Linux Docker engine, so they run on the Linux runner and are skipped elsewhere. The seed exporter's tests use a stand-in for OWUI's Valve codec (`tests/python/fake_owui/`) and a fake OWUI 0.11.4 database built at run time.
 
 ---
 

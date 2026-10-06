@@ -90,6 +90,7 @@ $lineRules = @(
     @{ Rule = 'Brave Search key'; Pattern = '\bBSA[0-9A-Za-z_-]{20,}' }
     @{ Rule = 'AWS access key'; Pattern = '\bAKIA[0-9A-Z]{16}\b' }
     @{ Rule = 'Slack token'; Pattern = '\bxox[abprs]-[0-9A-Za-z-]{10,}' }
+    @{ Rule = 'Fernet ciphertext (encrypted OWUI Valves)'; Pattern = '\bgAAAAA[A-Za-z0-9_-]{40,}' }
     @{ Rule = 'JWT'; Pattern = '\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}' }
     @{ Rule = 'Discord webhook URL'; Pattern = 'discord(app)?\.com/api/webhooks/[0-9]+/[A-Za-z0-9_-]{20,}' }
     @{ Rule = 'password in a URL'; Pattern = '[a-z][a-z0-9+.-]{0,31}://[^/\s:@''"]+:[^/\s@''"]+@' }
