@@ -45,8 +45,12 @@ BeforeAll {
 
     # Writes an inventory with the bundle's rows (plus any extras) and points
     # the map's inventory block at it. Returns the inventory's path.
-    function Save-TestInventory($Bundle, [object[]]$Extra = @()) {
-        $rows = @($Bundle.Map.entries | ForEach-Object { [ordered]@{ id = $_.id; required = [bool]$_.required } }) + $Extra
+    function Save-TestInventory($Bundle, [object[]]$Extra = @(), [string[]]$Skip = @()) {
+        $rows = @($Bundle.Map.entries | Where-Object { $_.id -notin $Skip } | ForEach-Object {
+                $row = [ordered]@{ id = $_.id; folder = $_.folder; location = $_.destination; kind = 'file'; required = [bool]$_.required; purpose = 'test row' }
+                foreach ($f in 'mode', 'owner', 'group') { if ($_.ContainsKey($f)) { $row[$f] = $_[$f] } }
+                $row
+            }) + $Extra
         $path = Join-Path $TestDrive ('inventory-' + [guid]::NewGuid().ToString('n') + '.json')
         [ordered]@{ formatVersion = 1; rows = $rows } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $path
         $Bundle.Map.inventory.sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -288,6 +292,62 @@ Describe 'Test-RestoreMap' {
             $inv = Save-TestInventory $b -Extra @([ordered]@{ id = 'new-secret'; required = $true })
             $r = & $script:Tool -MapPath $b.MapPath -RootsPath $script:Roots -InventoryPath $inv
             $r.Problems | Should -Contain "inventory: required row 'new-secret' has no entry in the map"
+        }
+
+        It 'refuses a map that downgrades a required row in both its list and its entry, even with the file missing' {
+            $b = New-TestBundle
+            $inv = Save-TestInventory $b
+            $b.Map.entries[0].required = $false
+            $b.Map.inventory.required = @('owui-openai-key', 'vps-egress-env')
+            Save-TestMap $b
+            Remove-Item -LiteralPath (Join-Path $b.Dir '01/stack.env')
+            $r = & $script:Tool -MapPath $b.MapPath -RootsPath $script:Roots -InventoryPath $inv -BundleRoot $b.Dir
+            $r.IsValid | Should -BeFalse
+            $r.Problems | Should -Contain "inventory: required row 'stack-env' is not in the map's required list"
+            $r.Problems | Should -Contain "entry 'stack-env': required does not match the inventory"
+        }
+
+        It 'refuses a map that promotes an optional row in both its list and its entry' {
+            $b = New-TestBundle
+            $inv = Save-TestInventory $b
+            $b.Map.entries[3].required = $true
+            $b.Map.inventory.required = @($b.Map.inventory.required) + 'ntfy-user-db'
+            Save-TestMap $b
+            $r = & $script:Tool -MapPath $b.MapPath -RootsPath $script:Roots -InventoryPath $inv
+            $r.Problems | Should -Contain "inventory: 'ntfy-user-db' is required in the map but optional in the inventory"
+            $r.Problems | Should -Contain "entry 'ntfy-user-db': required does not match the inventory"
+        }
+
+        It 'refuses an entry whose <Field> differs from its inventory row' -ForEach @(
+            @{ Field = 'destination'; Index = 0; Value = 'stack:wrong.env' }
+            @{ Field = 'folder'; Index = 1; Value = '02' }
+            @{ Field = 'mode'; Index = 2; Value = '0644' }
+            @{ Field = 'owner'; Index = 2; Value = 'root' }
+        ) {
+            $b = New-TestBundle
+            $inv = Save-TestInventory $b
+            $b.Map.entries[$Index][$Field] = $Value
+            Save-TestMap $b
+            $r = & $script:Tool -MapPath $b.MapPath -RootsPath $script:Roots -InventoryPath $inv
+            $id = $b.Map.entries[$Index].id
+            $r.Problems | Should -Contain "entry '$id': $Field does not match the inventory"
+        }
+
+        It 'refuses an entry that is not a row of the inventory' {
+            $b = New-TestBundle
+            $inv = Save-TestInventory $b -Skip 'ntfy-user-db'
+            $r = & $script:Tool -MapPath $b.MapPath -RootsPath $script:Roots -InventoryPath $inv
+            $r.Problems | Should -Contain "entry 'ntfy-user-db': not a row of the inventory"
+        }
+
+        It 'refuses an inventory file that is not an inventory' {
+            $b = New-TestBundle
+            $inv = Save-TestInventory $b
+            Set-Content -LiteralPath $inv -Value '{"rows": []}'
+            $b.Map.inventory.sha256 = (Get-FileHash -LiteralPath $inv -Algorithm SHA256).Hash.ToLowerInvariant()
+            Save-TestMap $b
+            $r = & $script:Tool -MapPath $b.MapPath -RootsPath $script:Roots -InventoryPath $inv
+            $r.Problems | Should -Contain 'inventory: the file could not be read as an inventory'
         }
 
         It 'warns about an optional row of the inventory file that the map does not have' {

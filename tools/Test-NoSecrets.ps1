@@ -17,6 +17,12 @@
         passphrases, opaque values under a key or keys field). A line holding
         JSON \uXXXX escapes is scanned again with them decoded, so
         'sk-...' is found too;
+      - every file that parses as JSON once more as a whole, so a value on
+        a different line from its field name is still judged by that field:
+        an opaque value anywhere under a key, keys, auth, credential or
+        bearer property, and a literal value under a secret-named property.
+        A long public digest under a "key" field is reported too; give such
+        fields a clearer name rather than weakening the rule;
       - private addresses: tailnet IPv4 and IPv6 addresses and MagicDNS names,
         which belong in templates as {{PC_TS_IP}} and {{VPS_TS_IP}}.
 
@@ -178,9 +184,35 @@ if (Test-Path -LiteralPath (Join-Path $root '.git')) {
     foreach ($d in (Get-GitFile $root @('--deleted'))) { $deleted[$d] = $true }
 }
 else {
-    $relativeFiles = @(Get-ChildItem -LiteralPath $root -Recurse -File -Force |
-            Where-Object { $_.FullName -notmatch '[\\/]\.git[\\/]' } |
-            ForEach-Object { $_.FullName.Substring($root.TrimEnd([char[]]@('\', '/')).Length + 1) })
+    # -Name gives paths relative to the root as listed, so they stay right even
+    # when the root was given in another form (a Windows 8.3 short path).
+    $relativeFiles = @(Get-ChildItem -LiteralPath $root -Recurse -File -Force -Name |
+            Where-Object { $_ -notmatch '(^|[\\/])\.git([\\/]|$)' })
+}
+
+# Structured JSON: the line rules above see one line at a time, so a value on
+# the line after its field name ('"keys": [' then the value) slips past them
+# (R2-03). Each JSON file is also parsed and every string is judged by the
+# field it sits under, however the file is laid out.
+$jsonOpaqueName = '^(?i)(keys?|auth|credentials?|bearer)$'
+$jsonTellingName = '(?i)(SECRET|TOKEN|PASSWORD|PASSWD|PASSPHRASE|API_?KEY|PRIVATE_?KEY|PRESHARED_?KEY)'
+function Get-JsonCredential($Node, [string]$Field, [bool]$Under) {
+    # $Field is the nearest property name; $Under is true below a key,
+    # keys, auth, credential or bearer property at any depth.
+    if ($Node -is [Collections.IDictionary]) {
+        foreach ($k in $Node.Keys) { Get-JsonCredential $Node[$k] ([string]$k) ($Under -or ([string]$k -match $jsonOpaqueName)) }
+    }
+    elseif ($Node -is [Collections.IList]) {
+        foreach ($item in $Node) { Get-JsonCredential $item $Field $Under }
+    }
+    elseif ($Node -is [string]) {
+        if ($Under -and $Node -match '^[A-Za-z0-9+/=_-]{32,}$') {
+            [pscustomobject]@{ Value = $Node; Rule = 'opaque value under a key or credential field' }
+        }
+        elseif ($Field -match $jsonTellingName -and $Node -match '^[A-Za-z0-9+/=_.-]{16,}$') {
+            [pscustomobject]@{ Value = $Node; Rule = 'secret-named setting with a literal value' }
+        }
+    }
 }
 
 $findings = [Collections.Generic.List[object]]::new()
@@ -227,6 +259,21 @@ foreach ($rel in $relativeFiles) {
             if (@($variants | Where-Object { $_ -match $r.Pattern }).Count -gt 0) {
                 if ($scan.Binary) { $findings.Add([pscustomobject]@{ File = $rel; Line = 0; Rule = "$($r.Rule) (in a binary file)" }) }
                 else { $findings.Add([pscustomobject]@{ File = $rel; Line = $i + 1; Rule = $r.Rule }) }
+            }
+        }
+    }
+
+    $trimmed = $scan.Text.TrimStart([char]0xFEFF, ' ', "`t", "`r", "`n")
+    if (-not $scan.Binary -and $scan.Text.Length -le 8MB -and ($trimmed.StartsWith('{') -or $trimmed.StartsWith('['))) {
+        $doc = $null
+        try { $doc = ConvertFrom-Json -InputObject $scan.Text -AsHashtable -Depth 200 -NoEnumerate -ErrorAction Stop } catch { $doc = $null }
+        if ($null -ne $doc) {
+            foreach ($hit in @(Get-JsonCredential $doc '' $false)) {
+                # Report the first line that holds the value; never the value.
+                $line = 0
+                for ($i = 0; $i -lt $lines.Count; $i++) { if ($lines[$i].Contains($hit.Value)) { $line = $i + 1; break } }
+                $seen = @($findings | Where-Object { $_.File -eq $rel -and $_.Line -eq $line -and $_.Rule -eq $hit.Rule })
+                if (-not $seen) { $findings.Add([pscustomobject]@{ File = $rel; Line = $line; Rule = $hit.Rule }) }
             }
         }
     }
