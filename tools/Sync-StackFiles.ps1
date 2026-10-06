@@ -122,7 +122,8 @@ $rows = [Collections.Generic.List[object]]::new()
 $state = [pscustomobject]@{ EndpointsWritten = $false }
 
 # Runs on the VPS through ssh: bash SCRIPT <root as base64> <max bytes>, with
-# one base64 relative path per line on its input. Prints one line per path,
+# one base64 relative path per line on its input (CRLF line ends when
+# PowerShell on Windows sends it). Prints one line per path,
 # in order: 'ok <content as base64>', or one word saying why not. Reads only.
 $remoteRead = @'
 set -u
@@ -130,7 +131,7 @@ root=$(printf '%s' "$1" | base64 -d 2>/dev/null) || exit 3
 max=$2
 case "$root" in /*) ;; *) exit 3;; esac
 while IFS= read -r line; do
-  rel=$(printf '%s' "$line" | base64 -d 2>/dev/null) || { echo bad; continue; }
+  rel=$(printf '%s' "$line" | tr -d '\r' | base64 -d 2>/dev/null) || { echo bad; continue; }
   case "/$rel/" in */../*|*/./*|//*) echo bad; continue;; esac
   st=ok
   [ -L "$root" ] && st=link
