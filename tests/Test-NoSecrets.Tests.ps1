@@ -24,6 +24,16 @@ BeforeAll {
     function Get-Finding([string]$Dir) {
         @(& $script:Tool -Path $Dir -PassThru)
     }
+
+    # A throwaway Git work tree, so the scan lists files the way CI does.
+    function New-GitFolder {
+        $dir = New-ScanFolder
+        git -C $dir init -q
+        git -C $dir config user.email 'test@example.invalid'
+        git -C $dir config user.name 'test'
+        git -C $dir config commit.gpgsign false
+        return $dir
+    }
 }
 
 Describe 'Test-NoSecrets' {
@@ -87,6 +97,57 @@ Describe 'Test-NoSecrets' {
         }
     }
 
+    Context 'Git work trees' {
+        It 'scans a tracked file whose name Git would quote (<Label>)' -ForEach @(
+            @{ Label = 'non-ASCII'; Name = 'caf' + [char]0xE9 + '.txt'; LinuxOnly = $false }
+            @{ Label = 'a tab'; Name = "tab`there.txt"; LinuxOnly = $true }
+        ) {
+            if ($LinuxOnly -and $IsWindows) { Set-ItResult -Skipped -Because 'a Windows file name cannot hold a tab'; return }
+            $d = New-GitFolder
+            Save-Text $d $Name "key = $($script:FakeKey)`n" | Out-Null
+            git -C $d add -- $Name
+            $f = Get-Finding $d
+            $f.File | Should -Be @($Name)
+            $f.Rule | Should -Be @('API key (sk-)')
+        }
+
+        It 'scans a new file Git does not ignore, whatever its name' {
+            $d = New-GitFolder
+            $name = 'na' + [char]0xEF + 've.txt'
+            Save-Text $d $name "key = $($script:FakeKey)`n" | Out-Null
+            (Get-Finding $d).File | Should -Be @($name)
+        }
+
+        It 'skips a tracked file deleted from the work tree' {
+            $d = New-GitFolder
+            Save-Text $d 'gone.txt' "nothing here`n" | Out-Null
+            git -C $d add -- 'gone.txt'
+            git -C $d commit -q -m 'add' | Out-Null
+            Remove-Item -LiteralPath (Join-Path $d 'gone.txt')
+            Get-Finding $d | Should -BeNullOrEmpty
+        }
+    }
+
+    Context 'more token formats' {
+        It 'finds <Name>' -ForEach @(
+            @{ Name = 'an ntfy access token'; Text = 'publish with tk_' + ('a' * 29); Rule = 'ntfy access token' }
+            @{ Name = 'an API key written with a JSON escape'; Text = '{"value": "sk' + '\u002d' + ('A' * 40) + '"}'; Rule = 'API key (sk-)' }
+            @{ Name = 'an opaque value in a keys array'; Text = '{"keys": ["' + ('A' * 48) + '"]}'; Rule = 'opaque value under a key or credential field' }
+            @{ Name = 'a Civitai key'; Text = 'civitai: ' + ('a1' * 16); Rule = 'Civitai key' }
+            @{ Name = 'a WireGuard preshared key'; Text = 'Preshared' + 'Key = ' + ('A' * 43) + '='; Rule = 'secret-named setting with a literal value' }
+        ) {
+            $d = New-ScanFolder
+            Save-Text $d 'data.txt' "$Text`n" | Out-Null
+            (Get-Finding $d).Rule | Should -Contain $Rule
+        }
+
+        It 'passes a short value in a keys array and an escape that decodes to nothing secret' {
+            $d = New-ScanFolder
+            Save-Text $d 'data.json' ('{"keys": ["id", "name"], "note": "a\u002db"}' + "`n") | Out-Null
+            Get-Finding $d | Should -BeNullOrEmpty
+        }
+    }
+
     Context 'tailnet addresses' {
         It 'finds a tailnet IPv6 address written as <Name>' -ForEach @(
             @{ Name = 'compressed'; Text = 'fd7a:115c:' + 'a1e0::1' }
@@ -139,6 +200,8 @@ Describe 'Test-NoSecrets' {
             @{ Name = 'stack-secrets-20261005T120000Z.zip' }
             @{ Name = '00-RESTORE-MAP.json' }
             @{ Name = 'user.db' }
+            @{ Name = 'backup.tar.gz' }
+            @{ Name = 'export.7z' }
         ) {
             $d = New-ScanFolder
             Save-Text $d $Name 'fake' | Out-Null

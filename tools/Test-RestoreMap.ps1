@@ -16,16 +16,26 @@
          PC), below a drive or filesystem root, with no '.', '..' or empty
          segment. Whether a root is a link is checked on its own host by the
          restorer, which runs Test-RecoveryPath.ps1 against the real folder.
+         No two roots on one host may name the same or nested folders (or the
+         same volume), so two destinations can never be one file under two
+         names. Roots that start with %VAR% are compared as written; the
+         restorer compares them again once the variables are expanded.
       3. Rows: every destination names a known root; each bundle folder goes to
          the kind of root it belongs to (folder 05 to the VPS, 07 to a Docker
-         volume, 03 to the OWUI seed importer, the rest to a PC folder); mode
-         and owner only appear on VPS rows.
+         volume, 03 to the OWUI seed importer, the rest to a PC folder); mode,
+         owner and group only appear on VPS and Docker volume rows (both are
+         Linux filesystems).
       4. Paths: every file name and destination passes Test-RecoveryPath.ps1
          as a relative path (C-49) and names a file, not a folder (no trailing
          separator).
       5. Uniqueness: ids, destinations and bundle files are each unique,
          ignoring case.
-      6. With -BundleRoot: the bundle's own 00-RESTORE-MAP.json exists and is
+      6. Completeness: the map's inventory block lists every required row of
+         the inventory it was collected from. Each of those ids has a required
+         entry, and no other entry is required. With -InventoryPath, the
+         block's SHA-256 must match that file, and every required row in the
+         file must be in the map; an optional row that is absent is a warning.
+      7. With -BundleRoot: the bundle's own 00-RESTORE-MAP.json exists and is
          byte for byte the map that was checked, so a restorer reading it
          reads exactly what passed; every required row's file is in the
          bundle, inside it, with the right byte length and SHA-256; and the
@@ -40,6 +50,10 @@
 
 .PARAMETER RootsPath
     The logical roots file. Defaults to manifests/recovery-roots.json in this repo.
+
+.PARAMETER InventoryPath
+    The secret inventory (manifests/secrets.json) the restorer trusts. When
+    given, the map must have been collected from exactly this file.
 
 .PARAMETER BundleRoot
     The unpacked bundle folder (the one holding 00-RESTORE-MAP.json and the
@@ -59,6 +73,8 @@ param(
     [string]$MapPath,
 
     [string]$RootsPath = (Join-Path $PSScriptRoot '../manifests/recovery-roots.json'),
+
+    [string]$InventoryPath,
 
     [string]$BundleRoot
 )
@@ -132,6 +148,14 @@ function Get-RootPathProblem([string]$Path, [string]$OnHost) {
     return $null
 }
 
+function Get-RootKey([string]$Path, [string]$OnHost) {
+    # One spelling per folder: / for \, no trailing separator, and lower case
+    # on the PC, where paths ignore case.
+    $key = ($Path -replace '\\', '/') -replace '/+$', ''
+    if ($OnHost -ne 'vps') { $key = $key.ToLowerInvariant() }
+    return $key
+}
+
 function Get-UniqueKey([string]$Text) {
     # One spelling per place: / for \, no trailing separator, lower case.
     return (($Text -replace '\\', '/') -replace '/+$', '').ToLowerInvariant()
@@ -179,6 +203,27 @@ foreach ($r in $roots.PSObject.Properties) {
     }
 }
 
+# Two names for one folder (or one inside the other) would let two rows that
+# look unique write the same file.
+$rootNames = @($rootByName.Keys | Sort-Object)
+for ($a = 0; $a -lt $rootNames.Count; $a++) {
+    for ($b = $a + 1; $b -lt $rootNames.Count; $b++) {
+        $ra = $rootByName[$rootNames[$a]]; $rb = $rootByName[$rootNames[$b]]
+        if ($ra.kind -ne $rb.kind -or $ra.host -ne $rb.host -or $ra.kind -eq 'consumed') { continue }
+        if ($ra.kind -eq 'volume') {
+            $va = Get-OptionalProperty $ra 'volume'; $vb = Get-OptionalProperty $rb 'volume'
+            if ($va -and $va -eq $vb) { $problems.Add("roots '$($rootNames[$a])' and '$($rootNames[$b])' name the same volume") }
+            continue
+        }
+        $pa = Get-OptionalProperty $ra 'path'; $pb = Get-OptionalProperty $rb 'path'
+        if (-not $pa -or -not $pb) { continue }   # already reported above
+        $ka = Get-RootKey $pa $ra.host; $kb = Get-RootKey $pb $rb.host
+        if ($ka -eq $kb -or $ka.StartsWith($kb + '/') -or $kb.StartsWith($ka + '/')) {
+            $problems.Add("roots '$($rootNames[$a])' and '$($rootNames[$b])' name the same or nested folders")
+        }
+    }
+}
+
 # ---------- 3 to 5. Rows ----------
 $ids = @{}
 $destinations = @{}
@@ -211,9 +256,9 @@ foreach ($e in $map.entries) {
         if ($root.kind -ne $rule.Kind -or $root.host -ne $rule.Host) {
             $problems.Add("${label}: folder $($e.folder) must go to a $($rule.Host) '$($rule.Kind)' root, not '$rootName'")
         }
-        $hasLinuxBits = ($null -ne (Get-OptionalProperty $e 'mode')) -or ($null -ne (Get-OptionalProperty $e 'owner'))
-        if ($hasLinuxBits -and $root.host -ne 'vps') {
-            $problems.Add("${label}: mode and owner are only for VPS destinations")
+        $hasLinuxBits = @('mode', 'owner', 'group' | Where-Object { $null -ne (Get-OptionalProperty $e $_) }).Count -gt 0
+        if ($hasLinuxBits -and $root.host -ne 'vps' -and $root.kind -ne 'volume') {
+            $problems.Add("${label}: mode, owner and group are only for VPS and volume destinations")
         }
     }
 
@@ -226,7 +271,40 @@ foreach ($e in $map.entries) {
     if ($destinations.ContainsKey($destKey)) { $problems.Add("${label}: same destination as entry #$($destinations[$destKey])") } else { $destinations[$destKey] = $n }
 }
 
-# ---------- 6. The bundle itself ----------
+# ---------- 6. Completeness ----------
+$listedRequired = @{}
+foreach ($id in @($map.inventory.required)) { $listedRequired[$id.ToLowerInvariant()] = $true }
+$entryById = @{}
+foreach ($e in $map.entries) { $entryById[$e.id.ToLowerInvariant()] = $e }
+foreach ($id in @($map.inventory.required)) {
+    $e = $entryById[$id.ToLowerInvariant()]
+    if (-not $e) { $problems.Add("inventory: required row '$id' has no entry in the map") }
+    elseif (-not $e.required) { $problems.Add("inventory: required row '$id' is marked optional in the map") }
+}
+foreach ($e in $map.entries) {
+    if ($e.required -and -not $listedRequired.ContainsKey($e.id.ToLowerInvariant())) {
+        $problems.Add("entry '$($e.id)': required, but not a required row of the inventory")
+    }
+}
+if ($InventoryPath) {
+    if (-not (Test-Path -LiteralPath $InventoryPath -PathType Leaf)) {
+        $problems.Add('inventory: file not found')
+    }
+    else {
+        $inventoryHash = (Get-FileHash -LiteralPath $InventoryPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($inventoryHash -ne $map.inventory.sha256) { $problems.Add('inventory: the map was collected from a different inventory') }
+        foreach ($row in @((Get-Content -LiteralPath $InventoryPath -Raw | ConvertFrom-Json).rows)) {
+            if ($entryById.ContainsKey($row.id.ToLowerInvariant())) { continue }
+            if ($row.required) {
+                # Already reported above when the map's own list names it.
+                if (-not $listedRequired.ContainsKey($row.id.ToLowerInvariant())) { $problems.Add("inventory: required row '$($row.id)' has no entry in the map") }
+            }
+            else { $warnings.Add("inventory: optional row '$($row.id)' is not in the map") }
+        }
+    }
+}
+
+# ---------- 7. The bundle itself ----------
 if ($BundleRoot) {
     if (-not (Test-Path -LiteralPath $BundleRoot -PathType Container)) {
         $problems.Add('bundle: folder not found')

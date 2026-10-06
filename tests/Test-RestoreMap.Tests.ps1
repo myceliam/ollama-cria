@@ -26,6 +26,7 @@ BeforeAll {
             formatVersion = 1
             createdUtc    = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
             collector     = [ordered]@{ name = 'Collect-StackSecrets.ps1'; version = '1.0.0' }
+            inventory     = [ordered]@{ sha256 = ('0' * 64); required = @('stack-env', 'owui-openai-key', 'vps-egress-env') }
             entries       = $rows
         }
         $bundle = [pscustomobject]@{ Dir = $dir; MapPath = (Join-Path $dir '00-RESTORE-MAP.json'); Map = $map }
@@ -40,6 +41,17 @@ BeforeAll {
     function Invoke-Check($Bundle, [switch]$WithBundle, [string]$RootsPath = $script:Roots) {
         if ($WithBundle) { & $script:Tool -MapPath $Bundle.MapPath -RootsPath $RootsPath -BundleRoot $Bundle.Dir }
         else { & $script:Tool -MapPath $Bundle.MapPath -RootsPath $RootsPath }
+    }
+
+    # Writes an inventory with the bundle's rows (plus any extras) and points
+    # the map's inventory block at it. Returns the inventory's path.
+    function Save-TestInventory($Bundle, [object[]]$Extra = @()) {
+        $rows = @($Bundle.Map.entries | ForEach-Object { [ordered]@{ id = $_.id; required = [bool]$_.required } }) + $Extra
+        $path = Join-Path $TestDrive ('inventory-' + [guid]::NewGuid().ToString('n') + '.json')
+        [ordered]@{ formatVersion = 1; rows = $rows } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $path
+        $Bundle.Map.inventory.sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+        Save-TestMap $Bundle
+        return $path
     }
 
     # Writes a copy of the repo's roots file with one root's path changed.
@@ -132,7 +144,17 @@ Describe 'Test-RestoreMap' {
             $b = New-TestBundle
             $b.Map.entries[0].mode = '0600'
             Save-TestMap $b
-            (Invoke-Check $b).Problems | Should -Match 'mode and owner are only for VPS destinations'
+            (Invoke-Check $b).Problems | Should -Match 'mode, owner and group are only for VPS and volume destinations'
+        }
+
+        It 'accepts mode, a numeric owner and a group on a Docker volume row' {
+            # A volume is a Linux filesystem, so its files have an owner and mode (M1-05).
+            $b = New-TestBundle
+            $b.Map.entries[3].mode = '0640'
+            $b.Map.entries[3].owner = '1000'
+            $b.Map.entries[3].group = '1000'
+            Save-TestMap $b
+            (Invoke-Check $b).Problems | Should -BeNullOrEmpty
         }
 
         It 'refuses a destination that climbs out of its root' {
@@ -176,7 +198,7 @@ Describe 'Test-RestoreMap' {
             $b = New-TestBundle
             $b.Map.entries[1].id = 'stack-env'
             Save-TestMap $b
-            (Invoke-Check $b).Problems | Should -Match 'id already used by entry #1'
+            (Invoke-Check $b).Problems | Should -Contain "entry #2 ('stack-env'): id already used by entry #1"
         }
 
         It 'refuses two destinations that differ only by case' {
@@ -185,7 +207,7 @@ Describe 'Test-RestoreMap' {
             $copy.id = 'stack-env-2'; $copy.file = 'other.env'; $copy.destination = 'stack:.ENV'
             $b.Map.entries += $copy
             Save-TestMap $b
-            (Invoke-Check $b).Problems | Should -Match 'same destination as entry #1'
+            (Invoke-Check $b).Problems | Should -Contain "entry #5 ('stack-env-2'): same destination as entry #1"
         }
 
         It 'refuses two rows for the same bundle file' {
@@ -194,7 +216,7 @@ Describe 'Test-RestoreMap' {
             $copy.id = 'stack-env-2'; $copy.file = 'STACK.env'; $copy.destination = 'stack:other.env'
             $b.Map.entries += $copy
             Save-TestMap $b
-            (Invoke-Check $b).Problems | Should -Match 'same bundle file as entry #1'
+            (Invoke-Check $b).Problems | Should -Contain "entry #5 ('stack-env-2'): same bundle file as entry #1"
         }
 
         It 'refuses two destinations that differ only by a trailing separator' {
@@ -213,6 +235,67 @@ Describe 'Test-RestoreMap' {
             $b.Map.entries += $copy
             Save-TestMap $b
             (Invoke-Check $b).Problems | Should -Contain "entry #5 ('stack-env-2'): same bundle file as entry #1"
+        }
+    }
+
+    Context 'completeness' {
+        It 'refuses a map with no inventory block' {
+            $b = New-TestBundle
+            $b.Map.Remove('inventory')
+            Save-TestMap $b
+            (Invoke-Check $b).IsValid | Should -BeFalse
+        }
+
+        It 'refuses a map that leaves out a required inventory row' {
+            $b = New-TestBundle
+            $b.Map.inventory.required += 'ghost-row'
+            Save-TestMap $b
+            (Invoke-Check $b).Problems | Should -Contain "inventory: required row 'ghost-row' has no entry in the map"
+        }
+
+        It 'refuses a required inventory row marked optional in the map' {
+            $b = New-TestBundle
+            $b.Map.entries[0].required = $false
+            Save-TestMap $b
+            (Invoke-Check $b).Problems | Should -Contain "inventory: required row 'stack-env' is marked optional in the map"
+        }
+
+        It 'refuses a required entry the inventory does not list as required' {
+            $b = New-TestBundle
+            $b.Map.entries[3].required = $true
+            Save-TestMap $b
+            (Invoke-Check $b).Problems | Should -Contain "entry 'ntfy-user-db': required, but not a required row of the inventory"
+        }
+
+        It 'passes against the inventory it was collected from' {
+            $b = New-TestBundle
+            $inv = Save-TestInventory $b
+            $r = & $script:Tool -MapPath $b.MapPath -RootsPath $script:Roots -InventoryPath $inv
+            $r.Problems | Should -BeNullOrEmpty
+            $r.Warnings | Should -BeNullOrEmpty
+        }
+
+        It 'refuses a map collected from a different inventory' {
+            $b = New-TestBundle
+            $inv = Save-TestInventory $b
+            Add-Content -LiteralPath $inv -Value ' '
+            $r = & $script:Tool -MapPath $b.MapPath -RootsPath $script:Roots -InventoryPath $inv
+            $r.Problems | Should -Contain 'inventory: the map was collected from a different inventory'
+        }
+
+        It 'refuses a required row of the inventory file that the map does not have' {
+            $b = New-TestBundle
+            $inv = Save-TestInventory $b -Extra @([ordered]@{ id = 'new-secret'; required = $true })
+            $r = & $script:Tool -MapPath $b.MapPath -RootsPath $script:Roots -InventoryPath $inv
+            $r.Problems | Should -Contain "inventory: required row 'new-secret' has no entry in the map"
+        }
+
+        It 'warns about an optional row of the inventory file that the map does not have' {
+            $b = New-TestBundle
+            $inv = Save-TestInventory $b -Extra @([ordered]@{ id = 'spare-key'; required = $false })
+            $r = & $script:Tool -MapPath $b.MapPath -RootsPath $script:Roots -InventoryPath $inv
+            $r.IsValid | Should -BeTrue
+            $r.Warnings | Should -Contain "inventory: optional row 'spare-key' is not in the map"
         }
     }
 
@@ -316,6 +399,31 @@ Describe 'Test-RestoreMap' {
             $r = Invoke-Check $b -RootsPath (Save-TestRoot $Root $Path)
             $r.IsValid | Should -BeFalse
             $r.Problems | Should -Contain "root '$Root': path refused ($Why)"
+        }
+
+        It 'refuses two roots that name <Why>' -ForEach @(
+            @{ Why = 'the same folder'; Path = 'E:\ai\ollama\' }
+            @{ Why = 'nested folders, in another case'; Path = 'E:\AI\Ollama\sub' }
+            @{ Why = 'a folder that holds the other'; Path = 'E:\ai' }
+        ) {
+            # Two names for one place would let 'stack:.env' and 'dashboard:.env' collide (M1-03).
+            $b = New-TestBundle
+            $r = Invoke-Check $b -RootsPath (Save-TestRoot 'dashboard' $Path)
+            $r.Problems | Should -Contain "roots 'dashboard' and 'stack' name the same or nested folders"
+        }
+
+        It 'refuses two roots that name the same volume' {
+            $roots = Get-Content -LiteralPath $script:Roots -Raw | ConvertFrom-Json -AsHashtable
+            $roots.roots['bolt-data'].volume = $roots.roots['ntfy-data'].volume
+            $rootsPath = Join-Path $TestDrive 'roots-same-volume.json'
+            $roots | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $rootsPath
+            $r = Invoke-Check (New-TestBundle) -RootsPath $rootsPath
+            $r.Problems | Should -Contain "roots 'bolt-data' and 'ntfy-data' name the same volume"
+        }
+
+        It 'passes roots that only share a name prefix' {
+            $b = New-TestBundle
+            (Invoke-Check $b -RootsPath (Save-TestRoot 'dashboard' 'E:\ai\ollama-other')).Problems | Should -BeNullOrEmpty
         }
 
         It 'accepts %VAR% at the start of a PC path and a trailing separator' {
