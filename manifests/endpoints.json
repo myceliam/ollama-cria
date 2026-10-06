@@ -1,0 +1,6 @@
+{
+  "$schema": "./schemas/endpoints.schema.json",
+  "formatVersion": 1,
+  "note": "Written by tools/Sync-StackFiles.ps1. Every file below holds the placeholders listed; Stage 4a fills them from the new tailnet. Do not edit by hand.",
+  "files": []
+}

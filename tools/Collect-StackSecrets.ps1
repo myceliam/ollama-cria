@@ -201,6 +201,7 @@ $ErrorActionPreference = 'Stop'
 
 $collectorVersion = '2.1.0'
 $repo = Split-Path $PSScriptRoot -Parent
+Import-Module (Join-Path $PSScriptRoot 'StackCapture.psm1') -Force
 $testPath = Join-Path $PSScriptRoot 'Test-RecoveryPath.ps1'
 $testMap = Join-Path $PSScriptRoot 'Test-RestoreMap.ps1'
 $scanTool = Join-Path $PSScriptRoot 'Test-NoSecrets.ps1'
@@ -782,69 +783,14 @@ function Test-DockerReady($Rows) {
 
 # ---------- The OWUI seed ----------
 
-function Get-NodeLabel($Node) {
-    # The first label of a node's MagicDNS name ('pc' in pc.<tailnet>.ts.net).
-    $dns = [string]$Node['DNSName']
-    if ($dns) { return ($dns -split '\.')[0].ToLowerInvariant() }
-    return ([string]$Node['HostName']).ToLowerInvariant()
-}
-
-function Get-TailnetEndpoint {
-    # Every tailnet address and MagicDNS name Tailscale reports, by placeholder
-    # name: this machine is PC, the -SshHost node is VPS, any other node in
-    # this tailnet is named after its first label, and a node from outside it
-    # (shared in, or an exit node) gets EXT_ before its label. The exporter
-    # swaps each value for its {{NAME}}, so the seed carries none of them;
-    # Stage 4a renders them back.
-    # Returns an ordered table, or $null after recording a problem. The
-    # values are private: they go to the exporter on stdin, never anywhere else.
-    $raw = @(& $TailscaleCommand status --json 2>$null)
-    if ($LASTEXITCODE -ne 0 -or -not $raw) {
-        $problems.Add('seed: ''tailscale status --json'' failed; is Tailscale running and signed in?')
-        return $null
-    }
-    try { $status = ConvertFrom-Json -InputObject ($raw -join "`n") -AsHashtable -ErrorAction Stop }
-    catch { $problems.Add('seed: the Tailscale status could not be read'); return $null }
-    $suffix = ([string]$status['MagicDNSSuffix']).TrimEnd('.')
-    if (-not $status['Self'] -or $suffix -notmatch '^[a-z0-9-]+(\.[a-z0-9-]+)*\.ts\.net$') {
-        $problems.Add('seed: the Tailscale status has no node for this machine or no MagicDNS name')
-        return $null
-    }
-    # Sorted by name, so the numbering of a repeated label is the same each run.
-    $all = @(if ($status['Peer']) { $status['Peer'].Values | Sort-Object { [string]$_['DNSName'] } })
-    # Shared-in nodes and exit nodes have another suffix.
-    $peers = @($all | Where-Object { ([string]$_['DNSName']).TrimEnd('.') -like "*.$suffix" })
-    $outside = @($all | Where-Object { ([string]$_['DNSName']).TrimEnd('.') -notlike "*.$suffix" })
-    $vps = @($peers | Where-Object { (Get-NodeLabel $_) -eq $SshHost.ToLowerInvariant() })
-    if ($vps.Count -ne 1) {
-        $problems.Add("seed: expected one node named '$SshHost' in the tailnet, found $($vps.Count)")
-        return $null
-    }
-    $nodes = [ordered]@{ PC = $status['Self']; VPS = $vps[0] }
-    $named = @($peers | Where-Object { -not [object]::ReferenceEquals($_, $vps[0]) } | ForEach-Object { @{ Prefix = ''; Node = $_ } }) +
-        @($outside | ForEach-Object { @{ Prefix = 'EXT_'; Node = $_ } })
-    foreach ($item in $named) {
-        $name = (Get-NodeLabel $item.Node).ToUpperInvariant() -replace '[^A-Z0-9]', '_'
-        if ($name -notmatch '^[A-Z]') { $name = 'NODE_' + $name }
-        $name = $item.Prefix + $name
-        for ($n = 2; $nodes.Contains($name); $n++) { $name = ($name -replace '_[0-9]+$', '') + "_$n" }
-        $nodes[$name] = $item.Node
-    }
-    $endpoints = [ordered]@{}
-    foreach ($key in $nodes.Keys) {
-        foreach ($ip in @($nodes[$key]['TailscaleIPs'])) {
-            if ("$ip" -match '^[0-9]{1,3}(\.[0-9]{1,3}){3}$') { $endpoints["${key}_TS_IP"] = "$ip" }
-            elseif ("$ip" -match '^[0-9a-fA-F:]+$') { $endpoints["${key}_TS_IP6"] = "$ip" }
-        }
-        $dns = ([string]$nodes[$key]['DNSName']).TrimEnd('.')
-        if ($dns) { $endpoints["${key}_TS_NAME"] = $dns }
-    }
-    $endpoints['TS_DOMAIN'] = $suffix
-    if (-not ($endpoints.Contains('PC_TS_IP') -and $endpoints.Contains('VPS_TS_IP'))) {
-        $problems.Add('seed: the Tailscale status gives no IPv4 address for this machine or the VPS')
-        return $null
-    }
-    return $endpoints
+function Get-SeedEndpoint {
+    # Every tailnet address and MagicDNS name, by placeholder name
+    # (tools/StackCapture.psm1). The exporter swaps each value for its
+    # {{NAME}}, so the seed carries none of them; Stage 4a renders them back.
+    # Returns  after recording a problem. The values are private: they
+    # go to the exporter on stdin, never anywhere else.
+    try { return Get-TailnetEndpoint -SshHost $SshHost -TailscaleCommand $TailscaleCommand }
+    catch { $problems.Add("seed: $($_.Exception.Message)"); return $null }
 }
 
 function Test-SeedOut {
@@ -892,7 +838,7 @@ function Test-OwuiReady($Rows) {
         if ($pick) { $owui.Image = [string]$pick }
     }
     if ($owui.Image -notlike '*@sha256:*') { $warnings.Add('seed: the OWUI image has no registry digest; the seed records its local image id') }
-    $owui.Endpoints = Get-TailnetEndpoint
+    $owui.Endpoints = Get-SeedEndpoint
 }
 
 function Get-JsonString([Text.Json.JsonElement]$Element) {

@@ -1,8 +1,14 @@
-# Normalise line endings in the repo; check out with the ending each tool expects.
-* text=auto
+# Normalise line endings in the repo; check out with the ending each tool
+# expects: CRLF for Windows scripts, LF for everything else, on every OS.
+# Files under stack/, vps/ and extras/ are copied to the machines as they are
+# checked out, and the VPS and the containers need LF.
+* text=auto eol=lf
 *.ps1  text eol=crlf
 *.psm1 text eol=crlf
 *.psd1 text eol=crlf
+*.vbs  text eol=crlf
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
 *.sh   text eol=lf
 *.json text eol=lf
 *.yml  text eol=lf
