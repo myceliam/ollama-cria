@@ -22,9 +22,10 @@
 
       -Execute. Collects every row into a new folder under -StagingRoot,
       writes 00-RESTORE-MAP.json, re-checks the whole bundle with
-      Test-RestoreMap.ps1, checks every item's permissions, then writes the
-      ZIP inside the same protected folder and prints its SHA-256 (C-05,
-      C-08).
+      Test-RestoreMap.ps1 against the inventory it came from, writes the ZIP
+      inside the same protected folder, reads every member back and checks
+      its SHA-256 against the map, checks every item's permissions, then
+      prints the ZIP's SHA-256 (C-05, C-08).
 
     Rules it keeps:
 
@@ -35,18 +36,33 @@
       - Fails closed. A missing required row, or any failed copy, hash, check
         or permission, stops the run with exit code 1, prints no next steps,
         and deletes the run folder this run created unless -KeepOnFailure is
-        given (C-07).
+        given (C-07). If the folder cannot be fully deleted, the run says so
+        and names it, so it can be deleted by hand.
+      - Staging. -StagingRoot and every folder above it must be a real
+        folder, not a junction or link, so the BitLocker state read for its
+        drive is the drive the files land on. -StagingRoot itself must be
+        changeable only by the current user (it is created that way when it
+        does not exist). A folder above it that another account could delete,
+        move or re-permission is a warning.
       - Paths. Every source and bundle path goes through Test-RecoveryPath.ps1,
         so no junction, symbolic link or path outside its root is followed
         (C-49).
       - VPS rows. One ssh call runs a fixed script that reports, for each
         file, whether it is a regular file with no link on the way, its size
         and its SHA-256. scp then copies it, and the copy's hash must match.
+        A file swapped for different bytes after the check is caught; one
+        swapped for identical bytes is not, which changes nothing collected.
         Host keys are never accepted automatically: BatchMode and
         StrictHostKeyChecking=yes (C-09, C-10).
-      - Volume rows. A throw-away helper container with no network reads the
-        Docker volume. SQLite files are copied with SQLite's backup API and
-        integrity-checked, so there is no -wal file to lose (C-03).
+      - Volume rows. A throw-away helper container reads the Docker volume:
+        no network, a read-only filesystem, no log, removed when it exits.
+        It holds the copy only in memory (a tmpfs) and sends it back on its
+        output with its size, SHA-256, mode and owner, so nothing is left in
+        Docker's storage. The collector then confirms the container is gone.
+        SQLite files are copied with SQLite's backup API, which includes
+        changes still in the -wal file, and integrity-checked (C-03). Each
+        volume must exist before the run; if one is re-created during the
+        run, the row fails.
       - Output. Ids, locations, statuses, counts and the ZIP's SHA-256. Never a
         secret value, and never native error text, which could echo one
         (C-50).
@@ -182,31 +198,48 @@ done
 '@
 
 # Runs inside the helper container: argv is kind, then the path inside the
-# volume. Exit codes: 0 copied, 2 missing, 3 a link on the way, 4 SQLite
-# integrity check failed, 5 not a regular file. A SQLite copy is switched to
+# volume. The first output line is JSON: a status ('ok', 'missing', 'link',
+# 'notfile', 'integrity') and, when ok, the size, SHA-256, mode, uid and gid.
+# The file follows as base64 lines. The only place it is written is /work, a
+# tmpfs, so it never reaches Docker's storage. A SQLite copy is switched to
 # rollback-journal mode, so it is one self-contained file.
 $volumeCopy = @'
-import os, shutil, sqlite3, sys
+import base64, hashlib, json, os, sqlite3, stat, sys
 kind, rel = sys.argv[1], sys.argv[2]
 src = os.path.normpath(os.path.join('/src', rel))
+def say(**fields):
+    print(json.dumps(fields), flush=True)
 if not os.path.lexists(src):
-    sys.exit(2)
+    say(status='missing'); sys.exit(0)
 if os.path.realpath(src) != src:
-    sys.exit(3)
-if not os.path.isfile(src):
-    sys.exit(5)
-os.makedirs('/tmp/cria', exist_ok=True)
-dst = '/tmp/cria/item'
+    say(status='link'); sys.exit(0)
+st = os.lstat(src)
+if not stat.S_ISREG(st.st_mode):
+    say(status='notfile'); sys.exit(0)
 if kind == 'sqlite':
     source = sqlite3.connect('file:' + src + '?mode=ro', uri=True)
-    copy = sqlite3.connect(dst)
+    copy = sqlite3.connect('/work/item')
     source.backup(copy)
+    source.close()
     copy.execute('PRAGMA journal_mode=DELETE')
     ok = copy.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
     copy.close()
-    source.close()
-    sys.exit(0 if ok else 4)
-shutil.copyfile(src, dst)
+    if not ok:
+        say(status='integrity'); sys.exit(0)
+    with open('/work/item', 'rb') as f:
+        data = f.read()
+else:
+    fd = os.open(src, os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(fd, 'rb') as f:
+        now = os.fstat(f.fileno())
+        if (now.st_dev, now.st_ino) != (st.st_dev, st.st_ino):
+            say(status='link'); sys.exit(0)
+        data = f.read()
+say(status='ok', bytes=len(data), sha256=hashlib.sha256(data).hexdigest(),
+    mode='%04o' % (st.st_mode & 0o777), uid=st.st_uid, gid=st.st_gid)
+text = base64.b64encode(data).decode()
+for i in range(0, len(text), 76):
+    print(text[i:i + 76])
 '@
 
 # ---------- Helpers ----------
@@ -368,6 +401,9 @@ function Read-Manifest {
     $okFolders = Test-AgainstSchema $FoldersPath (Join-Path $schemaDir 'bundle-folders.schema.json') 'folders file'
     if (-not ($okManifest -and $okRoots -and $okFolders)) { return $null }
 
+    # The map records which inventory it came from; the final check compares
+    # this hash with the file again, so a change during the run is caught.
+    $inventorySha256 = Get-Sha256 $ManifestPath
     $manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
     $roots = @{}
     foreach ($r in (Get-Content -LiteralPath $RootsPath -Raw | ConvertFrom-Json).roots.PSObject.Properties) { $roots[$r.Name] = $r.Value }
@@ -455,7 +491,16 @@ function Read-Manifest {
     }
 
     if ($problems.Count -gt 0) { return $null }
-    return [pscustomobject]@{ Rows = $rows.ToArray(); Audits = $audits; Roots = $roots; Locations = $locations }
+    return [pscustomobject]@{
+        Rows      = $rows.ToArray()
+        Audits    = $audits
+        Roots     = $roots
+        Locations = $locations
+        Inventory = [ordered]@{
+            sha256   = $inventorySha256
+            required = @($rows | Where-Object Required | ForEach-Object Id)
+        }
+    }
 }
 
 function Invoke-Audit($Manifest) {
@@ -560,50 +605,143 @@ function Copy-VpsRow($Rows, [hashtable]$Destinations) {
     return $status
 }
 
+function Get-HelperLeft([string]$Name) {
+    # The helper runs with --rm. Confirm it is gone; if it is not, remove it
+    # and look again. Returns $null when it is gone, or the row's failure.
+    for ($try = 0; $try -lt 10; $try++) {
+        $found = @(& $DockerCommand ps -a --filter "name=^/$Name$" --format '{{.Names}}' 2>$null)
+        if ($LASTEXITCODE -ne 0) { return "failed (could not confirm the helper container $Name is gone; check with: docker ps -a)" }
+        if (-not ($found -contains $Name)) { return $null }
+        & $DockerCommand rm -f $Name 2>$null | Out-Null
+        Start-Sleep -Milliseconds 300
+    }
+    return "failed (the helper container $Name could not be removed; remove it with: docker rm -f $Name)"
+}
+
 function Copy-VolumeRow($Row, [string]$Destination) {
+    # One 'docker run': read-only filesystem, no network, no log, removed on
+    # exit. The copy comes back on the helper's output, never through
+    # Docker's storage, and is checked against the size and hash it reports.
     $name = 'cria-collect-' + [guid]::NewGuid().ToString('n').Substring(0, 12)
     $mount = if ($Row.Kind -eq 'sqlite') { "$($Row.Volume):/src" } else { "$($Row.Volume):/src:ro" }
     $program = "import base64; exec(base64.b64decode('" + (ConvertTo-Base64 $volumeCopy) + "').decode())"
-    & $DockerCommand create --name $name --network none --pull never -v $mount $HelperImage python3 -c $program $Row.Kind ($Row.Relative -replace '\\', '/') 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) { return "failed (docker create exit $LASTEXITCODE)" }
-    try {
-        & $DockerCommand start $name 2>$null | Out-Null
-        if ($LASTEXITCODE -ne 0) { return "failed (docker start exit $LASTEXITCODE)" }
-        $exit = (& $DockerCommand wait $name 2>$null) -as [int]
-        switch ($exit) {
-            0 { }
-            2 { return 'missing' }
-            3 { return 'refused (a symbolic link on the way)' }
-            4 { return 'failed (SQLite integrity check)' }
-            5 { return 'refused (not a regular file)' }
-            default { return "failed (helper exit $exit)" }
-        }
-        & $DockerCommand cp "${name}:/tmp/cria/item" $Destination 2>$null | Out-Null
-        if ($LASTEXITCODE -ne 0) { return "failed (docker cp exit $LASTEXITCODE)" }
-        if (-not (Test-Path -LiteralPath $Destination -PathType Leaf) -or (Test-IsLink $Destination)) { return 'failed (docker cp wrote no regular file)' }
-        return 'collected'
+    $out = @(& $DockerCommand run --rm --name $name --label 'cria.collector=helper' --network none --pull never --read-only `
+            --tmpfs '/work:rw,mode=0700,size=512m' --log-driver none -v $mount $HelperImage `
+            python3 -c $program $Row.Kind ($Row.Relative -replace '\\', '/') 2>$null)
+    $code = $LASTEXITCODE
+    $left = Get-HelperLeft $name
+    if ($left) { return $left }
+    if ($code -ne 0) { return "failed (helper exit $code)" }
+
+    $head = $null
+    try { $head = [string]$out[0] | ConvertFrom-Json } catch { $head = $null }
+    $status = if ($head) { Get-OptionalProperty $head 'status' } else { $null }
+    switch ($status) {
+        'ok' { }
+        'missing' { return 'missing' }
+        'link' { return 'refused (a symbolic link on the way)' }
+        'notfile' { return 'refused (not a regular file)' }
+        'integrity' { return 'failed (SQLite integrity check)' }
+        default { return 'failed (the helper gave no usable answer)' }
     }
-    finally {
-        & $DockerCommand rm -f $name 2>$null | Out-Null
+    $sha = [string](Get-OptionalProperty $head 'sha256')
+    $size = Get-OptionalProperty $head 'bytes'
+    $mode = [string](Get-OptionalProperty $head 'mode')
+    $uid = Get-OptionalProperty $head 'uid'
+    $gid = Get-OptionalProperty $head 'gid'
+    $usable = ($sha -match '^[0-9a-f]{64}$') -and ($size -is [long] -or $size -is [int]) -and ($mode -match '^0[0-7]{3}$') -and
+        ("$uid" -match '^[0-9]{1,10}$') -and ("$gid" -match '^[0-9]{1,10}$')
+    if (-not $usable) { return 'failed (the helper gave no usable answer)' }
+    try { $bytes = [Convert]::FromBase64String((@($out | Select-Object -Skip 1) -join '')) }
+    catch { return 'failed (the helper gave no usable answer)' }
+    $got = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
+    if ($bytes.Length -ne $size -or $got -ne $sha) { return 'failed (the copy does not match the volume file)' }
+
+    $stream = [IO.File]::Open($Destination, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+    try { $stream.Write($bytes, 0, $bytes.Length) } finally { $stream.Dispose() }
+    if ((Get-Sha256 $Destination) -ne $sha) { return 'failed (the copy does not match the volume file)' }
+
+    # A volume is a Linux filesystem: the restorer puts these back.
+    $Row | Add-Member -NotePropertyName Mode -NotePropertyValue $mode -Force
+    $Row | Add-Member -NotePropertyName Owner -NotePropertyValue "$uid" -Force
+    $Row | Add-Member -NotePropertyName Group -NotePropertyValue "$gid" -Force
+
+    # 'docker run -v' would quietly create a volume that vanished after the
+    # check; a different creation time means this is not the volume checked.
+    $created = @(& $DockerCommand volume inspect --format '{{.CreatedAt}}' $Row.Volume 2>$null)
+    if ($LASTEXITCODE -ne 0 -or [string]($created | Select-Object -First 1) -ne $Row.VolumeCreated) {
+        return 'failed (the volume was removed or re-created during the run)'
     }
+    return 'collected'
 }
 
 function Test-DockerReady($Rows) {
-    # Before the run folder exists: the helper image is here and each volume exists.
+    # Before the run folder exists: no helper from an earlier run is left, the
+    # helper image is here, and each volume exists (its creation time is kept).
     if (-not @($Rows | Where-Object Source -EQ 'volume')) { return }
+    $stale = @(& $DockerCommand ps -a --filter 'label=cria.collector=helper' --format '{{.Names}}' 2>$null)
+    if ($LASTEXITCODE -ne 0) { $problems.Add('docker: could not list containers; is Docker running?'); return }
+    if ($stale) {
+        $names = ($stale -join ' ')
+        $problems.Add("docker: helper container(s) from an earlier run are still there; remove them with: docker rm -f $names")
+        return
+    }
     & $DockerCommand image inspect $HelperImage 2>$null | Out-Null
     if ($LASTEXITCODE -ne 0) {
         $problems.Add("helper image '$HelperImage' is not on this machine; pull it first (docker pull $HelperImage)")
         return
     }
     foreach ($r in $Rows | Where-Object Source -EQ 'volume') {
-        & $DockerCommand volume inspect $r.Volume 2>$null | Out-Null
-        if ($LASTEXITCODE -ne 0) { Add-MissingRow $r; $r | Add-Member -NotePropertyName Skip -NotePropertyValue $true -Force }
+        $created = @(& $DockerCommand volume inspect --format '{{.CreatedAt}}' $r.Volume 2>$null)
+        if ($LASTEXITCODE -ne 0) { Add-MissingRow $r; $r | Add-Member -NotePropertyName Skip -NotePropertyValue $true -Force; continue }
+        $r | Add-Member -NotePropertyName VolumeCreated -NotePropertyValue ([string]($created | Select-Object -First 1)) -Force
     }
 }
 
-function Initialize-RunFolder {
-    # Creates <StagingRoot>/stack-secrets-<UTC time>, protected, and returns it.
+function Get-ChangeableBy([string]$Path, [switch]$IsDriveRoot) {
+    # Accounts other than the current user, SYSTEM and Administrators that
+    # could delete, move or re-permission $Path or what is in it. Returns a
+    # list of names, empty when there are none.
+    $names = [Collections.Generic.List[string]]::new()
+    if ($onWindows) {
+        $me = Get-CurrentUserSid
+        $trusted = @($me.Value, 'S-1-5-18', 'S-1-5-32-544', 'S-1-3-0', 'S-1-3-4',
+            'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464')
+        # DELETE, FILE_DELETE_CHILD, WRITE_DAC, WRITE_OWNER, GENERIC_WRITE, GENERIC_ALL.
+        # DELETE on a whole drive means nothing, so it is ignored there.
+        $risky = 0x00010000 -bor 0x40 -bor 0x00040000 -bor 0x00080000 -bor 0x40000000 -bor 0x10000000
+        if ($IsDriveRoot) { $risky = $risky -band (-bnot 0x00010000) }
+        $acl = Get-Acl -LiteralPath $Path
+        $owner = $acl.GetOwner([Security.Principal.SecurityIdentifier])
+        if ($trusted -notcontains $owner.Value) { $names.Add("$owner (owner)") }
+        foreach ($rule in $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
+            if ($rule.AccessControlType -ne 'Allow') { continue }
+            if ($rule.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) { continue }
+            if ($trusted -contains $rule.IdentityReference.Value) { continue }
+            if (([int]$rule.FileSystemRights) -band $risky) {
+                $who = $rule.IdentityReference.Value
+                try { $who = $rule.IdentityReference.Translate([Security.Principal.NTAccount]).Value } catch { $null = $_ }
+                $names.Add($who)
+            }
+        }
+    }
+    else {
+        $item = Get-Item -LiteralPath $Path -Force
+        $me = [int](& id -u)
+        if ($item.UnixStat.UserId -ne 0 -and $item.UnixStat.UserId -ne $me) { $names.Add("uid $($item.UnixStat.UserId) (owner)") }
+        $mode = $item.UnixFileMode
+        if (-not $item.UnixStat.IsSticky) {
+            if ($mode -band [IO.UnixFileMode]::GroupWrite) { $names.Add("gid $($item.UnixStat.GroupId) (group write)") }
+            if ($mode -band [IO.UnixFileMode]::OtherWrite) { $names.Add('everyone (other write)') }
+        }
+    }
+    return , $names.ToArray()
+}
+
+function Test-StagingRoot {
+    # Returns the full staging root when it may be used, after recording any
+    # problem. Every folder above it, and the root itself, must be a real
+    # folder, so files land on the drive whose BitLocker state was read.
     if (-not [IO.Path]::IsPathFullyQualified($StagingRoot) -or $StagingRoot -match '^[\\/]{2}') {
         $problems.Add('staging: -StagingRoot must be an absolute local path')
         return $null
@@ -613,16 +751,36 @@ function Initialize-RunFolder {
         $problems.Add('staging: -StagingRoot must be on a local fixed drive')
         return $null
     }
+    try { $check = & $testPath -Path $rootFull -Root $rootFull -AllowRoot -Detailed }
+    catch { $problems.Add('staging: -StagingRoot must be a folder below a drive or filesystem root'); return $null }
+    if (-not $check.IsValid) { $problems.Add("staging: -StagingRoot refused ($($check.Reason))"); return $null }
+
+    $top = [IO.Path]::GetPathRoot($rootFull)
+    $current = $top
+    foreach ($segment in @($rootFull.Substring($top.Length) -split '[\\/]' | Where-Object { $_ -ne '' })) {
+        $parent = $current
+        $current = [IO.Path]::Combine($current, $segment)
+        if (-not (Test-Path -LiteralPath $parent -PathType Container)) { break }
+        $who = Get-ChangeableBy $parent -IsDriveRoot:($parent -eq $top)
+        if ($who) { $warnings.Add("staging: '$parent' can be changed by $($who -join ', '), who could move the staging folder") }
+    }
     if (Test-Path -LiteralPath $rootFull) {
-        if (Test-IsLink $rootFull) { $problems.Add('staging: -StagingRoot is a junction or symbolic link'); return $null }
         if (-not (Test-Path -LiteralPath $rootFull -PathType Container)) { $problems.Add('staging: -StagingRoot is not a folder'); return $null }
+        $who = Get-ChangeableBy $rootFull
+        if ($who) {
+            $problems.Add("staging: -StagingRoot can be changed by $($who -join ', '); use a folder only your account can change, or let the collector create it")
+            return $null
+        }
     }
-    else {
-        Initialize-ProtectedFolder $rootFull
-    }
+    return $rootFull
+}
+
+function Initialize-RunFolder([string]$RootFull) {
+    # Creates <StagingRoot>/stack-secrets-<UTC time>, protected, and returns it.
+    if (-not (Test-Path -LiteralPath $RootFull)) { Initialize-ProtectedFolder $RootFull }
 
     $name = 'stack-secrets-' + (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')
-    $check = & $testPath -Path $name -Root $rootFull -Relative -Detailed
+    $check = & $testPath -Path $name -Root $RootFull -Relative -Detailed
     if (-not $check.IsValid) { $problems.Add("staging: run folder refused ($($check.Reason))"); return $null }
     if (Test-Path -LiteralPath $check.FullPath) { $problems.Add('staging: the run folder already exists'); return $null }
 
@@ -634,9 +792,22 @@ function Initialize-RunFolder {
     return $check.FullPath
 }
 
-function Write-BundleZip([string]$RunFolder, [string]$BundleDir, [string[]]$Members) {
-    # Writes the ZIP inside the run folder with '/' entry names, then reopens it
-    # and checks every entry against the bundle.
+function Get-StreamDigest([IO.Stream]$Stream) {
+    # SHA-256 and length of everything the stream yields.
+    $hash = [Security.Cryptography.IncrementalHash]::CreateHash([Security.Cryptography.HashAlgorithmName]::SHA256)
+    $buffer = [byte[]]::new(81920)
+    $total = [long]0
+    try {
+        while (($n = $Stream.Read($buffer, 0, $buffer.Length)) -gt 0) { $hash.AppendData($buffer, 0, $n); $total += $n }
+        return [pscustomobject]@{ Sha256 = [Convert]::ToHexString($hash.GetHashAndReset()).ToLowerInvariant(); Bytes = $total }
+    }
+    finally { $hash.Dispose() }
+}
+
+function Write-BundleZip([string]$RunFolder, [string]$BundleDir, [string[]]$Members, [hashtable]$Expected) {
+    # Writes the ZIP inside the run folder with '/' entry names, then reads
+    # every member back and checks its bytes against what the map promises
+    # ($Expected: member -> Sha256 and Bytes), so the ZIP is what was checked.
     Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
     $zipPath = Join-Path $RunFolder ((Split-Path $RunFolder -Leaf) + '.zip')
     $zip = [IO.Compression.ZipFile]::Open($zipPath, [IO.Compression.ZipArchiveMode]::Create)
@@ -648,16 +819,31 @@ function Write-BundleZip([string]$RunFolder, [string]$BundleDir, [string[]]$Memb
     finally { $zip.Dispose() }
     Protect-BundleFile $zipPath
 
-    $zip = [IO.Compression.ZipFile]::OpenRead($zipPath)
+    $seen = @{}
     try {
-        $names = @($zip.Entries | ForEach-Object FullName)
-        if ($names.Count -ne $Members.Count) { $problems.Add('zip: entry count differs from the bundle'); return }
-        foreach ($e in $zip.Entries) {
-            if ($Members -cnotcontains $e.FullName) { $problems.Add("zip: unexpected entry '$($e.FullName)'"); continue }
-            if ($e.Length -ne (Get-Item -LiteralPath (Join-Path $BundleDir $e.FullName) -Force).Length) { $problems.Add("zip: '$($e.FullName)' has the wrong length") }
+        $zip = [IO.Compression.ZipFile]::OpenRead($zipPath)
+        try {
+            foreach ($e in $zip.Entries) {
+                $key = $e.FullName.ToLowerInvariant()
+                if ($seen.ContainsKey($key)) { $problems.Add("zip: '$($e.FullName)' appears twice"); continue }
+                $seen[$key] = $true
+                if (-not $Expected.ContainsKey($e.FullName)) { $problems.Add("zip: unexpected entry '$($e.FullName)'"); continue }
+                $stream = $e.Open()
+                try { $got = Get-StreamDigest $stream } finally { $stream.Dispose() }
+                $want = $Expected[$e.FullName]
+                if ($got.Bytes -ne $want.Bytes -or $got.Sha256 -ne $want.Sha256) { $problems.Add("zip: '$($e.FullName)' does not match the map") }
+            }
         }
+        finally { $zip.Dispose() }
     }
-    finally { $zip.Dispose() }
+    catch {
+        $problems.Add("zip: cannot be read back ($($_.Exception.GetType().Name))")
+        return
+    }
+    foreach ($m in $Members) {
+        if (-not $seen.ContainsKey($m.ToLowerInvariant())) { $problems.Add("zip: '$m' is missing") }
+    }
+    if ($problems.Count -gt 0) { return }
     $run.ZipPath = $zipPath
     $run.ZipSha256 = Get-Sha256 $zipPath
 }
@@ -667,6 +853,7 @@ function Invoke-Collection {
     if (-not $manifest) { return }
 
     Invoke-Audit $manifest
+    $stagingFull = Test-StagingRoot
     $run.BitLocker = Get-BitLockerState $StagingRoot
     if ($onWindows -and $run.BitLocker -ne 'On') {
         $note = "staging: BitLocker on the -StagingRoot drive is '$($run.BitLocker)'"
@@ -686,7 +873,8 @@ function Invoke-Collection {
     Test-DockerReady $manifest.Rows
     if ($problems.Count -gt 0) { return }
 
-    $runFolder = Initialize-RunFolder
+    if (-not $stagingFull) { return }
+    $runFolder = Initialize-RunFolder $stagingFull
     if (-not $runFolder) { return }
     $bundleDir = Join-Path $runFolder 'bundle'
     Initialize-BundleFolder $bundleDir
@@ -732,27 +920,37 @@ function Invoke-Collection {
             bytes       = (Get-Item -LiteralPath $destinations[$r.Id] -Force).Length
             required    = $r.Required
         }
-        if ($r.Mode) { $e.mode = $r.Mode }
-        if ($r.Owner) { $e.owner = $r.Owner }
+        foreach ($field in 'Mode', 'Owner', 'Group') {
+            $value = Get-OptionalProperty $r $field
+            if ($value) { $e[$field.ToLowerInvariant()] = $value }
+        }
         $e
     }
     $map = [ordered]@{
         formatVersion = 1
         createdUtc    = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
         collector     = [ordered]@{ name = 'Collect-StackSecrets.ps1'; version = $collectorVersion }
+        inventory     = $manifest.Inventory
         entries       = @($entries)
     }
     $mapPath = Join-Path $bundleDir $mapFileName
     [IO.File]::WriteAllText($mapPath, ($map | ConvertTo-Json -Depth 6), [Text.UTF8Encoding]::new($false))
     Protect-BundleFile $mapPath
+    $mapSha256 = Get-Sha256 $mapPath
 
-    # The same check the restorer runs, over the finished bundle (C-08).
-    $verify = & $testMap -MapPath $mapPath -RootsPath $RootsPath -FoldersPath $FoldersPath -BundleRoot $bundleDir
+    # The same check the restorer runs, over the finished bundle and against
+    # the inventory it was collected from (C-08).
+    $verify = & $testMap -MapPath $mapPath -RootsPath $RootsPath -FoldersPath $FoldersPath -InventoryPath $ManifestPath -BundleRoot $bundleDir
     foreach ($p in $verify.Problems) { $problems.Add("final check: $p") }
+    if ((Get-Sha256 $mapPath) -ne $mapSha256) { $problems.Add('final check: the map changed while it was being checked') }
     if ($problems.Count -gt 0) { return }
 
+    # The ZIP must hold exactly what was checked: the map as checked, and each
+    # file with the size and hash the map gives it.
+    $expected = @{ $mapFileName = [pscustomobject]@{ Sha256 = $mapSha256; Bytes = (Get-Item -LiteralPath $mapPath -Force).Length } }
+    foreach ($e in $entries) { $expected[$e.folder + '/' + $e.file] = [pscustomobject]@{ Sha256 = $e.sha256; Bytes = $e.bytes } }
     $members = @($mapFileName) + @($collected | ForEach-Object { $_.Folder + '/' + $_.BundleFile })
-    Write-BundleZip $runFolder $bundleDir $members
+    Write-BundleZip $runFolder $bundleDir $members $expected
     if ($problems.Count -gt 0) { return }
 
     # Last: nothing in the run folder, the ZIP included, is reachable by anyone else (C-04, C-05).
@@ -777,13 +975,16 @@ finally {
         # Only the folder this run created, and only inside the staging root.
         $inside = & $testPath -Path $run.RunFolder -Root ([IO.Path]::GetFullPath($StagingRoot)) -Detailed
         if ($inside.IsValid -and $inside.FullPath -eq $run.RunFolder) {
-            Remove-Item -LiteralPath $run.RunFolder -Recurse -Force
+            try { Remove-Item -LiteralPath $run.RunFolder -Recurse -Force -ErrorAction Stop } catch { $null = $_ }
+        }
+        if (Test-Path -LiteralPath $run.RunFolder) {
+            # Kept in the result so the summary names it.
+            $problems.Add('cleanup: the run folder could not be fully removed and may hold plaintext secrets; delete it by hand')
+        }
+        else {
             $run.RunFolder = $null
             $run.ZipPath = $null
             $run.ZipSha256 = $null
-        }
-        else {
-            $problems.Add('cleanup: the run folder was not removed; delete it by hand')
         }
     }
 }
@@ -806,7 +1007,7 @@ foreach ($p in $result.Problems) { Write-Output "  PROBLEM  $p" }
 
 if (-not $result.IsValid) {
     Write-Output 'Result: NOT COMPLETE. Nothing may be uploaded or deleted. Fix the problems above and run again.'
-    if ($KeepOnFailure -and $result.RunFolder) { Write-Output "The failed run folder was kept: $($result.RunFolder). It holds plaintext secrets: delete it once inspected." }
+    if ($result.RunFolder) { Write-Output "The failed run folder is still there: $($result.RunFolder). It holds plaintext secrets: delete it once inspected." }
     exit 1
 }
 if (-not $Execute) {

@@ -20,6 +20,12 @@
       "path": "%USERPROFILE%\\.ssh",
       "purpose": "SSH key pair and config (bundle folder 04, placed in Stage 1)"
     },
+    "hf-cache": {
+      "kind": "path",
+      "host": "pc",
+      "path": "%USERPROFILE%\\.cache\\huggingface",
+      "purpose": "Hugging Face login tokens in the default user cache, used by any download that does not read HF_HOME"
+    },
     "vps-egress": {
       "kind": "path",
       "host": "vps",
