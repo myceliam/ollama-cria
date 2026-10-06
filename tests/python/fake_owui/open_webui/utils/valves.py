@@ -4,7 +4,8 @@ encrypt/decrypt, and tokens start with gAAAAA. Not real cryptography."""
 import base64
 import hashlib
 
-from open_webui.env import WEBUI_SECRET_KEY
+from open_webui.env import ENABLE_VALVE_ENCRYPTION, WEBUI_SECRET_KEY
+from open_webui.utils.json_codec import JSONCodec
 
 
 class InvalidToken(Exception):
@@ -34,3 +35,9 @@ class _FakeFernet:
 
 def _fernet():
     return _FakeFernet(WEBUI_SECRET_KEY)
+
+
+def encrypt_valves(valves: dict) -> dict | str:
+    if not ENABLE_VALVE_ENCRYPTION:
+        return valves
+    return _fernet().encrypt(JSONCodec.dumps(valves).encode()).decode()

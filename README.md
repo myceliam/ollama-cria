@@ -50,7 +50,9 @@ Built in this order: the **capture side first**, because a restore script can be
 | 2 | `tools/Collect-StackSecrets.ps1` | Rewritten collector: plans offline by default; with `-Execute` builds a protected bundle, its restore map and the ZIP | ✅ |
 | 3 | `tools/Export-OwuiSeed.py`, `manifests/owui-seed/schema.json` | OWUI functional seed exporter, run inside the OWUI container: one read-only snapshot, an allowlist where anything unknown stops the export, Valves decrypted with OWUI's own codec, secrets moved to references for bundle folder 03 | ✅ |
 | 4 | `tools/Collect-StackSecrets.ps1` (seed row), `manifests/owui-seed/seed/` | The real capture in one run: the collector also exports the OWUI seed through `docker exec -i`, puts its secrets in bundle folder 03, scans the seed and writes it here for committing | 🚧 |
-| 5+ | Restore tools, stage modules and the controller | `Restore-StackSecrets.ps1`, `Import-OwuiSeed.py`, `Invoke-StackRecovery.ps1`, `windows/stages/*`, `linux/stages/*` | ⏳ |
+| 5 | `tools/Restore-StackSecrets.ps1` | Checks the bundle's SHA-256, unpacks it into a protected folder, checks it against the inventory, and puts each chosen bundle folder back: PC files owner-only, VPS files over ssh with their mode, volume files through a helper container. Never overwrites | 🚧 |
+| 5 | `tools/Import-OwuiSeed.py` | OWUI seed importer, run with OWUI stopped: fills secret references and embedded secrets from folder 03, renders the new addresses, points every owner at the new admin, re-encrypts Valves with OWUI's own code, all in one transaction | 🚧 |
+| 6+ | Manifests, stage modules and the controller | `Invoke-StackRecovery.ps1`, `windows/stages/*`, `linux/stages/*` | ⏳ |
 
 Status key: ✅ built, tests green on Windows and Linux · 🚧 in progress · ⏳ not started.
 
@@ -64,10 +66,10 @@ Needs PowerShell 7.4+ and Pester 5.
 Install-Module Pester -MinimumVersion 5.5 -Scope CurrentUser   # once
 Invoke-Pester ./tests -Output Detailed
 ./tools/Test-NoSecrets.ps1                                      # the same scan CI runs
-python -m unittest discover -s tests/python -v                 # the seed exporter (Python 3.11, standard library only)
+python -m unittest discover -s tests/python -v                 # the seed exporter and importer (Python 3.11, standard library only)
 ```
 
-CI runs all three on Windows and Linux for every push and pull request. The collector's VPS tests use stand-ins for `ssh` and `scp` (`tests/fakes/`) and run on Linux only; its volume tests need a Linux Docker engine, so they run on the Linux runner and are skipped elsewhere. The seed exporter's tests use a stand-in for OWUI's Valve codec (`tests/python/fake_owui/`) and a fake OWUI 0.11.4 database built at run time. The collector's seed tests run the real exporter through stand-ins for `docker` and `tailscale`, so they need Python on the path.
+CI runs all three on Windows and Linux for every push and pull request. The collector's VPS tests use stand-ins for `ssh` and `scp` (`tests/fakes/`) and run on Linux only; its volume tests need a Linux Docker engine, so they run on the Linux runner and are skipped elsewhere. The seed exporter's tests use a stand-in for OWUI's Valve codec (`tests/python/fake_owui/`) and a fake OWUI 0.11.4 database built at run time. The collector's seed tests run the real exporter through stand-ins for `docker` and `tailscale`, so they need Python on the path. The restorer's tests restore bundles the real collector made; its VPS tests run the real remote script through the `ssh` stand-in on Linux, and its volume tests use the Linux Docker engine. The importer's tests export a fake old install, import it into a fake fresh one, and export that again to prove the round trip.
 
 ---
 
