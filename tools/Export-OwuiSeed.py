@@ -336,6 +336,10 @@ class Export:
             if len(admins) != 1:
                 raise Stop(f'expected exactly one admin user, found {len(admins)}')
             self.admin_id = admins[0]['id']
+            endpoint_names = sorted(name for name, _ in self.endpoints)
+            # The admin's id also turns up inside data (ntfy_push's only_user_ids,
+            # for one); every copy becomes the owner placeholder (C-38).
+            self.endpoints = sorted(self.endpoints + [('OWNER', str(self.admin_id))], key=lambda kv: -len(kv[1]))
 
             seed: dict[str, object] = {}
             seed['config'] = self.config([dict(r) for r in db.execute('SELECT key, value FROM config ORDER BY key')])
@@ -393,7 +397,7 @@ class Export:
             'owui_version': version,
             'alembic_revision': revision,
             'image_digest': image_digest,
-            'endpoints': sorted(name for name, _ in self.endpoints),
+            'endpoints': endpoint_names,
             'counts': {t: len(seed[t]) for t in ['config'] + SEEDED_ORDER},
         }
         if not image_digest:
@@ -408,6 +412,8 @@ class Export:
         """Nothing secret-shaped, no ciphertext, no secret value, no tailnet address."""
         values = sorted({v for v in self.walk_secret_strings(self.secrets.values()) if len(v) >= 8}, key=len, reverse=True)
         for path, text in self.strings(seed, ''):
+            if self.admin_id and str(self.admin_id) in text:
+                self.problems.append(f'seed {path}: still holds the old admin id')
             for name, rx in SHAPES:
                 if rx.search(text):
                     self.problems.append(f'seed {path}: {name} left after classification')

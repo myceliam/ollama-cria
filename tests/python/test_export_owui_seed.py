@@ -108,6 +108,8 @@ def build_db(path: Path, schema: dict, mutate=None) -> None:
                    (fid, ADMIN, fid, ftype, 'class Filter: pass\n', '{}', None, 1, 0, 2, 1))
 
     function('ntfy_push', 'event')
+    db.execute("UPDATE function SET valves = ? WHERE id = 'ntfy_push'",
+               (encrypt({'ntfy_token': 'tk_' + 'n' * 29, 'ntfy_url': f'http://{PC_IP}:8090', 'only_user_ids': [ADMIN]}),))
     function('discord_feed_curator', 'pipe')
 
     db.execute('INSERT INTO model VALUES (?,?,?,?,?,?,?,?,?)',
@@ -244,6 +246,14 @@ class ExportTests(unittest.TestCase):
                 self.assertEqual(row['user_id'], '{{OWNER}}', table)
         grants = {g['id']: g for g in run.seed('access_grant')}
         self.assertEqual(grants['a2']['principal_id'], '{{OWNER}}')
+
+    def test_the_admin_id_inside_data_becomes_the_owner_placeholder(self):
+        run = self.run_export()
+        ntfy = run.seed('function')[0]['valves']
+        self.assertEqual(ntfy['only_user_ids'], ['{{OWNER}}'])
+        self.assertEqual(ntfy['ntfy_token'], {'$bundle': 'function/ntfy_push/valves/ntfy_token'})
+        self.assertEqual(ntfy['ntfy_url'], 'http://{{PC_TS_IP}}:8090')
+        self.assertEqual(run.seed('provenance')['endpoints'], ['PC_TS_IP'])
 
     def test_only_capability_rows_and_grants_travel(self):
         run = self.run_export()
