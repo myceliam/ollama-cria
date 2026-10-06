@@ -179,9 +179,10 @@ if (Test-Path -LiteralPath (Join-Path $root '.git')) {
     foreach ($d in (Get-GitFile $root @('--deleted'))) { $deleted[$d] = $true }
 }
 else {
-    $relativeFiles = @(Get-ChildItem -LiteralPath $root -Recurse -File -Force |
-            Where-Object { $_.FullName -notmatch '[\\/]\.git[\\/]' } |
-            ForEach-Object { $_.FullName.Substring($root.TrimEnd([char[]]@('\', '/')).Length + 1) })
+    # -Name gives paths relative to the root as listed, so they stay right even
+    # when the root was given in another form (a Windows 8.3 short path).
+    $relativeFiles = @(Get-ChildItem -LiteralPath $root -Recurse -File -Force -Name |
+            Where-Object { $_ -notmatch '(^|[\\/])\.git([\\/]|$)' })
 }
 
 $findings = [Collections.Generic.List[object]]::new()
