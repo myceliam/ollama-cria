@@ -426,7 +426,11 @@ class NameRuleTests(unittest.TestCase):
     def test_schema_classifies_the_known_secret_config_keys(self):
         config = load_schema()['config']
         for key in ('openai.api_keys', 'web.search.brave_search_api_key', 'audio.stt.openai.api_key', 'webhook_url',
-                    'oauth.google.client_secret', 'code_execution.jupyter.auth_token'):
+                    'oauth.google.client_secret', 'code_execution.jupyter.auth_token',
+                    # Names the rule cannot see: a Sogou secret key, an AUTOMATIC1111
+                    # user:password pair, and a proxy URL that can carry a login.
+                    'web.search.sougou_api_sk', 'image_generation.automatic1111.api_auth',
+                    'rag.youtube_loader_proxy_url'):
             self.assertEqual(config[key], 'secret', key)
         for key in ('openai.api_base_urls', 'ollama.base_urls', 'auth.enable_api_keys', 'tool_server.connections'):
             self.assertEqual(config[key], 'safe', key)
