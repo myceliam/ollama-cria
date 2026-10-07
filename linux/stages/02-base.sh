@@ -60,7 +60,7 @@ case "$mode" in run | check) ;; *) fail "usage: 02-base.sh run|check <account> <
 
 # shellcheck disable=SC1091
 . "$root/etc/os-release"
-[ "${ID:-}" = ubuntu ] && [ "${VERSION_ID:-}" = 24.04 ] || fail "expected Ubuntu 24.04, found ${PRETTY_NAME:-something else}"
+if [ "${ID:-}" != ubuntu ] || [ "${VERSION_ID:-}" != 24.04 ]; then fail "expected Ubuntu 24.04, found ${PRETTY_NAME:-something else}"; fi
 id "$user" >/dev/null 2>&1 || fail "there is no account $user; paste the bootstrap first"
 mine=$(tailscale ip -4 2>/dev/null | head -n 1 || true)
 [ "$mine" = "$tsip" ] || fail 'this server'"'"'s tailnet IPv4 is not the one the PC sees for it; is this the right server, and is it signed in to Tailscale?'
