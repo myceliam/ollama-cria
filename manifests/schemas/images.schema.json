@@ -43,6 +43,7 @@
         "state",
         "image",
         "imageId",
+        "imageStored",
         "repoDigests"
       ],
       "properties": {
@@ -64,6 +65,10 @@
         "imageId": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "imageStored": {
+          "type": "boolean",
+          "description": "false when the image the container runs is no longer stored under its ID (its tag was rebuilt since)."
         },
         "repoDigests": {
           "type": "array",

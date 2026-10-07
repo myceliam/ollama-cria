@@ -288,9 +288,12 @@ Describe 'Sync-StackManifests.ps1: container images' {
         @($d.pc.container) | Should -Be @('ntfy', 'open-webui')
         ($d.pc | Where-Object container -EQ 'ntfy').project | Should -Be ''
         ($d.pc | Where-Object container -EQ 'open-webui').repoDigests | Should -Be @('ghcr.io/open-webui/open-webui@sha256:' + ('1' * 64))
-        @($d.vps.container) | Should -Be @('kokoro-tts', 'vps-web-gateway')
+        ($d.pc | Where-Object container -EQ 'open-webui').imageStored | Should -BeTrue
+        @($d.vps.container) | Should -Be @('kokoro-tts', 'vps-web-gateway', 'vps-web-relay')
         @(($d.vps | Where-Object container -EQ 'vps-web-gateway').repoDigests).Count | Should -Be 0
-        $r.Warnings | Should -Contain 'images: VPS container vps-web-gateway runs a local image with no registry digest'
+        ($d.vps | Where-Object container -EQ 'vps-web-relay').imageStored | Should -BeFalse
+        $r.Warnings | Should -Contain 'images: VPS container vps-web-gateway runs a local image with no digest'
+        $r.Warnings | Should -Contain 'images: VPS container vps-web-relay runs an image no longer stored under its ID (the tag vps-web-relay:gone names a newer build now), so a rebuild will not match what runs today'
     }
 
     It 'stops when docker fails on either machine' {

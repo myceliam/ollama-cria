@@ -592,20 +592,41 @@ function Read-Task {
 
 function Get-ContainerImage([string]$Label, [scriptblock]$Docker) {
     # Every container and the image behind it, through $Docker (local or
-    # over ssh). Returns rows, or $null after recording a problem.
-    $lines = & $Docker @('ps', '-a', '--format', '{{.Names}}')
-    if ($null -eq $lines) { return $null }
+    # over ssh), in three calls: the names, only the fields needed from each
+    # container (never the whole inspect, which holds the containers'
+    # environment), and the stored images with their digests. Returns rows,
+    # or $null after recording a problem.
+    $names = & $Docker @('ps', '-a', '--format', '{{.Names}}')
+    if ($null -eq $names) { return $null }
+    $names = @($names | Where-Object { $_ } | Sort-Object -CaseSensitive)
+    if (-not $names) { return , @() }
+    $info = & $Docker (@('inspect', '--format', '{{.Name}}|{{.Config.Image}}|{{.Image}}|{{.State.Status}}|{{index .Config.Labels "com.docker.compose.project"}}') + $names)
+    if ($null -eq $info) { return $null }
+    $byName = @{}
+    foreach ($line in $info) {
+        $name, $ref, $id, $state, $project = ([string]$line).Split('|')
+        $byName[$name.TrimStart('/')] = @($ref, $id, $state, $(if ($project -eq '<no value>') { '' } else { $project }))
+    }
+    # 'image ls' rather than 'image inspect': an image a container still
+    # runs can be gone from the store under its ID (its tag rebuilt since),
+    # and inspect fails on those.
+    $images = & $Docker @('image', 'ls', '-a', '--no-trunc', '--digests', '--format', '{{.ID}}|{{.Repository}}|{{.Digest}}')
+    if ($null -eq $images) { return $null }
+    $digestsOf = @{}
+    foreach ($line in $images) {
+        $id, $repo, $digest = ([string]$line).Split('|')
+        if (-not $digestsOf.ContainsKey($id)) { $digestsOf[$id] = [Collections.Generic.SortedSet[string]]::new([StringComparer]::Ordinal) }
+        if ($repo -and $repo -ne '<none>' -and $digest -match '^sha256:[0-9a-f]{64}$') { [void]$digestsOf[$id].Add("$repo@$digest") }
+    }
     $out = [Collections.Generic.List[object]]::new()
-    foreach ($name in ($lines | Where-Object { $_ } | Sort-Object -CaseSensitive)) {
-        $info = & $Docker @('inspect', '--format', '{{.Config.Image}}|{{.Image}}|{{.State.Status}}|{{index .Config.Labels "com.docker.compose.project"}}', $name)
-        if ($null -eq $info) { return $null }
-        $ref, $id, $state, $project = ([string]$info[0]).Split('|')
-        if ($project -eq '<no value>') { $project = '' }
-        $digests = & $Docker @('image', 'inspect', '--format', '{{json .RepoDigests}}', $id)
-        $repoDigests = @()
-        if ($digests) { try { $repoDigests = @(ConvertFrom-Json -InputObject ($digests -join '') -NoEnumerate | ForEach-Object { $_ } | Sort-Object -CaseSensitive) } catch { $repoDigests = @() } }
-        if (-not $repoDigests) { $warnings.Add("images: $Label container $name runs a local image with no registry digest") }
-        $out.Add([ordered]@{ container = $name; project = $project; state = $state; image = $ref; imageId = $id; repoDigests = $repoDigests })
+    foreach ($name in $names) {
+        if (-not $byName.ContainsKey($name)) { $problems.Add("images: $Label container $name went away while it was read; run again"); return $null }
+        $ref, $id, $state, $project = $byName[$name]
+        $stored = $digestsOf.ContainsKey($id)
+        $repoDigests = [string[]]@(if ($stored) { $digestsOf[$id] })
+        if (-not $stored) { $warnings.Add("images: $Label container $name runs an image no longer stored under its ID (the tag $ref names a newer build now), so a rebuild will not match what runs today") }
+        elseif (-not $repoDigests) { $warnings.Add("images: $Label container $name runs a local image with no digest") }
+        $out.Add([ordered]@{ container = $name; project = $project; state = $state; image = $ref; imageId = $id; imageStored = $stored; repoDigests = $repoDigests })
     }
     return , $out.ToArray()
 }
