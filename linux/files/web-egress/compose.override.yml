@@ -1,0 +1,11 @@
+# Restore only (docs/RESTORE.md Stage 5b, R-13). Stage 5 puts this beside
+# the captured compose.yml, and Docker Compose reads it automatically.
+#
+# On the live VPS, searxng-mcp runs a bare local image ID copied from the
+# PC (mcpo-core-baked:pinned), which no registry holds. Here it runs an
+# image Stage 5 builds from searxng-mcp/Dockerfile: the same mcp-searxng
+# version on a pinned Node base, and nothing else.
+services:
+  searxng-mcp:
+    image: searxng-mcp:1.6.0
+    entrypoint: ["node", "/usr/local/lib/node_modules/mcp-searxng/dist/cli.js"]

@@ -40,6 +40,10 @@ jobs:
           $c.Output.Verbosity = 'Detailed'
           Invoke-Pester -Configuration $c
 
+      - name: ShellCheck (VPS scripts)
+        if: runner.os == 'Linux'
+        run: shellcheck -S style linux/stages/*.sh tests/fakes/*.sh
+
       - name: Python tests (OWUI seed exporter)
         shell: pwsh
         run: python -m unittest discover -s tests/python -v

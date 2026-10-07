@@ -66,6 +66,11 @@
     Stage 1: the bundle ZIP's SHA-256, as stored with it in Bitwarden. Kept
     in state.json (a hash, not a secret).
 
+.PARAMETER HostKeyFingerprint
+    Stage 2: the new VPS's SSH host key fingerprint (SHA256:...), as the
+    bootstrap printed it in the provider's console. Kept in state.json (a
+    fingerprint, not a secret).
+
 .PARAMETER BundlePath
     Stage 1: the bundle ZIP inside the staging folder. Default: the only
     stack-secrets-*.zip there.
@@ -84,7 +89,8 @@
 
 .PARAMETER Command
     Programs to run instead of git, winget, wsl, nvidia-smi, docker, ollama,
-    curl, py, tailscale or ssh, by name (tests and unusual installs).
+    curl, py, tailscale, ssh or ssh-keyscan, by name (tests and unusual
+    installs).
 
 .PARAMETER LockToken
     Internal: passed to the elevated child.
@@ -122,6 +128,9 @@ param(
     [string]$BundleSha256,
 
     [string]$BundlePath,
+
+    [ValidatePattern('^SHA256:[A-Za-z0-9+/]{43}$')]
+    [string]$HostKeyFingerprint,
 
     [string]$TopologyPath = (Join-Path $PSScriptRoot 'manifests/topology.json'),
 
@@ -250,6 +259,7 @@ function Get-StageContext([int]$Number, $State, [string]$StatePath, [string]$Mod
         Accepted    = [string[]]@($accepted)
         Data        = $data
         Bundle      = @{ Path = $BundlePath; Sha256 = $(if ($BundleSha256) { $BundleSha256.ToLowerInvariant() } else { $null }) }
+        HostKey     = $HostKeyFingerprint
         PathCheck   = $pathCheck
         RootsPath   = Join-Path $RepoRoot 'manifests/recovery-roots.json'
         Tools       = @{

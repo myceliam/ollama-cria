@@ -10,11 +10,24 @@ function New-ExecResult([int]$Code = 0, [string[]]$Output = @()) {
     [pscustomobject]@{ ExitCode = $Code; Output = [string[]]$Output }
 }
 
+function ConvertFrom-VpsCommand([string]$Remote) {
+    # The repo script and arguments in a command tools/RecoveryVps.psm1
+    # built, or $null for any other remote command.
+    if ($Remote -notmatch '^t=\$\(mktemp\) && echo (\S+) \| base64 -d > \$t && sudo -n bash \$t (.*?); r=\$\?; rm -f \$t; exit \$r$') { return $null }
+    $text = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Matches[1]))
+    $name = $null
+    foreach ($f in Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot '../../linux/stages') -Filter '*.sh') {
+        if (([IO.File]::ReadAllText($f.FullName) -replace "`r", '') -eq $text) { $name = $f.Name }
+    }
+    @{ Name = $name; Text = $text; Arguments = [string[]]@($Matches[2] -split ' ' | Where-Object { $_ }) }
+}
+
 function Reset-Fake {
     # A healthy machine. Tests replace the parts they need.
     $global:CriaCalls = [Collections.Generic.List[string]]::new()
     $global:CriaFake = @{
         Exec           = { param($Name, $Arguments) New-ExecResult 0 @() }
+        Vps            = { param($Call, $InputLines) New-ExecResult 0 @() }
         Env            = @{}
         Feature        = @{ VirtualMachinePlatform = 'Enabled' }
         Virtualization = @{ Firmware = $true; Hypervisor = $false }
@@ -27,11 +40,18 @@ function Reset-Fake {
 
 function New-FakeMachine {
     @{
-        Commands       = @{ tailscale = (Join-Path $script:RealRepo 'tests/fakes/fake-tailscale.ps1'); ssh = 'ssh'; docker = 'docker' }
+        Commands       = @{ tailscale = (Join-Path $script:RealRepo 'tests/fakes/fake-tailscale.ps1'); ssh = 'ssh'; docker = 'docker'; 'ssh-keyscan' = 'ssh-keyscan' }
         Exec           = {
             param([string]$Name, [string[]]$Arguments = @(), [switch]$Stream)
             $global:CriaCalls.Add(("$Name " + (@($Arguments) -join ' ')).Trim())
             & $global:CriaFake.Exec $Name @($Arguments)
+        }
+        Ssh            = {
+            param([string]$Alias, [string]$Remote, [string[]]$InputLines = @())
+            $call = ConvertFrom-VpsCommand $Remote
+            if (-not $call) { $global:CriaCalls.Add("ssh $Alias $Remote"); return New-ExecResult 255 @('not a VPS script') }
+            $global:CriaCalls.Add(("vps $Alias $($call.Name) " + ($call.Arguments -join ' ')).Trim())
+            & $global:CriaFake.Vps $call @($InputLines)
         }
         GetEnv         = { param($Name, $Scope) $global:CriaFake.Env["$Scope/$Name"] }
         SetEnv         = {

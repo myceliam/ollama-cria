@@ -4,7 +4,7 @@
     The controller).
 
 .DESCRIPTION
-    New-RecoveryHost returns a table of script blocks: native commands,
+    New-RecoveryHost returns a table of script blocks: native commands, ssh,
     environment variables, Windows features, processes, HTTP on this machine,
     free space and BitLocker. Stages touch the machine only through it, so the
     tests can hand a stage a fake machine and check every decision it makes.
@@ -171,7 +171,8 @@ function New-RecoveryHost {
     .SYNOPSIS
         The real machine, as the table of script blocks the stages use.
         -Command maps a command name (git, winget, wsl, nvidia-smi, docker,
-        ollama, curl, py, tailscale, ssh) to the program to run instead.
+        ollama, curl, py, tailscale, ssh, ssh-keyscan) to the program to run
+        instead.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Returns a table of script blocks; changes nothing itself.')]
     [CmdletBinding()]
@@ -181,7 +182,7 @@ function New-RecoveryHost {
     $commands = @{
         git = 'git'; winget = 'winget'; wsl = 'wsl'; 'nvidia-smi' = 'nvidia-smi'; docker = 'docker'
         ollama = 'ollama'; curl = $(if ($script:OnWindows) { 'curl.exe' } else { 'curl' }); py = 'py'
-        tailscale = 'tailscale'; ssh = 'ssh'
+        tailscale = 'tailscale'; ssh = 'ssh'; 'ssh-keyscan' = 'ssh-keyscan'
     }
     foreach ($k in $Command.Keys) { $commands[$k] = $Command[$k] }
 
@@ -251,6 +252,17 @@ function New-RecoveryHost {
             if ($elevated) { Start-Process -FilePath (Join-Path $env:WINDIR 'explorer.exe') -ArgumentList "`"$Path`"" }
             else { Start-Process -FilePath $Path }
         }
+
+        # One command on the VPS over ssh, its host key checked, never a
+        # prompt; -InputLines go to its standard input. tools/RecoveryVps.psm1
+        # builds the commands.
+        Ssh            = {
+            param([string]$Alias, [string]$Remote, [string[]]$InputLines = @())
+            $global:LASTEXITCODE = 0
+            $options = @('-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=20')
+            $output = @(@($InputLines) | & $commands['ssh'] @options $Alias $Remote 2>&1 | ForEach-Object { "$_" })
+            return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = [string[]]$output }
+        }.GetNewClosure()
 
         # GET on this machine only; $null when nothing answers.
         HttpJson       = {

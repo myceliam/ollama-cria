@@ -7,11 +7,25 @@
 
 | | |
 |---|---|
-| **Version** | DRAFT v0.4, 7 October 2026 (v0.1 kept as `RESTORE-v0.1.md`) |
+| **Version** | DRAFT v0.5, 7 October 2026 (v0.1 kept as `RESTORE-v0.1.md`) |
 | **Author** | Claude |
-| **Ledger** | AICL-0122 (plan) · AICL-0123 to AICL-0125 (round one) · AICL-0126 (v0.2) · AICL-0127, AICL-0131 (Liam's decisions) · AICL-0129, AICL-0130 (round two) · AICL-0132 (v0.3) · this revision's row (v0.4, Module 7) |
+| **Ledger** | AICL-0122 (plan) · AICL-0123 to AICL-0125 (round one) · AICL-0126 (v0.2) · AICL-0127, AICL-0131 (Liam's decisions) · AICL-0129, AICL-0130 (round two) · AICL-0132 (v0.3) · AICL-0147 (v0.4, Module 7) · this revision's row (v0.5, Module 8) |
 | **Verification** | Claude reviews its own work adversarially; CI runs every test on Windows and Linux (external review rounds ended on 6 October 2026) · ☐ Liam (sign-off) |
-| **Status** | Being built. The capture tools, the restorer, the controller and Stages 1, 3, 4 and 6 exist and pass their tests (✅ in Appendix A); none has run on a new machine yet. Next: the VPS stages (2 and 5) and Stages 7 to 11, then a rehearsal on a throwaway target. |
+| **Status** | Being built. The capture tools, the restorer, the controller and Stages 1 to 6 exist and pass their tests (✅ in Appendix A); none has run on a new machine yet. Next: Stages 7 to 11, then a rehearsal on a throwaway target. |
+
+### 🔄 What changed in v0.5 (the VPS stages are built)
+
+| Change | Why |
+|---|---|
+| Stage 2 writes the console bootstrap for you; it prints the new server's host key fingerprint, and you answer with `-Accept vps-bootstrap -HostKeyFingerprint SHA256:…` (2a, 2b) | The check in 2c needs a value a person saw on the console |
+| The old server's keys in `known_hosts` are **replaced**, not added to; the old file is kept beside it (2c) | An old key under the same name makes ssh refuse the new server |
+| The VPS base copies the live one, read on 7 October 2026: pinned Docker versions, no `sqlite3`, `ip_nonlocal_bind`, sshd on the tailnet address only, ufw open on `tailscale0` and `41641/udp` only (2d) | The rebuilt VPS should behave like today's |
+| Stage 5 places files through a ledger, never over one it did not write (5a) | C-45, on the VPS |
+| The guard is proved loaded and Docker proved to need it before any image or container (5b); a running guard restarts only when its files changed | C-20, C-43. Restarting the guard restarts Docker |
+| Images are pulled by digest or built, then the projects start with `--pull never --wait` (5c, 5d) | Nothing unpinned reaches the VPS |
+| **searxng-mcp is built** from a new Dockerfile, with a compose override pointing the service at it (5c) | R-13: the live image is a bare local ID no registry holds |
+| The SearXNG search in checkpoint 5 runs automatically | One fewer manual check |
+| The VPS's public address is no longer kept in the repo; files hold a placeholder | It is not needed to rebuild, and the sync now keeps it out |
 
 ### 🔄 What changed in v0.4 (the controller is built)
 
@@ -197,6 +211,7 @@ pwsh -File .\Invoke-StackRecovery.ps1                        # plan: every stage
 pwsh -File .\Invoke-StackRecovery.ps1 -Execute               # run the next ready stage and its checkpoint, then stop
 pwsh -File .\Invoke-StackRecovery.ps1 -Execute -Stage 6      # run (or run again) one stage; the stages it needs must be done
 pwsh -File .\Invoke-StackRecovery.ps1 -Execute -Accept gpu   # answer a question a stage asked, by its id
+pwsh -File .\Invoke-StackRecovery.ps1 -Execute -Accept vps-bootstrap -HostKeyFingerprint SHA256:<43 characters>   # Stage 2b
 ```
 
 Run the same `-Execute` command again after each checkpoint, after a restart, or after doing what an `ASK` line said. Each run prints its steps, its checks and one `Result:` line.
@@ -211,7 +226,7 @@ Run the same `-Execute` command again after each checkpoint, after a restart, or
 | Elevation | Stages 3 and 8 only. The controller starts an elevated copy of itself for that one stage (one UAC prompt); the child checks it holds the same lock and returns its exit code. Answers travel through `state.json`, never on the command line (C-14). |
 | Secrets | Never in arguments, URLs, transcripts or the state file. Read from the protected staging folder only (C-14, C-05). |
 | Evidence | `E:\recovery-state\evidence\stage-NN-attempt-K.json` and `.txt`: names, counts, hashes, statuses and exit codes only. After every stage that reads the bundle (1, 4, 7), each evidence file and `state.json` are matched against every value in the unpacked bundle (whole short files, `NAME=value` values, JSON strings and long lines, also as JSON escapes them). A match deletes that evidence file, keeps only the report's title and the problem, and fails the stage. A matched value is never printed (C-50). |
-| VPS stages | The PC copies `linux\stages\*.sh` to the VPS and runs them with `ssh vps 'bash -euo pipefail …'`. Their output comes back as evidence. |
+| VPS stages | 🛠️ `tools\RecoveryVps.psm1` sends each `linux\stages\*.sh` inside the SSH command, runs it once as root with `sudo -n` and removes it; files and image lists travel on its standard input, never as arguments. `ssh` runs with `BatchMode=yes` and `StrictHostKeyChecking=yes`. The scripts print `STEP`, `WARN`, `FACT` and `FAIL` lines, which become the stage's steps, warnings, checks and problems; they never print a file's content or an address. On the VPS they leave only what they set up, their logs in `/var/log/ollama-cria/` and Stage 5's ledger. |
 
 ---
 
@@ -266,38 +281,54 @@ Run the same `-Execute` command again after each checkpoint, after a restart, or
 
 # STAGE 2 · VPS base and both hosts on the tailnet
 
-> **Delivers:** a hardened Ubuntu 24.04 VPS with user `liam`, SSH key login, Docker and Tailscale; both new nodes identified
+> **Delivers:** a hardened Ubuntu 24.04 VPS with user `liam`, SSH key login, Docker and Tailscale; the new server's host key checked and trusted
 > **Where:** ☁️ provider console first, then 🖥️ → ☁️ over SSH
-> **Modules:** 🛠️ `linux\stages\02-base.sh` (from ♻️ `linux\step1.sh`), 🛠️ `windows\stages\02-vps-trust.ps1`
+> **Modules:** ✅ `windows\stages\02-vps.ps1`, `linux\stages\02-bootstrap.sh`, `linux\stages\02-base.sh`, `tools\RecoveryVps.psm1`
 
 **2a · In the provider console 👤**
 
+The first `-Execute` of Stage 2 writes `E:\recovery-secrets\vps-bootstrap.sh` (owner-only, with the PC's **public** key from bundle folder 04 and the account filled in; removed in Stage 11) and stops with an `ASK` line. Then:
+
 1. Rebuild the server with Ubuntu 24.04 LTS.
-2. Note the **SSH host key fingerprint** the console shows. You need it in 2c.
-3. Paste the one-time bootstrap the controller printed. It creates `liam`, gives `liam` passwordless sudo (the scripts call `sudo docker …`, as today, rather than adding `liam` to the `docker` group, which would be root-equivalent), installs the PC's **public** key from bundle folder 04, and installs Tailscale from Tailscale's apt repository (C-15, C-53).
-4. In the Tailscale admin console, **remove the old, dead VPS node first** (C-22). Then run `sudo tailscale up`, approve the node and name it so it matches the SSH alias (`vps`).
+2. Paste `vps-bootstrap.sh` into the console as root. It creates `liam` with passwordless sudo (the scripts call `sudo -n docker …`; adding `liam` to the `docker` group would be root-equivalent), installs the public key, installs Tailscale from Tailscale's apt repository (C-15, C-53), and **prints the server's SSH host key fingerprint**. Write it down.
+3. In the Tailscale admin console, **remove the old, dead VPS node first** (C-22). Then run the `tailscale up --hostname=vps` line it printed and approve the node.
 
 **2b · Names and grants 👤**
 
-Check in the admin console that the two new nodes have exactly the old names (no `-1` suffix) and that the tailnet access rules still let the PC and VPS reach each other on the ports in Appendix E.
+Check in the admin console that the two new nodes have exactly the old names (no `-1` suffix) and that the tailnet access rules still let the PC and VPS reach each other on the ports in Appendix E. Then answer with the fingerprint:
+
+```powershell
+pwsh -File .\Invoke-StackRecovery.ps1 -Execute -Accept vps-bootstrap -HostKeyFingerprint SHA256:<43 characters>
+```
 
 **2c · Trust the new server 🤖**
 
-1. Read the new node's tailnet IPv4 with `tailscale status --json`.
-2. Fetch its host key with `ssh-keyscan` and compare the fingerprint with the one from the provider console. **Stop if they differ.**
-3. Only then add it to `known_hosts`, and point the `vps` alias in `~\.ssh\config` at the new node's name.
+1. Find the node named `vps` with `tailscale status --json`. Its address and name stay in memory, never in state or evidence.
+2. Check that `ssh -G vps` points at that node; if not, it asks you to set `HostName` in `~\.ssh\config`.
+3. Fetch the host keys with `ssh-keyscan` and **stop unless one has the fingerprint you gave**.
+4. Only then file the matching keys in `known_hosts` in place of the old server's (hashed entries too; the old file is kept as `known_hosts.cria-<time>`), and check that `ssh vps true` logs in.
 
-**2d · Base packages over SSH 🤖**
+**2d · Base system over SSH 🤖**
 
-`02-base.sh` installs, from Ubuntu's and Docker's official apt repositories (not `curl | sh`, C-15): Docker Engine and the Compose plugin, `nftables`, `iproute2`, `nginx`, `sqlite3`, `jq`, `unattended-upgrades`. It turns on `ufw` with SSH allowed only on `tailscale0`.
+`02-base.sh run` sets the VPS up as the live one was read on 7 October 2026. It checks first and changes only what differs, so it is safe to run again.
+
+| Part | What |
+|---|---|
+| Packages | Docker Engine and the Compose plugin from Docker's apt repository (deb822, the key checked against Docker's fingerprint), pinned to the live versions; `nftables`, `iproute2`, `nginx`, `jq`, `ufw` and `unattended-upgrades` from Ubuntu's. Never `curl \| sh` (C-15). No `sqlite3`: the live VPS has none |
+| Updates | Unattended upgrades on |
+| Boot order | `net.ipv4.ip_nonlocal_bind = 1`, so nginx, Docker and sshd can bind the tailnet address before `tailscale0` has it |
+| Firewall | `ufw`: deny incoming and routed, allow outgoing; allow everything on `tailscale0`, and `41641/udp` for Tailscale's direct connections |
+| SSH | Keys only, no root, listening on the tailnet address only. Done last, after checking that the VPS's own tailnet address is the one the PC sees, and kept only if `sshd -t` passes |
 
 🛑 **Checkpoint 2**
 
 | Who | Check | Expected |
 |---|---|---|
-| 👤 | Fingerprint from `ssh-keyscan` vs the provider console | Identical |
-| 🤖 | `ssh vps 'hostname; tailscale ip -4; sudo -n docker version --format {{.Server.Version}}'` | Hostname, the new IP and a Docker version, with no password prompt |
-| 🤖 | `ssh vps 'sudo -n ufw status verbose'` | Active; SSH allowed on `tailscale0` only. (Listening sockets alone prove nothing; Stage 10 tests reachability from outside, C-52.) |
+| 🤖 | Node `vps` in the tailnet; the alias points at it | Yes |
+| 🤖 | `known_hosts` | Only the key with the fingerprint from the console |
+| 🤖 | `02-base.sh check` over `ssh vps`, as root with no password | Docker and Compose answer; every package installed; `ip_nonlocal_bind` is 1 |
+| 🤖 | ufw | Active, with the defaults above; `tailscale0` and `41641/udp` let in, nothing else. (Listening sockets alone prove nothing; Stage 10 tests reachability from outside, C-52.) |
+| 🤖 | sshd | Tailnet address only, no passwords, no root |
 | 🤖 | `tailscale ping vps` from the PC | A reply |
 
 ---
@@ -410,62 +441,57 @@ The bundle was downloaded, checked and unpacked in Stage 1. `Restore-StackSecret
 
 > **Delivers:** the whole VPS side: the nftables guard, gluetun/Mullvad, SearXNG, searxng-mcp, Jina Reader, the Brave/Jina gateway, the relay, Kokoro and the Groq STT relay
 > **Where:** ☁️, driven from 🖥️
-> **Modules:** 🛠️ `linux\stages\05-guard.sh`, `05-egress.sh`, `05-kokoro.sh`, `05-stt.sh`
+> **Modules:** ✅ `windows\stages\05-vps.ps1`, `linux\stages\05-place.sh`, `linux\stages\05-services.sh`; restore-only files in `linux\files\web-egress\`
 
-**5a · The guard first** (C-20)
+**5a · Place the files 🤖**
 
-1. Copy `guard.nft`, `guard.sh` and `owui-web-egress-guard.service` from `vps\web-egress\` (source: `E:\ai\ollama\vps\web-egress\` today).
-2. Install the unit, `systemctl daemon-reload`, enable and start it. It is ordered **before** `docker.service`.
-3. Install Docker's drop-in `/etc/systemd/system/docker.service.d/owui-web-egress.conf` from `vps\systemd\`, which sets `Requires=` and `After=owui-web-egress-guard.service`. Without it Docker can start even when the guard failed (C-43, present on the live VPS).
-4. Check that the guard's rules are actually loaded (`nft list tables` shows the guard's table, and the policy-routing rules exist), not only that the unit says `active`. Protected containers start only after both checks pass.
+Every VPS file Stage 4 rendered (`E:\recovery-state\rendered\`) goes to its folder from `manifests\stack-files.json`: `~/owui-web-egress`, `~/kokoro`, `/etc/nginx/sites-available/groq-relay` and Docker's drop-in `/etc/systemd/system/docker.service.d/owui-web-egress.conf`. The guard's unit also goes to `/etc/systemd/system/`, and the restore-only files (5c) into `~/owui-web-egress`. Files under `/home/liam` belong to `liam` (scripts 0755, the rest 0644); files under `/etc` to root (0644). `05-place.sh` writes each one:
 
-**5b · Images** (R-13)
+- only under `/home/liam/`, `/etc/systemd/system/` and `/etc/nginx/sites-available/`, and never through a link;
+- checked against its SHA-256 after the trip;
+- never over a file it did not write. Its ledger, `/var/lib/ollama-cria/placed`, records what it wrote, so a rerun replaces only its own files that nobody has changed since.
+
+**5b · The guard first** (C-20, C-43)
+
+1. Enable the guard's unit and start it. A guard that is already running restarts only when one of its files has just changed, because Docker `Requires=` it and systemd restarts Docker, with every container, whenever the guard restarts.
+2. Prove its rules are loaded: the `inet owui_web` nftables table and routing rule `5260` exist. `active` alone is not enough.
+3. Prove Docker needs it: `systemctl show docker` lists the guard in `Requires=` and `After=` (the drop-in, C-43).
+
+No image is pulled and no container is created until all three pass.
+
+**5c · Images** (R-13)
 
 | Service | Image source | Action |
 |---|---|---|
-| gluetun | Registry (digest recorded in the manifest) | Pull |
-| SearXNG | Registry (digest recorded in the manifest) | Pull |
-| Brave/Jina gateway | `python@sha256:dd29…` plus mounted `brave_jina_gateway.py` | Pull, mount source |
-| Jina Reader | `jina-official\Dockerfile` + `harden-reader.js` | **Explicit build** and tag `jina-reader-official-hardened:<date>` |
-| searxng-mcp | Today: a bare local image ID (`sha256:afd7…`). Not reproducible. | 🛠️ New `searxng-mcp\Dockerfile` installing `mcp-searxng@1.6.0` on a pinned Node base; build and tag ❓ **R-13** |
-| socat relay | Registry (digest recorded in the manifest) | Pull |
+| gluetun, SearXNG, socat relay, Kokoro | Registry, digest from `manifests\images.json` | Pull by digest, then tag as the compose file names it |
+| Brave/Jina gateway | `python@sha256:dd29…` plus the mounted `brave_jina_gateway.py` | Pull by digest |
+| Jina Reader | `jina-official\Dockerfile` + `harden-reader.js` | **Build** and tag `jina-reader-official-hardened:2026-09-24` |
+| searxng-mcp | Live: a bare local image ID (`sha256:afd7…`) that no registry holds | **Build** from `linux\files\web-egress\searxng-mcp\Dockerfile` (`mcp-searxng@1.6.0` on a pinned `node:22-alpine`) and tag `searxng-mcp:1.6.0`. `compose.override.yml`, placed beside the compose file, points the service at it |
 
-**5c · Egress stack**
+An image that is already there is left alone.
 
-```bash
-mkdir -p ~/owui-web-egress && cd ~/owui-web-egress    # files copied from vps/web-egress/
-sudo docker compose up -d
-sudo docker compose ps
-```
+**5d · The two compose projects**
 
-All services except gluetun use `network_mode: "service:gluetun"`, so they can only reach the internet through the tunnel.
+`docker compose up -d --pull never --wait` in `~/owui-web-egress`, then in `~/kokoro`. `--pull never` means only the images above can run; `--wait` holds until every service is running and healthy (5 minutes at most). It needs `/dev/net/tun` and the egress `.env` from Stage 4.
 
-**5d · Kokoro** (R-14 resolved: it runs on the VPS)
-
-```bash
-mkdir -p ~/kokoro && cd ~/kokoro                      # compose.yml from vps/kokoro/
-sudo docker compose up -d                             # ghcr.io/remsky/kokoro-fastapi-cpu:v0.5.0
-```
-
-It listens on `{{VPS_TS_IP}}:8880` only.
+All egress services except gluetun use `network_mode: "service:gluetun"`, so they can reach the internet only through the tunnel. Kokoro (`ghcr.io/remsky/kokoro-fastapi-cpu:v0.5.0`, R-14) listens on `{{VPS_TS_IP}}:8880` only.
 
 **5e · Groq STT relay** (C-25)
 
-Install `vps\nginx\groq-relay.conf` (rendered with the new IP, listening on `{{VPS_TS_IP}}:18099`) into `/etc/nginx/sites-available/`, link it into `sites-enabled`, then `nginx -t` and reload. The relay adds no credential; OWUI sends the Groq key. Only this one site is restored; no other nginx sites come across.
+Only `groq-relay` is switched on in `sites-enabled` (listening on `{{VPS_TS_IP}}:18099`), and the package's `default` site is switched off. Then `nginx -t`, and reload. The relay adds no credential; OWUI sends the Groq key. No other nginx site comes across.
 
 🛑 **Checkpoint 5**
 
 | Who | Check | Expected |
 |---|---|---|
-| 🤖 | `systemctl is-enabled --quiet owui-web-egress-guard && systemctl is-active owui-web-egress-guard` | `active` |
-| 🤖 | `systemctl show docker -p Requires -p After` | Both list `owui-web-egress-guard.service` |
-| 🤖 | `sudo nft list tables` and `ip rule` | The guard's table and routing rules are present |
-| 🤖 | `sudo docker compose ps` in `~/owui-web-egress` | Every service up; gluetun `(healthy)` |
-| 🤖 | Exit IP from **inside** the gateway's namespace vs the VPS's own public IP | Different, and the exit matches the Mullvad server in `.env` (C-21) |
-| 🤖 | `curl -s http://{{VPS_TS_IP}}:13100/health` from the PC | Healthy |
-| 🤖 | `curl -s http://{{VPS_TS_IP}}:8880/v1/models` from the PC | Lists `kokoro` |
-| 🤖 | `ss -Hltn` on the VPS | 8880 and 18099 bound to the tailnet IP only (reachability is tested from outside in Stage 10) |
-| 👤 | One web search through SearXNG returns results | Yes |
+| 🤖 | Guard unit | Enabled and active |
+| 🤖 | nftables table `inet owui_web` and routing rule 5260 | Present |
+| 🤖 | `systemctl show docker -p Requires -p After` | Both list the guard |
+| 🤖 | Egress project and Kokoro | Every service running; gluetun `healthy` |
+| 🤖 | Exit address from **inside** the gateway's namespace vs the VPS's own | Different (C-21). Only "same" or "differs" is recorded, never the addresses |
+| 🤖 | `ss -Hltn` on the VPS | 8880, 18099 and 13100 on the tailnet address only (reachability from outside is tested in Stage 10) |
+| 🤖 | nginx | Relay site on; `nginx -t` passes |
+| 🤖 | From the PC: `:13100/health`, `:8880/v1/models`, and a SearXNG search on `:18080` | Healthy; lists `kokoro`; returns results |
 
 > 🧪 **Kill-switch test (C-21):** stopping the tunnel and proving that traffic fails closed is done in Stage 10 on the rebuilt host, not here, and never on the working VPS.
 
@@ -757,13 +783,13 @@ tailscale serve --bg --https 9000 http://127.0.0.1:18088 # Dozzle
 | `bootstrap\Install-Baseline.ps1` | 🛠️ | 0 |
 | `Invoke-StackRecovery.ps1`, `tools\RecoveryState.psm1`, `tools\RecoveryHost.psm1` | ✅ Module 7 | all |
 | `windows\stages\01-release.ps1` | ✅ Module 7 | 1 |
-| `linux\stages\02-base.sh` | 🛠️ from ♻️ `E:\ai\OWUI\Ollama-OWUI-MCP-setup\linux\step1.sh` | 2 |
+| `windows\stages\02-vps.ps1`, `linux\stages\02-bootstrap.sh`, `linux\stages\02-base.sh`, `tools\RecoveryVps.psm1` | ✅ Module 8 (replaces ♻️ `linux\step1.sh`) | 2 |
 | `windows\stages\03-runtime.ps1` | ✅ Module 7 (C-12, C-13, C-14) | 3 |
 | `windows\stages\04-render.ps1` | ✅ Module 7 | 4 |
 | `tools\Restore-StackSecrets.ps1` | ✅ Module 5 | 1, 4, 7 |
 | `tools\Test-RecoveryPath.ps1` | ✅ Shared path check (C-44, C-49) | 1, 4, 6, 11 |
 | `tools\Remove-RecoveryPlaintext.ps1` | ✅ Module 7. Owned-only clean-up | 11 |
-| `linux\stages\05-*.sh` | 🛠️ | 5 |
+| `windows\stages\05-vps.ps1`, `linux\stages\05-place.sh`, `linux\stages\05-services.sh`, `linux\files\web-egress\` | ✅ Module 8 (R-13) | 5 |
 | `windows\stages\06-fetch.ps1` | ✅ Module 7 | 6 |
 | `tools\Export-OwuiSeed.py`, `tools\Import-OwuiSeed.py` | ✅ Modules 3 and 5. Run inside the OWUI container (C-39) | 7, 10 |
 | `start-stack.ps1` | ♻️ (C-27) | 8 |
@@ -813,7 +839,7 @@ tailscale serve --bg --https 9000 http://127.0.0.1:18088 # Dozzle
 | R-10 | How ComfyUI starts | ✅ Fact settled | Startup VBS; Stage 8d installs it |
 | R-11 | ntfy watcher tasks | 🟢 Direction agreed | XML export with SID substitution |
 | R-12 | `vps` alias target | ✅ Fact settled | Tailnet name; new host key checked against the console |
-| R-13 | Locally built VPS images | 🔴 Needs evidence | searxng-mcp needs a Dockerfile; Jina needs an explicit build |
+| R-13 | Locally built VPS images | 🟢 Built for the restore | Stage 5c builds both: Jina from the captured `jina-official\Dockerfile`, searxng-mcp from the new `linux\files\web-egress\searxng-mcp\Dockerfile` with a compose override. The live VPS still runs the bare image; moving it to the built one is Liam's call |
 | R-14 | Kokoro placement | ✅ **Resolved** | VPS. Agreed by ChatGPT, Antigravity and Liam |
 | R-15 | Endpoint contract | 🟢 Direction agreed | Appendix E |
 | R-16 | `OLLAMA_KEEP_ALIVE`: live `45s` or documented `0`? | ✅ **Decided by Liam** | `45s` (5 Oct). Documents updated in `AICL-0127` |
@@ -834,14 +860,16 @@ ollama-cria/
 │   ├── stages/        01-release … 10-rehearsal
 │   ├── startup/       start_comfyui_hidden.vbs
 │   └── tasks/         *.xml (SID placeholders)
-├── linux/stages/      02-base.sh, 05-*.sh
+├── linux/
+│   ├── stages/        02-bootstrap.sh, 02-base.sh, 05-place.sh, 05-services.sh
+│   └── files/         web-egress/ restore-only: searxng-mcp/Dockerfile, compose.override.yml
 ├── stack/             → E:\ai\ollama (compose, Dockerfiles, bridges, relay, scripts;
 │                      not discord-owui-bridge\ or kais_chat_tidy.ps1)
 ├── extras/dashboard/  → E:\ai\ag-startuip\cline-dashboard
 ├── vps/
-│   ├── web-egress/    compose, gateway, guard, settings, jina-official, searxng-mcp
+│   ├── web-egress/    compose, gateway, guard, settings, jina-official
 │   ├── kokoro/        compose.yml
-│   ├── nginx/         groq-relay.conf template
+│   ├── nginx/         groq-relay template
 │   └── systemd/       docker.service.d/owui-web-egress.conf
 ├── manifests/         Appendix B
 ├── tools/             Collect-/Restore-StackSecrets.ps1, Test-RecoveryPath.ps1,
