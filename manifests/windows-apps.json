@@ -1,0 +1,52 @@
+{
+  "$schema": "./schemas/windows-apps.schema.json",
+  "formatVersion": 1,
+  "note": "Written by tools/Sync-StackManifests.ps1. Stage 3 installs these versions with winget and pins Ollama and Docker Desktop (C-30); the GPU driver is checked with nvidia-smi.",
+  "packages": [
+    {
+      "id": "Docker.DockerDesktop",
+      "version": "4.94.0",
+      "why": "Docker engine for the PC stack (Stage 3b)"
+    },
+    {
+      "id": "Ollama.Ollama",
+      "version": "0.35.1",
+      "why": "Ollama (Stage 3b)"
+    },
+    {
+      "id": "Python.Python.3.11",
+      "version": "3.11.9",
+      "why": "ComfyUI venv (Stage 3d)"
+    },
+    {
+      "id": "Python.Python.3.13",
+      "version": "3.13.15",
+      "exact": false,
+      "why": "The Windows PowerShell tool task runs C:\\Python313\\python.exe"
+    },
+    {
+      "id": "Git.Git",
+      "version": "2.56.0",
+      "why": "Cloning this repo and ComfyUI (Step 0)"
+    },
+    {
+      "id": "Tailscale.Tailscale",
+      "version": "1.102.4",
+      "why": "The tailnet and Serve (Step 0, Stage 8c)"
+    },
+    {
+      "id": "Microsoft.PowerShell",
+      "version": "7.6.6.0",
+      "why": "PowerShell 7 for every script here (Step 0)"
+    },
+    {
+      "id": "LibreHardwareMonitor.LibreHardwareMonitor",
+      "version": "0.9.6",
+      "why": "Sensor readings the ntfy PC-health watcher reads"
+    }
+  ],
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 4080 SUPER",
+    "driver": "617.14"
+  }
+}

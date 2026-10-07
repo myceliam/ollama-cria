@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Task version="1.3" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>ntfy watcher: reboot pending, disk, GPU heat, stuck VRAM, unexpected reboots, winget/Docker updates, SMART, folder growth, 3-hour nudge. 2026-09-11, see AI-CHANGELOG.csv.</Description>
+    <URI>\OWUI-ntfy-PcHealth</URI>
+  </RegistrationInfo>
+  <Principals>
+    <Principal id="Author">
+      <UserId>{{USER_SID}}</UserId>
+      <LogonType>InteractiveToken</LogonType>
+    </Principal>
+  </Principals>
+  <Settings>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <ExecutionTimeLimit>PT20M</ExecutionTimeLimit>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <IdleSettings>
+      <Duration>PT10M</Duration>
+      <WaitTimeout>PT1H</WaitTimeout>
+      <StopOnIdleEnd>true</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <UseUnifiedSchedulingEngine>true</UseUnifiedSchedulingEngine>
+  </Settings>
+  <Triggers>
+    <TimeTrigger>
+      <StartBoundary>2026-09-11T00:07:00+01:00</StartBoundary>
+      <Repetition>
+        <Interval>PT15M</Interval>
+        <StopAtDurationEnd>true</StopAtDurationEnd>
+      </Repetition>
+    </TimeTrigger>
+  </Triggers>
+  <Actions Context="Author">
+    <Exec>
+      <Command>C:\WINDOWS\system32\wscript.exe</Command>
+      <Arguments>"E:\ai\ollama\run-hidden.vbs" "E:\ai\ollama\_support\scripts\scheduled\Watch-PcHealth.ps1"</Arguments>
+    </Exec>
+  </Actions>
+</Task>

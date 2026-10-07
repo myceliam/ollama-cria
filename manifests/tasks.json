@@ -1,0 +1,120 @@
+{
+  "$schema": "./schemas/tasks.schema.json",
+  "formatVersion": 1,
+  "note": "Written by tools/Sync-StackManifests.ps1. Stage 8d recreates each task (with its installer script, or by importing its XML with {{USER_SID}}, {{USER_ID}} and {{USER_PROFILE}} filled for the new account) and the startup items, then Stage 10 checks each one ran.",
+  "tasks": [
+    {
+      "name": "OWUI-Stack-Startup",
+      "enabled": true,
+      "install": "stack/_support/scripts/installers/install-startup-task.ps1",
+      "xml": "windows/tasks/OWUI-Stack-Startup.xml",
+      "runs": [
+        "stack/start-stack.ps1"
+      ]
+    },
+    {
+      "name": "OWUI-mcpo-Watchdog",
+      "enabled": true,
+      "install": "stack/_support/scripts/installers/install-mcpo-watchdog-task.ps1",
+      "xml": "windows/tasks/OWUI-mcpo-Watchdog.xml",
+      "runs": [
+        "stack/run-hidden.vbs",
+        "stack/mcpo-watchdog.ps1"
+      ]
+    },
+    {
+      "name": "OWUI-ntfy-Fast",
+      "enabled": true,
+      "install": "xml",
+      "xml": "windows/tasks/OWUI-ntfy-Fast.xml",
+      "runs": [
+        "stack/run-hidden.vbs",
+        "stack/_support/scripts/scheduled/Watch-Fast.ps1"
+      ]
+    },
+    {
+      "name": "OWUI-ntfy-PcHealth",
+      "enabled": true,
+      "install": "xml",
+      "xml": "windows/tasks/OWUI-ntfy-PcHealth.xml",
+      "runs": [
+        "stack/run-hidden.vbs",
+        "stack/_support/scripts/scheduled/Watch-PcHealth.ps1"
+      ]
+    },
+    {
+      "name": "OWUI-ntfy-MorningBrief",
+      "enabled": false,
+      "install": "xml",
+      "xml": "windows/tasks/OWUI-ntfy-MorningBrief.xml",
+      "runs": [
+        "stack/run-hidden.vbs",
+        "stack/_support/scripts/scheduled/Send-MorningBrief.ps1"
+      ]
+    },
+    {
+      "name": "OWUI-Windows-PowerShell-Tool",
+      "enabled": true,
+      "install": "xml",
+      "xml": "windows/tasks/OWUI-Windows-PowerShell-Tool.xml",
+      "runs": [
+        "stack/windows-powershell-tool/server.py"
+      ]
+    },
+    {
+      "name": "Tailscale-Status-Feed",
+      "enabled": true,
+      "install": "xml",
+      "xml": "windows/tasks/Tailscale-Status-Feed.xml",
+      "runs": [
+        "stack/run-hidden.vbs",
+        "extras/dashboard/Refresh-Tailscale-Status.ps1"
+      ]
+    },
+    {
+      "name": "LibreHardwareMonitor",
+      "enabled": true,
+      "install": "xml",
+      "xml": "windows/tasks/LibreHardwareMonitor.xml",
+      "runs": []
+    }
+  ],
+  "startup": [
+    {
+      "name": "OWUI ComfyUI AutoFree.lnk",
+      "kind": "shortcut",
+      "target": "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+      "arguments": "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"E:\\ai\\ollama\\autofree-watchdog.ps1\"",
+      "workingDirectory": "E:\\ai\\ollama",
+      "runs": [
+        "stack/autofree-watchdog.ps1"
+      ]
+    },
+    {
+      "name": "start_comfyui_hidden.vbs",
+      "kind": "file",
+      "file": "windows/startup/start_comfyui_hidden.vbs"
+    }
+  ],
+  "retired": [
+    "OWUI-Nightly-Backup",
+    "OWUI-Weekly-VPS-Push",
+    "OWUI-ntfy-Backups",
+    "Ollama Weekly Backup",
+    "OWUI-Automation-Chat-Tidy"
+  ],
+  "notCovered": [
+    "ChatGPT Alt+C Toggle",
+    "CreateExplorerShellUnelevatedTask",
+    "Flatstack-Service",
+    "GenTeamComputer",
+    "MSIAfterburner",
+    "NahimicTask32",
+    "NahimicTask64",
+    "NVIDIA App SelfUpdate_{B2FE1952-0186-46C3-BAEC-A80AA35AC5B8}"
+  ],
+  "startupNotCovered": [
+    "Modern ChatGPT.lnk",
+    "Ollama.lnk"
+  ]
+}

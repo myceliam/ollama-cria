@@ -1,0 +1,22 @@
+{
+  "$schema": "./schemas/comfyui-nodes.schema.json",
+  "formatVersion": 1,
+  "note": "Written by tools/Sync-StackManifests.ps1. Stage 3d clones ComfyUI and each node at these commits and installs comfyui-requirements.lock into a Python venv of this version.",
+  "comfyui": {
+    "repo": "https://github.com/comfyanonymous/ComfyUI.git",
+    "commit": "bb131be9e83d2f773c90f1d6f1e4b248a498c8c5"
+  },
+  "python": "3.11.9",
+  "pipIndexUrls": [
+    "https://download.pytorch.org/whl/cu124",
+    "https://pypi.org/simple"
+  ],
+  "nodes": [
+    {
+      "name": "ComfyUI-Manager",
+      "repo": "https://github.com/ltdrdata/ComfyUI-Manager.git",
+      "commit": "c352b16bb1862aa8b5dacf90a0c9216a4249f5bd"
+    }
+  ],
+  "manual": []
+}

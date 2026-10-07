@@ -1,0 +1,47 @@
+{
+  "$schema": "./schemas/serve.schema.json",
+  "formatVersion": 1,
+  "note": "Written by tools/Sync-StackManifests.ps1. Stage 8c sets exactly these rules with tailscale serve --bg, tailnet only, never Funnel.",
+  "rules": [
+    {
+      "port": 443,
+      "kind": "https",
+      "path": "/",
+      "target": "http://127.0.0.1:3000"
+    },
+    {
+      "port": 444,
+      "kind": "https",
+      "path": "/",
+      "target": "http://127.0.0.1:8188"
+    },
+    {
+      "port": 2000,
+      "kind": "https",
+      "path": "/",
+      "target": "http://127.0.0.1:6080"
+    },
+    {
+      "port": 8188,
+      "kind": "tcp",
+      "target": "127.0.0.1:8188"
+    },
+    {
+      "port": 8443,
+      "kind": "https",
+      "path": "/",
+      "target": "http://127.0.0.1:8090"
+    },
+    {
+      "port": 9000,
+      "kind": "https",
+      "path": "/",
+      "target": "http://127.0.0.1:18088"
+    },
+    {
+      "port": 11434,
+      "kind": "tcp",
+      "target": "127.0.0.1:11434"
+    }
+  ]
+}

@@ -1,0 +1,247 @@
+{
+  "$schema": "./schemas/comfyui-weights.schema.json",
+  "formatVersion": 1,
+  "note": "Written by tools/Sync-StackManifests.ps1. dest is under ComfyUI\\models. Stage 6b downloads each url to dest.partial, checks bytes and sha256, then renames it. checked means the URL was seen to serve this exact SHA-256. A url or required set by hand is kept for the same bytes.",
+  "weights": [
+    {
+      "dest": "checkpoints/DreamShaper_8_pruned.safetensors",
+      "bytes": 2132625894,
+      "sha256": "879db523c30d3b9017143d56705015e15a2cb5628762c11d086fed9538abd7fd",
+      "role": "checkpoints",
+      "required": true,
+      "url": "https://huggingface.co/Lykon/DreamShaper/resolve/main/DreamShaper_8_pruned.safetensors",
+      "auth": "none",
+      "checked": true
+    },
+    {
+      "dest": "checkpoints/flux1-dev-fp8.safetensors",
+      "bytes": 17246524772,
+      "sha256": "8e91b68084b53a7fc44ed2a3756d821e355ac1a7b6fe29be760c1db532f3d88a",
+      "role": "checkpoints",
+      "required": true,
+      "url": "https://huggingface.co/Comfy-Org/flux1-dev/resolve/main/flux1-dev-fp8.safetensors",
+      "auth": "none",
+      "checked": true
+    },
+    {
+      "dest": "checkpoints/flux1-schnell-fp8.safetensors",
+      "bytes": 17236328572,
+      "sha256": "ead426278b49030e9da5df862994f25ce94ab2ee4df38b556ddddb3db093bf72",
+      "role": "checkpoints",
+      "required": true,
+      "url": "https://civitai.com/api/download/models/936316?fileId=843676",
+      "auth": "civitai",
+      "checked": true
+    },
+    {
+      "dest": "checkpoints/Illustrious-XL-v0.1.safetensors",
+      "bytes": 6938040760,
+      "sha256": "3e15ba00387db678ab4a099f75771c4f5ac67fda9e7100a01d263eaf30145aa9",
+      "role": "checkpoints",
+      "required": true,
+      "url": "https://civitai.com/api/download/models/889818?fileId=798303",
+      "auth": "civitai",
+      "checked": true
+    },
+    {
+      "dest": "checkpoints/Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors",
+      "bytes": 7105348188,
+      "sha256": "c9e3e68f89b8e38689e1097d4be4573cf308de4e3fd044c64ca697bdb4aa8bca",
+      "role": "checkpoints",
+      "required": true,
+      "url": "https://civitai.com/api/download/models/348913?fileId=277777",
+      "auth": "civitai",
+      "checked": true
+    },
+    {
+      "dest": "checkpoints/ltxv-2b-0.9.8-distilled-fp8.safetensors",
+      "bytes": 4461695684,
+      "sha256": "d6d8fa8ed3a98346787c2503ac80fb5d7cebcf80e356b79a2ba361fbadf97e15",
+      "role": "checkpoints",
+      "required": true,
+      "url": "https://huggingface.co/Lightricks/LTX-Video/resolve/main/ltxv-2b-0.9.8-distilled-fp8.safetensors",
+      "auth": "none",
+      "checked": true
+    },
+    {
+      "dest": "checkpoints/SDXL_AlbedoBase_General.safetensors",
+      "bytes": 6939222702,
+      "sha256": "8a8efa5ad281317d3656ece3d4ca81542dde55deb2079b2b37b48f145355c935",
+      "role": "checkpoints",
+      "required": true,
+      "url": "https://civitai.com/api/download/models/223310?fileId=172191",
+      "auth": "civitai",
+      "checked": true
+    },
+    {
+      "dest": "checkpoints/SDXL_Animagine_v4_Anime.safetensors",
+      "bytes": 6938434056,
+      "sha256": "1d5b43ff75b6ab598502d4c779d2fbfa3dceca51c60c3b609640a60772333916",
+      "role": "checkpoints",
+      "required": true,
+      "url": "https://civitai.com/api/download/models/1337429?fileId=1241336",
+      "auth": "civitai",
+      "checked": true
+    },
+    {
+      "dest": "checkpoints/SDXL_PonyV6_versatile.safetensors",
+      "bytes": 6938041050,
+      "sha256": "67ab2fd8ec439a89b3fedb15cc65f54336af163c7eb5e4f2acc98f090a29b0b3",
+      "role": "checkpoints",
+      "required": true,
+      "url": "https://civitai.com/api/download/models/290640?fileId=228616",
+      "auth": "civitai",
+      "checked": true
+    },
+    {
+      "dest": "checkpoints/SDXL_RealVisXL_v5_Photoreal.safetensors",
+      "bytes": 6938065488,
+      "sha256": "6a35a7855770ae9820a3c931d4964c3817b6d9e3c6f9c4dabb5b3a94e5643b80",
+      "role": "checkpoints",
+      "required": true,
+      "url": "https://civitai.com/api/download/models/789646?fileId=703211",
+      "auth": "civitai",
+      "checked": true
+    },
+    {
+      "dest": "cyberrealistic_final.safetensors",
+      "bytes": 2132651162,
+      "sha256": "2209c07b331a06cb28cf7c830ec758ae5b49eb97fab21f5de6b18c7be8b41554",
+      "role": "root",
+      "required": true,
+      "url": "https://civitai.com/api/download/models/2681234?fileId=2567874",
+      "auth": "civitai",
+      "checked": true
+    },
+    {
+      "dest": "diffusion_models/Chroma1-HD.safetensors",
+      "bytes": 17800038288,
+      "sha256": "d446d9695d08276f61e53653e025289dd96f7a489c27982a1fa54ecabc06642a",
+      "role": "diffusion_models",
+      "required": true,
+      "url": "https://civitai.com/api/download/models/2164239?fileId=2057547",
+      "auth": "civitai",
+      "checked": true
+    },
+    {
+      "dest": "diffusion_models/wan2.2_ti2v_5B_fp16.safetensors",
+      "bytes": 9999658848,
+      "sha256": "456f901338bd9eadbded3828b819109a9b68e8a525ca5cf8d0049a69fcfeca1e",
+      "role": "diffusion_models",
+      "required": true,
+      "url": "https://civitai.com/api/download/models/2057016?fileId=1953835",
+      "auth": "civitai",
+      "checked": true
+    },
+    {
+      "dest": "loras/FLUX_Realism.safetensors",
+      "bytes": 22431400,
+      "sha256": "0a83a924b822b70b5e458d27935ebfa7713edaee04ff9f194209525354031eca",
+      "role": "loras",
+      "required": true,
+      "url": "https://civitai.com/api/download/models/706529?fileId=621159",
+      "auth": "civitai",
+      "checked": true
+    },
+    {
+      "dest": "loras/FLUX_Storybook_FrostingLane.safetensors",
+      "bytes": 171969568,
+      "sha256": "500bc0cf4b2b538450e21c475f633f041cbd08b3d8275a975f8780afdcc3847d",
+      "role": "loras",
+      "required": true,
+      "url": "https://civitai.com/api/download/models/712678?fileId=627336",
+      "auth": "civitai",
+      "checked": true
+    },
+    {
+      "dest": "loras/SDXL_3DRenderStyle.safetensors",
+      "bytes": 85450700,
+      "sha256": "393de3e04d956b13ac1a41c3a932e196330ad03d7a70abc2a174d911376ec397",
+      "role": "loras",
+      "required": true,
+      "url": null,
+      "auth": "none",
+      "checked": false
+    },
+    {
+      "dest": "loras/SDXL_ClayAnimation.safetensors",
+      "bytes": 170540036,
+      "sha256": "1ab7e69b8c5118918bab5a193c2c85497f7138eec081da51d7ef7b54f0efe006",
+      "role": "loras",
+      "required": true,
+      "url": "https://civitai.com/api/download/models/159616?fileId=119998",
+      "auth": "civitai",
+      "checked": true
+    },
+    {
+      "dest": "loras/SDXL_PixelArt.safetensors",
+      "bytes": 170543052,
+      "sha256": "4234637cb80c998f41e348e6a6cb6bc20d8d038b2b0f256b6129b3b5e353eef7",
+      "role": "loras",
+      "required": true,
+      "url": "https://civitai.com/api/download/models/130580?fileId=94718",
+      "auth": "civitai",
+      "checked": true
+    },
+    {
+      "dest": "text_encoders/clip_l.safetensors",
+      "bytes": 246144152,
+      "sha256": "660c6f5b1abae9dc498ac2d21e1347d2abdb0cf6c0c0c8576cd796491d9a6cdd",
+      "role": "text_encoders",
+      "required": true,
+      "url": "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors",
+      "auth": "none",
+      "checked": true
+    },
+    {
+      "dest": "text_encoders/t5xxl_fp8_e4m3fn.safetensors",
+      "bytes": 4893934904,
+      "sha256": "7d330da4816157540d6bb7838bf63a0f02f573fc48ca4d8de34bb0cbfd514f09",
+      "role": "text_encoders",
+      "required": true,
+      "url": "https://civitai.com/api/download/models/787922?fileId=701365",
+      "auth": "civitai",
+      "checked": true
+    },
+    {
+      "dest": "text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      "bytes": 6735906897,
+      "sha256": "c3355d30191f1f066b26d93fba017ae9809dce6c627dda5f6a66eaa651204f68",
+      "role": "text_encoders",
+      "required": true,
+      "url": "https://civitai.com/api/download/models/1464054?fileId=1366824",
+      "auth": "civitai",
+      "checked": true
+    },
+    {
+      "dest": "upscale_models/4x-UltraSharp.safetensors",
+      "bytes": 66864028,
+      "sha256": "36a340b5509b699d2c06cb445ddc1d3d39199ac734d889ed6d7915f60e05bcbc",
+      "role": "upscale_models",
+      "required": true,
+      "url": "https://huggingface.co/Kim2091/UltraSharp/resolve/main/4x-UltraSharp.safetensors",
+      "auth": "none",
+      "checked": true
+    },
+    {
+      "dest": "vae/flux_ae.safetensors",
+      "bytes": 335304388,
+      "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38",
+      "role": "vae",
+      "required": true,
+      "url": "https://civitai.com/api/download/models/711305?fileId=625974",
+      "auth": "civitai",
+      "checked": true
+    },
+    {
+      "dest": "vae/wan2.2_vae.safetensors",
+      "bytes": 1409400960,
+      "sha256": "e40321bd36b9709991dae2530eb4ac303dd168276980d3e9bc4b6e2b75fed156",
+      "role": "vae",
+      "required": true,
+      "url": "https://civitai.com/api/download/models/2056931?fileId=1953701",
+      "auth": "civitai",
+      "checked": true
+    }
+  ]
+}

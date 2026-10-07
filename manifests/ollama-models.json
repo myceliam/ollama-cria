@@ -1,0 +1,416 @@
+{
+  "$schema": "./schemas/ollama-models.schema.json",
+  "formatVersion": 1,
+  "ollamaVersion": "0.35.1",
+  "note": "Written by tools/Sync-StackManifests.ps1. Stage 6a pulls every registry model and checks its digest, then builds each modelfile model from its base.",
+  "models": [
+    {
+      "name": "command-r7b:latest",
+      "digest": "ff4e9696ef9f19b62e3f7d7261c95dcc9bb15a7c0398493366d851119fe2e1ef",
+      "bytes": 5057031198,
+      "family": "cohere2",
+      "parameterSize": "8.0B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "deepseek-coder-v2:latest",
+      "digest": "63fb193b3a9b4322a18e8c6b250ca2e70a5ff531e962dbf95ba089b2566f2fa5",
+      "bytes": 8905126121,
+      "family": "deepseek2",
+      "parameterSize": "15.7B",
+      "quantization": "Q4_0",
+      "source": "registry"
+    },
+    {
+      "name": "deepseek-r1:14b",
+      "digest": "c333b7232bdb521236694ffbb5f5a6b11cc45d98e9142c73123b670fca400b09",
+      "bytes": 8988112209,
+      "family": "qwen2",
+      "parameterSize": "14.8B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "gemma3:12b",
+      "digest": "f4031aab637d1ffa37b42570452ae0e4fad0314754d17ded67322e4b95836f8a",
+      "bytes": 8149190253,
+      "family": "gemma3",
+      "parameterSize": "12.2B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "gemma4-code:12b",
+      "digest": "6696b72de4a15fdf9bdab90ff8a828d45669f291e01f95f269d182932b003668",
+      "bytes": 7556508084,
+      "family": "gemma4",
+      "parameterSize": "11.9B",
+      "quantization": "Q4_K_M",
+      "source": "modelfile",
+      "base": "gemma4:12b",
+      "modelfile": "stack/modelfiles/gemma4-code_12b.Modelfile"
+    },
+    {
+      "name": "gemma4:12b",
+      "digest": "4eb23ef187e2c5462566d6a1d3bbbc2f1346d0b4327cbb66d58fffbcc9b2b05c",
+      "bytes": 7556508396,
+      "family": "gemma4",
+      "parameterSize": "11.9B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "gemma4:26b",
+      "digest": "08ae7ec1744bd7f451c4a530afb39d2673ad9d07a8369b8a33a3613b41212a68",
+      "bytes": 18604148513,
+      "family": "gemma4",
+      "parameterSize": "25.2B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "gemma4:e2b",
+      "digest": "7fbdbf8f5e45a75bb122155ed546e765b4d9c53a1285f62fd9f506baa1c5a47e",
+      "bytes": 7162405886,
+      "family": "gemma4",
+      "parameterSize": "5.1B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "gpt-oss:20b",
+      "digest": "17052f91a42e97930aa6e28a6c6c06a983e6a58dbb00434885a0cf5313e376f7",
+      "bytes": 13793441244,
+      "family": "gptoss",
+      "parameterSize": "20.9B",
+      "quantization": "MXFP4",
+      "source": "registry"
+    },
+    {
+      "name": "granite4.2:3b",
+      "digest": "40577dc168a3a9ad34e9a1234e0c2570be86097fa75a236d4574ae985705d3c4",
+      "bytes": 2244023965,
+      "family": "granite",
+      "parameterSize": "3.7B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "granite4.2:8b",
+      "digest": "f586c02fdecdf151b656207c339aa003997345774a41768bac1fd6d2fb85913b",
+      "bytes": 5347929757,
+      "family": "granite",
+      "parameterSize": "8.8B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "huihui_ai/deepseek-r1-abliterated:14b",
+      "digest": "6b2209ffd7582e8310a4b3a99691b7e7253be608fe38b3d6d97cd3b9b1844ff4",
+      "bytes": 8988112488,
+      "family": "qwen2",
+      "parameterSize": "14.8B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "huihui_ai/gemma-4-abliterated:12b",
+      "digest": "526eca3f97570d4ad7fea7ca1d91d2b85f9ad5014e4b0f6cc10d22621f2e70d5",
+      "bytes": 7556507919,
+      "family": "gemma4",
+      "parameterSize": "11.9B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "huihui_ai/gemma-4-abliterated:26b",
+      "digest": "114865317d3cbd3e1375dc5c0329bca90817acf673667a8adc958ed45b5e979b",
+      "bytes": 17987581282,
+      "family": "gemma4",
+      "parameterSize": "25.8B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "huihui_ai/gemma-4-abliterated:e2b",
+      "digest": "7c4fbc4573d646fa7a2bcd940cd682a57c5717fcd1b48fd96ea45b1ef24d499f",
+      "bytes": 7162405953,
+      "family": "gemma4",
+      "parameterSize": "5.1B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "huihui_ai/gemma-4-abliterated:latest",
+      "digest": "67405a76bb3aef4bab88707644504d05a413779ccc942e5fdd37151f7f2f5cc3",
+      "bytes": 9608350785,
+      "family": "gemma4",
+      "parameterSize": "8.0B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "huihui_ai/huihui-4:8b",
+      "digest": "6351e4a67645d072c6ae2219c5543929895b34c16704461945e12aaec7eeaaa6",
+      "bytes": 6607505505,
+      "family": "gemma4",
+      "parameterSize": "8.7B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "huihui_ai/qwen2.5-coder-abliterate:14b",
+      "digest": "ac9889decebb11a8bd5bddcc52553843f521fd87f1d8d210e4b6cfe5da77f522",
+      "bytes": 8988124423,
+      "family": "qwen2",
+      "parameterSize": "14.8B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "huihui_ai/qwen3-abliterated:14b",
+      "digest": "fa0eaa5098bc2a63a999917635534a3b0722c777346c81cc085fde4240b1e2cf",
+      "bytes": 9001762501,
+      "family": "qwen3",
+      "parameterSize": "14.8B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "huihui_ai/qwen3.5-abliterated:27b",
+      "digest": "e9ff39f1ea000e961c6e8be8165592dedc0d91eaf450169d55369d54cc86da0c",
+      "bytes": 17420432772,
+      "family": "qwen35",
+      "parameterSize": "27.8B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "huihui_ai/qwen3.5-abliterated:9b",
+      "digest": "92a443adb124f5e805bbdee23fdb38fcd22a7bf00a1016b53f764e741369c600",
+      "bytes": 6594474755,
+      "family": "qwen35",
+      "parameterSize": "9.7B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "huihui_ai/Qwen3.6-abliterated:27b",
+      "digest": "418838acbea7dad6eca43e2f74519307235e62b584e08ab7a6e7d6916cff7507",
+      "bytes": 17420432805,
+      "family": "qwen35",
+      "parameterSize": "27.8B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "huihui_ai/Qwen3.8-abliterated:27b",
+      "digest": "bdc5e13cd1645bc409e95a7d9e864dc3ce3e5fe5beeb24a43c193e8041edd3e0",
+      "bytes": 17741871954,
+      "family": "qwen35",
+      "parameterSize": "27.3B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "Llama3.1:8b",
+      "digest": "46e0c10c039e019119339687c3c1757cc81b9da49709a3b3924863ba87ca666e",
+      "bytes": 4920753328,
+      "family": "llama",
+      "parameterSize": "8.0B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "llama3.2:3b",
+      "digest": "a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72",
+      "bytes": 2019393189,
+      "family": "llama",
+      "parameterSize": "3.2B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "medgemma:4b",
+      "digest": "9fe4e9a6c9bda2d007bb595515550eafbc8e226622adff9257f3241eba334c4d",
+      "bytes": 3338942556,
+      "family": "gemma3",
+      "parameterSize": "4.3B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "ministral-3:14b",
+      "digest": "4760c35aeb9d9e9c6174c2492562c0b999e80a222804fd96b1915ab72bbcdcf7",
+      "bytes": 9082537546,
+      "family": "mistral3",
+      "parameterSize": "13.9B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "ministral-3:3b",
+      "digest": "f04aa1c738f64e13c625b82ae92504fc0260fa6723b509ed1ece0fa188179b1d",
+      "bytes": 2953840808,
+      "family": "mistral3",
+      "parameterSize": "3.8B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "ministral-3:8b",
+      "digest": "1922accd5827ebe6829e536369195db25eaf664528dc66206d646ea3bb386b71",
+      "bytes": 6022236616,
+      "family": "mistral3",
+      "parameterSize": "8.9B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "mxbai-embed-large:latest",
+      "digest": "468836162de7f81e041c43663fedbbba921dcea9b9fefea135685a39b2d83dd8",
+      "bytes": 669615493,
+      "family": "bert",
+      "parameterSize": "334M",
+      "quantization": "F16",
+      "source": "registry"
+    },
+    {
+      "name": "nomic-embed-text:latest",
+      "digest": "0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f",
+      "bytes": 274302450,
+      "family": "nomic-bert",
+      "parameterSize": "137M",
+      "quantization": "F16",
+      "source": "registry"
+    },
+    {
+      "name": "ornith-1.5:9b",
+      "digest": "e5df7dcdd8a263994df62d610317e07be0d6af23f96fcbd8543273058fce575e",
+      "bytes": 6550813657,
+      "family": "qwen35",
+      "parameterSize": "9.0B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "phi4-reasoning:plus",
+      "digest": "f0ad3edce8e497d8c209d2ccb3f3ea6adf98944a5b9fd944a6c54e1786c361bd",
+      "bytes": 11117503233,
+      "family": "phi3",
+      "parameterSize": "14.7B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "qwen2.5:1.5b",
+      "digest": "65ec06548149b04c096a120e4a6da9d4017ea809c91734ea5631e89f96ddc57b",
+      "bytes": 986061892,
+      "family": "qwen2",
+      "parameterSize": "1.5B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "qwen2.5:3b",
+      "digest": "357c53fb659c5076de1d65ccb0b397446227b71a42be9d1603d46168015c9e4b",
+      "bytes": 1929912432,
+      "family": "qwen2",
+      "parameterSize": "3.1B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "qwen2.5vl:7b",
+      "digest": "5ced39dfa4bac325dc183dd1e4febaa1c46b3ea28bce48896c8e69c1e79611cc",
+      "bytes": 5969245856,
+      "family": "qwen25vl",
+      "parameterSize": "8.3B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "qwen25-coder:14b",
+      "digest": "08067bb0f1a7545e6a1605f09884f7eda166168436082043577590ef804a1cb3",
+      "bytes": 8988124076,
+      "family": "qwen2",
+      "parameterSize": "14.8B",
+      "quantization": "Q4_K_M",
+      "source": "modelfile",
+      "base": "huihui_ai/qwen2.5-coder-abliterate:14b",
+      "modelfile": "stack/modelfiles/qwen25-coder_14b.Modelfile"
+    },
+    {
+      "name": "qwen3-vl:8b",
+      "digest": "901cae73216286ea8c5aba8b46d307ff7188f737285ec500c795a12f05225d28",
+      "bytes": 6140415879,
+      "family": "qwen3vl",
+      "parameterSize": "8.8B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "qwen3:8b",
+      "digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+      "bytes": 5225388164,
+      "family": "qwen3",
+      "parameterSize": "8.2B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "qwen3.5-agent:9b",
+      "digest": "517fccdce3979cde17e884d460fcb5bcc6295737bfa1e8b102a7d3bc6e206497",
+      "bytes": 6594474496,
+      "family": "qwen35",
+      "parameterSize": "9.7B",
+      "quantization": "Q4_K_M",
+      "source": "modelfile",
+      "base": "huihui_ai/qwen3.5-abliterated:9b",
+      "modelfile": "stack/modelfiles/qwen3.5-agent_9b.Modelfile"
+    },
+    {
+      "name": "qwen3.5-code:27b",
+      "digest": "0bfaa296311e710b8e92ff6fbb910a66c76bc3358475bbd096bfb1edc7b36c94",
+      "bytes": 17420432490,
+      "family": "qwen35",
+      "parameterSize": "27.8B",
+      "quantization": "Q4_K_M",
+      "source": "modelfile",
+      "base": "huihui_ai/qwen3.5-abliterated:27b",
+      "modelfile": "stack/modelfiles/qwen3.5-code_27b.Modelfile"
+    },
+    {
+      "name": "qwen3.5-code:9b",
+      "digest": "9de39cb931bcb3483e40e72493aa8c42e5480245253c5d7815889c29ea453c7f",
+      "bytes": 6594474473,
+      "family": "qwen35",
+      "parameterSize": "9.7B",
+      "quantization": "Q4_K_M",
+      "source": "modelfile",
+      "base": "huihui_ai/qwen3.5-abliterated:9b",
+      "modelfile": "stack/modelfiles/qwen3.5-code_9b.Modelfile"
+    },
+    {
+      "name": "qwen3.5:9b",
+      "digest": "6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7",
+      "bytes": 6594474711,
+      "family": "qwen35",
+      "parameterSize": "9.7B",
+      "quantization": "Q4_K_M",
+      "source": "registry"
+    },
+    {
+      "name": "qwen3.8-fixed:27b",
+      "digest": "3aca5f8edc5a6160864303263953d99119617de209a2ea5be2792ed24472539f",
+      "bytes": 17741871958,
+      "family": "qwen35",
+      "parameterSize": "27.3B",
+      "quantization": "Q4_K_M",
+      "source": "modelfile",
+      "base": "huihui_ai/Qwen3.8-abliterated:27b",
+      "modelfile": "stack/modelfiles/qwen38-fixed.Modelfile"
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "$schema": "./schemas/ollama-env.schema.json",
+  "formatVersion": 1,
+  "scope": "Machine",
+  "note": "Written by tools/Sync-StackManifests.ps1. Stage 3c writes each variable at Machine scope, removes any OLLAMA_* at User scope, then restarts Ollama.",
+  "variables": [
+    {
+      "name": "HF_HOME",
+      "value": "D:\\ai\\hf-cache"
+    },
+    {
+      "name": "OLLAMA_FLASH_ATTENTION",
+      "value": "1"
+    },
+    {
+      "name": "OLLAMA_GPU_OVERHEAD",
+      "value": "1073741824"
+    },
+    {
+      "name": "OLLAMA_HOST",
+      "value": "127.0.0.1:11434"
+    },
+    {
+      "name": "OLLAMA_KEEP_ALIVE",
+      "value": "45s"
+    },
+    {
+      "name": "OLLAMA_KV_CACHE_TYPE",
+      "value": "q8_0"
+    },
+    {
+      "name": "OLLAMA_MAX_LOADED_MODELS",
+      "value": "1"
+    },
+    {
+      "name": "OLLAMA_MAX_QUEUE",
+      "value": "512"
+    },
+    {
+      "name": "OLLAMA_MODELS",
+      "value": "E:\\ollama-models"
+    },
+    {
+      "name": "OLLAMA_NUM_PARALLEL",
+      "value": "1"
+    }
+  ]
+}

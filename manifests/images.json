@@ -1,0 +1,373 @@
+{
+  "$schema": "./schemas/images.schema.json",
+  "formatVersion": 1,
+  "note": "Written by tools/Sync-StackManifests.ps1. The image behind every container when it was captured. Stage 5b and 7a pull registry images at these digests and build the local ones before any container is created.",
+  "pc": [
+    {
+      "container": "bolt",
+      "project": "ollama",
+      "state": "running",
+      "image": "bolt-baked:pinned",
+      "imageId": "sha256:a7de33f2a1475ff10dff8d5daa55f0a874db461717a8fc4d4b0dbeb86f3688f9",
+      "imageStored": false,
+      "repoDigests": []
+    },
+    {
+      "container": "dozzle",
+      "project": "ollama",
+      "state": "running",
+      "image": "amir20/dozzle:v10.6.7",
+      "imageId": "sha256:43d933ebda116990c920e054d68a1aed286ab01fd31657983c53bbdf46cc0aa8",
+      "imageStored": true,
+      "repoDigests": [
+        "amir20/dozzle@sha256:43d933ebda116990c920e054d68a1aed286ab01fd31657983c53bbdf46cc0aa8"
+      ]
+    },
+    {
+      "container": "gcal-owui-bridge",
+      "project": "ollama",
+      "state": "running",
+      "image": "ollama-gcal-owui-bridge",
+      "imageId": "sha256:c2138e7e405fabf282afd8b9c1d42e1163fefdfe35296de5e2ae874f0d7566a2",
+      "imageStored": false,
+      "repoDigests": []
+    },
+    {
+      "container": "gmail-owui-bridge",
+      "project": "gmail-owui-bridge",
+      "state": "running",
+      "image": "gmail-owui-bridge-gmail-owui-bridge",
+      "imageId": "sha256:913f87a4cce55fba55e440ea4d88f46aabdfe08d1c82be53675b1bbdc96c6fd6",
+      "imageStored": false,
+      "repoDigests": []
+    },
+    {
+      "container": "homelab-dashboard",
+      "project": "cline-dashboard",
+      "state": "running",
+      "image": "cline-dashboard-dashboard",
+      "imageId": "sha256:97913cfe64d116122b1882ec8d9c19a31dcbc3c4e4f278d63d7755390bffe498",
+      "imageStored": true,
+      "repoDigests": [
+        "cline-dashboard-dashboard@sha256:97913cfe64d116122b1882ec8d9c19a31dcbc3c4e4f278d63d7755390bffe498"
+      ]
+    },
+    {
+      "container": "jina-reader",
+      "project": "ollama",
+      "state": "exited",
+      "image": "ghcr.io/intergalacticalvariable/reader@sha256:1860898a857a2655b3d4c9334f64bc9acb736d854fac488a1fcc81bb284a5b5f",
+      "imageId": "sha256:1860898a857a2655b3d4c9334f64bc9acb736d854fac488a1fcc81bb284a5b5f",
+      "imageStored": true,
+      "repoDigests": [
+        "ghcr.io/intergalacticalvariable/reader@sha256:1860898a857a2655b3d4c9334f64bc9acb736d854fac488a1fcc81bb284a5b5f"
+      ]
+    },
+    {
+      "container": "mcpo-core",
+      "project": "ollama",
+      "state": "running",
+      "image": "mcpo-core-baked:pinned",
+      "imageId": "sha256:cb64d091593932449d5dbf07c87addb1ef9d8e181dd54754e8e59e2f2a8340a2",
+      "imageStored": false,
+      "repoDigests": []
+    },
+    {
+      "container": "ntfy",
+      "project": "ollama",
+      "state": "running",
+      "image": "binwiederhier/ntfy:v2.27.0",
+      "imageId": "sha256:f2419f405127afa868f10985c1a41449e673477cee1eb19994339a5ae8b592e7",
+      "imageStored": true,
+      "repoDigests": [
+        "binwiederhier/ntfy@sha256:f2419f405127afa868f10985c1a41449e673477cee1eb19994339a5ae8b592e7"
+      ]
+    },
+    {
+      "container": "open-terminal",
+      "project": "ollama",
+      "state": "running",
+      "image": "ghcr.io/open-webui/open-terminal:latest",
+      "imageId": "sha256:81a5394b3cd4ae32adb600f2135f09ee124de37f26b0a780e2f5692472c0fc5c",
+      "imageStored": true,
+      "repoDigests": [
+        "ghcr.io/open-webui/open-terminal@sha256:81a5394b3cd4ae32adb600f2135f09ee124de37f26b0a780e2f5692472c0fc5c"
+      ]
+    },
+    {
+      "container": "open-webui",
+      "project": "ollama",
+      "state": "running",
+      "image": "ghcr.io/open-webui/open-webui:latest",
+      "imageId": "sha256:8b432fe0a65b91116afc7961365c6cca5379cc923171386a96691f3471f3cae9",
+      "imageStored": true,
+      "repoDigests": [
+        "ghcr.io/open-webui/open-webui@sha256:8b432fe0a65b91116afc7961365c6cca5379cc923171386a96691f3471f3cae9"
+      ]
+    },
+    {
+      "container": "playwright-mcp",
+      "project": "ollama",
+      "state": "running",
+      "image": "mcr.microsoft.com/playwright/mcp:latest",
+      "imageId": "sha256:77dccc5ce9e94cb8ae7ebea87ddbb6cd54b05760c4d63c54e16accf2726b8734",
+      "imageStored": true,
+      "repoDigests": [
+        "mcr.microsoft.com/playwright/mcp@sha256:77dccc5ce9e94cb8ae7ebea87ddbb6cd54b05760c4d63c54e16accf2726b8734"
+      ]
+    },
+    {
+      "container": "searxng",
+      "project": "ollama",
+      "state": "exited",
+      "image": "searxng/searxng:2026.7.7-f69b22c45",
+      "imageId": "sha256:02aa607ecc87165ebe6212476a176b8984d891c01a2d130ad03a58109d13db77",
+      "imageStored": true,
+      "repoDigests": [
+        "searxng/searxng@sha256:02aa607ecc87165ebe6212476a176b8984d891c01a2d130ad03a58109d13db77"
+      ]
+    },
+    {
+      "container": "searxng-mcp",
+      "project": "ollama",
+      "state": "exited",
+      "image": "mcpo-core-baked:pinned",
+      "imageId": "sha256:394f58eb015104e907514e6b3e8c711e22807caabf45db10952721c48d35e42d",
+      "imageStored": false,
+      "repoDigests": []
+    },
+    {
+      "container": "tika",
+      "project": "ollama",
+      "state": "running",
+      "image": "apache/tika:latest-full",
+      "imageId": "sha256:80072bb73dd320a9de9709beb0b16d14dd6d2680376f8d31e498f55b633ba593",
+      "imageStored": true,
+      "repoDigests": [
+        "apache/tika@sha256:80072bb73dd320a9de9709beb0b16d14dd6d2680376f8d31e498f55b633ba593"
+      ]
+    },
+    {
+      "container": "web-vps-relay",
+      "project": "ollama",
+      "state": "running",
+      "image": "python@sha256:423ed6ab25b1921a477529254bfeeabf5855151dc2c3141699a1bfc852199fbf",
+      "imageId": "sha256:423ed6ab25b1921a477529254bfeeabf5855151dc2c3141699a1bfc852199fbf",
+      "imageStored": true,
+      "repoDigests": [
+        "python@sha256:423ed6ab25b1921a477529254bfeeabf5855151dc2c3141699a1bfc852199fbf"
+      ]
+    }
+  ],
+  "vps": [
+    {
+      "container": "dozzle",
+      "project": "ollama",
+      "state": "exited",
+      "image": "amir20/dozzle:v10.6.7",
+      "imageId": "sha256:43d933ebda116990c920e054d68a1aed286ab01fd31657983c53bbdf46cc0aa8",
+      "imageStored": true,
+      "repoDigests": [
+        "amir20/dozzle@sha256:43d933ebda116990c920e054d68a1aed286ab01fd31657983c53bbdf46cc0aa8"
+      ]
+    },
+    {
+      "container": "gcal-owui-bridge",
+      "project": "ollama",
+      "state": "exited",
+      "image": "ollama-gcal-owui-bridge",
+      "imageId": "sha256:f79f1fea6b9ae31d096421fd03466472d9d941b1399f34ced844d06b28eda954",
+      "imageStored": true,
+      "repoDigests": [
+        "ollama-gcal-owui-bridge@sha256:f79f1fea6b9ae31d096421fd03466472d9d941b1399f34ced844d06b28eda954"
+      ]
+    },
+    {
+      "container": "gmail-owui-bridge",
+      "project": "ollama",
+      "state": "exited",
+      "image": "ollama-gmail-owui-bridge",
+      "imageId": "sha256:5229bd7d11a0ace0c8c1ec6268a64bf43878a46ea087721339badc5706bb677c",
+      "imageStored": true,
+      "repoDigests": [
+        "ollama-gmail-owui-bridge@sha256:5229bd7d11a0ace0c8c1ec6268a64bf43878a46ea087721339badc5706bb677c"
+      ]
+    },
+    {
+      "container": "kokoro-tts",
+      "project": "kokoro",
+      "state": "running",
+      "image": "ghcr.io/remsky/kokoro-fastapi-cpu:v0.5.0",
+      "imageId": "sha256:bcf38f9bf7f040b0465dd4352eb0fa0b2db42d4bd91eba16acef0b40e5c57905",
+      "imageStored": true,
+      "repoDigests": [
+        "ghcr.io/remsky/kokoro-fastapi-cpu@sha256:bcf38f9bf7f040b0465dd4352eb0fa0b2db42d4bd91eba16acef0b40e5c57905"
+      ]
+    },
+    {
+      "container": "mcpo-core",
+      "project": "ollama",
+      "state": "exited",
+      "image": "mcpo-core-baked:pinned",
+      "imageId": "sha256:afd7c799fceebdbe3c7209a70ea8f862e4e1a1531c9334b0d32cb9d5d79e8bd4",
+      "imageStored": true,
+      "repoDigests": [
+        "mcpo-core-baked@sha256:afd7c799fceebdbe3c7209a70ea8f862e4e1a1531c9334b0d32cb9d5d79e8bd4"
+      ]
+    },
+    {
+      "container": "ntfy",
+      "project": "ollama",
+      "state": "exited",
+      "image": "binwiederhier/ntfy:v2.27.0",
+      "imageId": "sha256:f2419f405127afa868f10985c1a41449e673477cee1eb19994339a5ae8b592e7",
+      "imageStored": true,
+      "repoDigests": [
+        "binwiederhier/ntfy@sha256:f2419f405127afa868f10985c1a41449e673477cee1eb19994339a5ae8b592e7"
+      ]
+    },
+    {
+      "container": "open-terminal",
+      "project": "ollama",
+      "state": "exited",
+      "image": "ghcr.io/open-webui/open-terminal@sha256:3af1a1aab49d653d357a5176c9862af0111ccf4b8b3a5f2bbdef109f196aeca7",
+      "imageId": "sha256:3af1a1aab49d653d357a5176c9862af0111ccf4b8b3a5f2bbdef109f196aeca7",
+      "imageStored": true,
+      "repoDigests": [
+        "ghcr.io/open-webui/open-terminal@sha256:3af1a1aab49d653d357a5176c9862af0111ccf4b8b3a5f2bbdef109f196aeca7"
+      ]
+    },
+    {
+      "container": "open-webui",
+      "project": "ollama",
+      "state": "exited",
+      "image": "ghcr.io/open-webui/open-webui@sha256:6a773e5c3a246b65cbe74ce942b294292c0e5f81c138f703d111bc162f7d7c3d",
+      "imageId": "sha256:6a773e5c3a246b65cbe74ce942b294292c0e5f81c138f703d111bc162f7d7c3d",
+      "imageStored": true,
+      "repoDigests": [
+        "ghcr.io/open-webui/open-webui@sha256:6a773e5c3a246b65cbe74ce942b294292c0e5f81c138f703d111bc162f7d7c3d"
+      ]
+    },
+    {
+      "container": "playwright-mcp",
+      "project": "ollama",
+      "state": "exited",
+      "image": "mcr.microsoft.com/playwright/mcp:latest",
+      "imageId": "sha256:18c0a9c934004fe9580cc79f1e8e6e6cde7c667348b215335e8a23fd3e509804",
+      "imageStored": true,
+      "repoDigests": [
+        "mcr.microsoft.com/playwright/mcp@sha256:18c0a9c934004fe9580cc79f1e8e6e6cde7c667348b215335e8a23fd3e509804"
+      ]
+    },
+    {
+      "container": "searxng",
+      "project": "ollama",
+      "state": "exited",
+      "image": "searxng/searxng:2026.7.7-f69b22c45",
+      "imageId": "sha256:02aa607ecc87165ebe6212476a176b8984d891c01a2d130ad03a58109d13db77",
+      "imageStored": true,
+      "repoDigests": [
+        "searxng/searxng@sha256:02aa607ecc87165ebe6212476a176b8984d891c01a2d130ad03a58109d13db77"
+      ]
+    },
+    {
+      "container": "searxng-mcp",
+      "project": "ollama",
+      "state": "exited",
+      "image": "mcpo-core-baked:pinned",
+      "imageId": "sha256:afd7c799fceebdbe3c7209a70ea8f862e4e1a1531c9334b0d32cb9d5d79e8bd4",
+      "imageStored": true,
+      "repoDigests": [
+        "mcpo-core-baked@sha256:afd7c799fceebdbe3c7209a70ea8f862e4e1a1531c9334b0d32cb9d5d79e8bd4"
+      ]
+    },
+    {
+      "container": "tika",
+      "project": "ollama",
+      "state": "exited",
+      "image": "apache/tika:latest-full",
+      "imageId": "sha256:d8e6ed96260ad89307a93195a1b856102987a818ac648502f8efbaf313d32470",
+      "imageStored": true,
+      "repoDigests": [
+        "apache/tika@sha256:d8e6ed96260ad89307a93195a1b856102987a818ac648502f8efbaf313d32470"
+      ]
+    },
+    {
+      "container": "vps-web-brave-jina-gateway",
+      "project": "owui-web-egress",
+      "state": "running",
+      "image": "python@sha256:dd29372629eeba2dd003fd9e9d35a5b8236c44727875a0364254b5127af88e65",
+      "imageId": "sha256:dd29372629eeba2dd003fd9e9d35a5b8236c44727875a0364254b5127af88e65",
+      "imageStored": true,
+      "repoDigests": [
+        "python@sha256:dd29372629eeba2dd003fd9e9d35a5b8236c44727875a0364254b5127af88e65"
+      ]
+    },
+    {
+      "container": "vps-web-gluetun",
+      "project": "owui-web-egress",
+      "state": "running",
+      "image": "qmcgaw/gluetun:v3",
+      "imageId": "sha256:fa19cc76b2af13d57a8d3dc3066f2ada061b1c761b8aecf989b3877c0486e027",
+      "imageStored": true,
+      "repoDigests": [
+        "qmcgaw/gluetun@sha256:fa19cc76b2af13d57a8d3dc3066f2ada061b1c761b8aecf989b3877c0486e027"
+      ]
+    },
+    {
+      "container": "vps-web-jina-reader",
+      "project": "owui-web-egress",
+      "state": "running",
+      "image": "jina-reader-official-hardened:2026-09-24",
+      "imageId": "sha256:5f3baa12fc4f95e957b42ad41e1de81cd6b15cbed6de2924f76a7cc0cc94f3f7",
+      "imageStored": true,
+      "repoDigests": [
+        "jina-reader-official-hardened@sha256:5f3baa12fc4f95e957b42ad41e1de81cd6b15cbed6de2924f76a7cc0cc94f3f7"
+      ]
+    },
+    {
+      "container": "vps-web-jina-reader-test",
+      "project": "",
+      "state": "exited",
+      "image": "ghcr.io/jina-ai/reader:oss@sha256:f568549d0d9ba7c53e9dc245e08447d23990debf8bb764f269fda503f6c9c29c",
+      "imageId": "sha256:f568549d0d9ba7c53e9dc245e08447d23990debf8bb764f269fda503f6c9c29c",
+      "imageStored": true,
+      "repoDigests": [
+        "ghcr.io/jina-ai/reader@sha256:f568549d0d9ba7c53e9dc245e08447d23990debf8bb764f269fda503f6c9c29c"
+      ]
+    },
+    {
+      "container": "vps-web-proxy-relay",
+      "project": "owui-web-egress",
+      "state": "running",
+      "image": "alpine/socat:latest",
+      "imageId": "sha256:24220ef2c80a2a421ea08e4624488e985330c421b6aa3329bae14b0933a1d403",
+      "imageStored": true,
+      "repoDigests": [
+        "alpine/socat@sha256:24220ef2c80a2a421ea08e4624488e985330c421b6aa3329bae14b0933a1d403"
+      ]
+    },
+    {
+      "container": "vps-web-searxng",
+      "project": "owui-web-egress",
+      "state": "running",
+      "image": "searxng/searxng:2026.7.7-f69b22c45",
+      "imageId": "sha256:02aa607ecc87165ebe6212476a176b8984d891c01a2d130ad03a58109d13db77",
+      "imageStored": true,
+      "repoDigests": [
+        "searxng/searxng@sha256:02aa607ecc87165ebe6212476a176b8984d891c01a2d130ad03a58109d13db77"
+      ]
+    },
+    {
+      "container": "vps-web-searxng-mcp",
+      "project": "owui-web-egress",
+      "state": "running",
+      "image": "sha256:afd7c799fceebdbe3c7209a70ea8f862e4e1a1531c9334b0d32cb9d5d79e8bd4",
+      "imageId": "sha256:afd7c799fceebdbe3c7209a70ea8f862e4e1a1531c9334b0d32cb9d5d79e8bd4",
+      "imageStored": true,
+      "repoDigests": [
+        "mcpo-core-baked@sha256:afd7c799fceebdbe3c7209a70ea8f862e4e1a1531c9334b0d32cb9d5d79e8bd4"
+      ]
+    }
+  ]
+}
