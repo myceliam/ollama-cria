@@ -41,6 +41,13 @@
       ]
     },
     {
+      "file": "manifests/acceptance.json",
+      "placeholders": [
+        "PC_TS_IP",
+        "VPS_TS_IP"
+      ]
+    },
+    {
       "file": "stack/_support/scripts/scheduled/Watch-Fast.ps1",
       "placeholders": [
         "VPS_TS_IP",

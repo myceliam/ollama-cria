@@ -25,6 +25,8 @@
 | Stage 8 imports `OWUI-Stack-Startup` and `OWUI-mcpo-Watchdog` from their live XML, not with their installers (8d) | The live watchdog runs as S4U; its installer would make it interactive |
 | The ComfyUI firewall rule is the live one: TCP 8188 from the tailnet range and `127.0.0.1` (8a) | The containers reach ComfyUI from this PC through Docker Desktop, not from Docker's network |
 | Stage 3 installs Python 3.13 at `C:\Python313` | The PowerShell tool's task and scripts name that path. On the live PC it is gone, so that task fails at sign-in |
+| Stage 9's 🤖 rows test the services behind web search, page reading, speech, the bridges and the PowerShell tool directly, and each tool and function by loading its code | A model choosing to call a tool is not a safe, repeatable test; the 👤 rows cover the chat side |
+| Stage 9 checks each preset's tools and skills against the seed and asks it one prompt, except presets built on the `comfyui_studio` pipe | That pipe makes media (a 👤 row) |
 
 ### 🔄 What changed in v0.5 (the VPS stages are built)
 
@@ -738,29 +740,47 @@ A task is imported only when it is missing, and only once the scripts it runs (`
 
 > **Delivers:** proof that each capability **works**, not just that its container is up
 > **Where:** 🖥️ and 👤, from a browser and the phone
-> **Module:** 🛠️ `windows\stages\09-acceptance.ps1` with `manifests\acceptance.json`
+> **Module:** ✅ `windows\stages\09-acceptance.ps1` with `manifests\acceptance.json` and `linux\stages\09-reach.sh`
 
-`acceptance.json` has **one row per capability** (C-46): every tool (15), function (5), tool server (18), model preset (33), skill attachment and service. Each row says how to test it safely: a read-only call where possible, and a named 👤 checkpoint where the test has a real-world effect (sending a notification, posting, generating media). The table below groups those rows for Liam.
+`acceptance.json` has **one row per capability** (C-46). An 🤖 row holds one safe call: read-only, or a search, a page read or a short piece of speech, none of which changes anything outside the stack. A 👤 row is for something with a real-world effect (a notification, media, a voice in your ears) or something only you can see.
 
-| # | Capability | Test | Who |
+**What the stage does**
+
+1. **Coverage.** Every tool (15) and function (5) in the seed must be named by a row, and every tool server the seed switches on must match exactly one row. A gap either way is a failure: add or remove the row. A tool server row the seed does not switch on (for example `github`) is skipped.
+2. **The 🤖 rows**, one call each. The credentials come from the OWUI API key Stage 7 left and the `.env` files Stage 4 rendered. They stay in memory, and no answer is written down: the evidence holds only the HTTP status and whether the answer held what the row expects.
+3. **One row per model preset in the seed.** An active preset must show the seed's tools, skills, filters and actions in OWUI (each skill there, on or off as seeded) and answer *"Reply with the single word OK."* through OWUI's chat API, which saves no chat. A preset built on the `comfyui_studio` pipe is not asked, because it makes media: the media 👤 row covers it. An inactive preset is not asked either.
+
+Each failure names the stage that owns it. The stage stops at once if the seed is not in the repo or OWUI refuses the API key.
+
+| # | Capability | 🤖 rows | 👤 row |
 |---|---|---|---|
-| 1 | Local inference | Chat with a local Ollama model in OWUI | 👤 |
-| 2 | Cloud providers | One message each through the OpenAI, Anthropic and Cline connections | 👤 |
-| 3 | MCP tools | **Every** one of the 18 tool servers answers one safe read-only call | 🤖 |
-| 4 | Web search | `brave_search`, `brave_research` and SearXNG web search return results | 🤖 |
-| 5 | Page reading | `brave_reader` reads a page through Jina Reader | 🤖 |
-| 6 | Image and video | `generate_image`, `generate_video` and the `comfyui_studio` pipe produce output | 👤 |
-| 7 | STT | Dictate in OWUI; text appears (via the VPS relay to Groq) | 👤 |
-| 8 | TTS | Read aloud uses Kokoro `af_heart` from the VPS | 👤 |
-| 9 | Notifications | `ntfy_push` sends; the phone receives it | 👤 |
-| 10 | Calendar and Gmail | The bridges list events and messages; re-consent if a token expired | 👤 |
-| 11 | Filters | `brave_command_router` routes a command; the two Mermaid filters render a diagram | 👤 |
-| 12 | Bolt and open-terminal | Reachable from the VPS on the PC's new tailnet IP (3001, 18019) | 🤖 |
-| 13 | Model presets and skills | **Every** preset loads and answers one prompt; skills attached where the seed says | 🤖 |
-| 14 | Other tools | `local_subagent`, `cited_analysis`, `extract_schema`, `model_feature_manager`, `nvd_recent_cves`, `self_osint_footprint_recon_removal_uk`, `smart_read_aloud`, `windows_powershell`, `youtube_channel_videos`, `generate_audio` each pass their row | 🤖 / 👤 |
-| 15 | Dashboard and Dozzle | Both open through Serve | 👤 |
+| 1 | Local inference | Ollama lists its models | Chat with a local model; `ollama ps` shows 100% GPU (`local-chat`) |
+| 2 | Cloud providers | | One message each through OpenAI, Anthropic and Cline (`cloud-chat`) |
+| 3 | Tool servers | Each mcpo-core server answers one call with the stack's key (for example `time`: `get_current_time`; `memory`: `read_graph`; `shodan`: a DNS lookup, which uses no credits). `censys`, `security_tools` and `github` only list their tools: none of their tools is known to be free and read-only. open-terminal answers `GET /files/cwd`; both bridges serve their OpenAPI description | |
+| 4 | Web search | `brave_search` and `brave_research` load; the VPS gateway is up with its Brave key, and returns a search and a research answer; SearXNG returns results through the relay | |
+| 5 | Page reading | `brave_reader` loads; Jina Reader on the VPS reads a page through the gateway | |
+| 6 | Image and video | `generate_image`, `generate_video` and `comfyui_studio` load | Each makes something that opens (`media`) |
+| 7 | Speech to text | The Groq relay answers on the VPS's tailnet address | Dictate a sentence; the text appears (`stt`) |
+| 8 | Text to speech | Kokoro on the VPS speaks a sentence with `af_heart` | Read aloud uses `af_heart` (`tts`) |
+| 9 | Notifications | `ntfy_push` loads | One notification reaches the phone (`ntfy`) |
+| 10 | Calendar and Gmail | Both bridges hold a Google token; the gcal bridge lists the next day's events and the Gmail bridge reads the mailbox profile, live from Google. A failure here means re-consent (the bridge's `/auth/url`) | |
+| 11 | Filters | `brave_command_router` and both Mermaid filters load | A command routes; a Mermaid diagram renders (`filters`) |
+| 12 | Bolt and open-terminal | From the VPS, on the PC's new tailnet address: Bolt answers on 3001 (any answer: it wants a token), open-terminal's `/health` gives 200 on 18019 | |
+| 13 | Model presets and skills | Every preset, as above | |
+| 14 | Other tools | The 10 other tools load; the PowerShell tool's broker is up and runs one read-only command | Each tool once in a chat (`other-tools`) |
+| 15 | Dashboard and Dozzle | | Both open through Serve from the phone (`serve-pages`) |
 
-🛑 **Checkpoint 9:** every row in `acceptance.json` passes. A failure goes back to the stage that owns it.
+"Loads" means OWUI imports the tool's or function's code (`/valves/spec`), which also installs its requirements: a missing package fails here, not in your first chat.
+
+🛑 **Checkpoint 9**
+
+| Who | Check | Expected |
+|---|---|---|
+| 🤖 | Coverage | Every tool, function and tool server in the seed has a row |
+| 🤖 | Each group's 🤖 rows | All pass |
+| 👤 | Each 👤 row | Done, then run again with `-Accept local-chat,cloud-chat,media,stt,tts,ntfy,filters,other-tools,serve-pages` (or any of them as you go) |
+
+The checkpoint reads the results the last run recorded and calls nothing; to test again, run `-Stage 9 -Execute` (Stage 10 does, after the reboot).
 
 ---
 
@@ -830,7 +850,7 @@ A task is imported only when it is missing, and only once the scripts it runs (`
 | `start-stack.ps1` | ♻️ (C-27; a live change waiting for Liam, which Stage 8 applies itself meanwhile) | 8 |
 | `install-startup-task.ps1`, `install-mcpo-watchdog-task.ps1` | Not used: Stage 8 imports the live XML of both tasks | — |
 | `windows\stages\08-serve.ps1` | ✅ Module 9 | 8 |
-| `windows\stages\09-acceptance.ps1` | 🛠️ | 9 |
+| `windows\stages\09-acceptance.ps1`, `linux\stages\09-reach.sh` | ✅ Module 9 | 9 |
 | `windows\stages\10-rehearsal.ps1` | 🛠️ | 10 |
 | `tools\Collect-StackSecrets.ps1` | ✅ Modules 2 and 4. Rewritten to the shared versioned map; SQLite backup API for ntfy (C-03 to C-10) | before recovery, and 10 |
 | `Add-AIChange.ps1` | ✅ | 11 |
@@ -852,7 +872,7 @@ A task is imported only when it is missing, and only once the scripts it runs (`
 | `serve.json` | The seven Serve rules, no host names | `tools/Sync-StackManifests.ps1` |
 | `tasks.json`, `windows\tasks\*.xml` | Scheduled tasks (XML with `{{USER_SID}}`, `{{USER_ID}}`, `{{USER_PROFILE}}`), startup items, the stack scripts they run, and what is retired or left out | `tools/Sync-StackManifests.ps1` |
 | `images.json` | The image behind every PC and VPS container, its digests, and whether it is still stored | `tools/Sync-StackManifests.ps1` |
-| `acceptance.json` | One test row per capability (C-46) | Stage 9 |
+| `acceptance.json` | One test row per capability (C-46): a safe call or a 👤 step, and the stage a failure goes back to | Hand-kept (Module 9), checked against its schema and the seed schema's expected tools and functions |
 | `owui-seed\schema.json` | Field allowlist: repo-safe, secret reference or excluded (C-41) | 🛠️ |
 | `owui-seed\*.json` | Functional seed, with OWUI version, image digest and Alembic revision | 🛠️ `Export-OwuiSeed.py` |
 | `owui-api-consumers.json` | Every file that holds the OWUI API key: only the gcal bridge's `.env` | Hand-kept (Module 9), from reading the stack's code |

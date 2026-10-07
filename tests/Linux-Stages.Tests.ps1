@@ -349,3 +349,26 @@ Describe '05-services.sh' -Skip:$IsWindows {
         $r.Output | Should -Contain 'FACT egress-running 2/3'
     }
 }
+
+Describe '09-reach.sh' -Skip:$IsWindows {
+
+    It 'asks each address once from the VPS and reports only a name and a status' {
+        $b = New-Box
+        Set-Fake $b 'reach-3001' '401'
+        $pc = @('100', '64', '0', '7') -join '.'
+        $r = Invoke-Box $b '09-reach.sh' @() @("bolt-from-vps http://${pc}:3001/mcp", "terminal-from-vps http://${pc}:18019/health")
+        $r.ExitCode | Should -Be 0
+        $r.Output | Should -Be @('FACT reach_bolt-from-vps 401', 'FACT reach_terminal-from-vps 000', 'STEP asked 2 address(es) on the PC from the VPS')
+        $r.Output -join "`n" | Should -Not -Match ([regex]::Escape($pc))
+    }
+
+    It 'refuses a line that is not a name and a tailnet URL' {
+        $b = New-Box
+        $pc = @('100', '64', '0', '7') -join '.'
+        foreach ($line in 'bolt http://192.168.1.5:3001/', "Bolt! http://${pc}:3001/", "bolt http://${pc}:3001/ extra", "bolt https://${pc}:3001/") {
+            $r = Invoke-Box $b '09-reach.sh' @() @($line)
+            $r.ExitCode | Should -Be 1 -Because $line
+            $r.Output | Should -Be @("FAIL input line 1 is not '<name> <tailnet URL>'")
+        }
+    }
+}

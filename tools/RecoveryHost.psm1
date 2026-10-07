@@ -5,10 +5,11 @@
 
 .DESCRIPTION
     New-RecoveryHost returns a table of script blocks: native commands, ssh,
-    environment variables, Windows features, processes, HTTP on this machine,
-    free space, BitLocker, the account, scheduled tasks, shortcuts, firewall
-    rules and the pagefile. Stages touch the machine only through it, so the
-    tests can hand a stage a fake machine and check every decision it makes.
+    environment variables, Windows features, processes, HTTP on this machine
+    and the tailnet, free space, BitLocker, the account, scheduled tasks,
+    shortcuts, firewall rules and the pagefile. Stages touch the machine only
+    through it, so the tests can hand a stage a fake machine and check every
+    decision it makes.
 
     The other exported functions create and check owner-only folders and
     files, the same way tools/Collect-StackSecrets.ps1 and
@@ -299,6 +300,24 @@ function New-RecoveryHost {
             if ($Uri -notmatch '^http://127\.0\.0\.1:[0-9]+/') { throw [ArgumentException]::new('HttpStatus only reads from 127.0.0.1') }
             try { return [int](Invoke-WebRequest -Uri $Uri -Headers $Headers -TimeoutSec 10 -SkipHttpErrorCheck -ErrorAction Stop).StatusCode }
             catch { return 0 }
+        }
+
+        # One request to this machine (127.0.0.1) or a tailnet address
+        # (100.64.0.0/10), with headers and body that stay in this process:
+        # @{ Status; Body }, Status 0 when nothing answers. Stage 9's probes.
+        HttpCall       = {
+            param([string]$Method, [string]$Uri, [hashtable]$Headers = @{}, [string]$Body, [int]$TimeoutSec = 30)
+            if ($Uri -notmatch '^http://(127\.0\.0\.1|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}):[0-9]+/') {
+                throw [ArgumentException]::new('HttpCall only reaches 127.0.0.1 and tailnet addresses')
+            }
+            $request = @{ Uri = $Uri; Method = $Method; Headers = $Headers; TimeoutSec = $TimeoutSec; SkipHttpErrorCheck = $true; ErrorAction = 'Stop' }
+            if ($PSBoundParameters.ContainsKey('Body')) { $request.Body = [Text.UTF8Encoding]::new($false).GetBytes($Body); $request.ContentType = 'application/json' }
+            try {
+                $r = Invoke-WebRequest @request
+                $text = if ($r.Content -is [byte[]]) { [Text.Encoding]::UTF8.GetString($r.Content) } else { [string]$r.Content }
+                return @{ Status = [int]$r.StatusCode; Body = $text }
+            }
+            catch { return @{ Status = 0; Body = '' } }
         }
 
         FreeBytes      = { param([string]$Path) [IO.DriveInfo]::new([IO.Path]::GetPathRoot([IO.Path]::GetFullPath($Path))).AvailableFreeSpace }

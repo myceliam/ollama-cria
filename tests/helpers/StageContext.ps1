@@ -33,6 +33,7 @@ function Reset-Fake {
         Virtualization = @{ Firmware = $true; Hypervisor = $false }
         Http           = { param($Uri) $null }
         Status         = { param($Uri, $Headers) 0 }
+        Call           = { param($Method, $Uri, $Headers, $Body) @{ Status = 0; Body = '' } }
         Input          = @{}
         Free           = [long]4TB
         BitLocker      = 'On'
@@ -81,6 +82,11 @@ function New-FakeMachine {
         StartProcess   = { param($Path) $global:CriaCalls.Add("start $Path"); if ($global:CriaFake.OnStart) { & $global:CriaFake.OnStart $Path } }
         HttpJson       = { param($Uri, $Headers = @{}) & $global:CriaFake.Http $Uri $Headers }
         HttpStatus     = { param($Uri, $Headers = @{}) $global:CriaCalls.Add("status $Uri"); & $global:CriaFake.Status $Uri $Headers }
+        HttpCall       = {
+            param($Method, $Uri, $Headers = @{}, $Body, $TimeoutSec = 30)
+            $global:CriaCalls.Add("call $Method $Uri")
+            & $global:CriaFake.Call $Method $Uri $Headers $(if ($PSBoundParameters.ContainsKey('Body')) { $Body } else { $null })
+        }
         FreeBytes      = { param($Path) $global:CriaFake.Free }
         BitLocker      = { param($Path) $global:CriaFake.BitLocker }
         IsElevated     = { $true }

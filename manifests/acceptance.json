@@ -1,0 +1,1006 @@
+{
+  "$schema": "./schemas/acceptance.schema.json",
+  "formatVersion": 1,
+  "note": "Stage 9 (docs/RESTORE.md, C-46). Kept by hand. Each auto row is one safe call: read-only, or a search, page read or short speech with no effect outside the stack. Rows with a real-world effect are user rows. Stage 9 also checks that every tool, function and enabled tool server in the OWUI seed is covered, and adds one row per model preset from 'models'.",
+  "groups": {
+    "1": "Local inference",
+    "2": "Cloud providers",
+    "3": "MCP and OpenAPI tool servers",
+    "4": "Web search",
+    "5": "Page reading",
+    "6": "Image and video",
+    "7": "Speech to text",
+    "8": "Text to speech",
+    "9": "Notifications",
+    "10": "Calendar and Gmail",
+    "11": "Filters",
+    "12": "Bolt and open-terminal from the VPS",
+    "13": "Model presets and skills",
+    "14": "Other tools",
+    "15": "Dashboard and Dozzle"
+  },
+  "rows": [
+    {
+      "id": "ollama-models",
+      "group": 1,
+      "who": "auto",
+      "owner": 6,
+      "what": "Ollama lists its models",
+      "probe": {
+        "type": "http",
+        "url": "http://127.0.0.1:11434/api/tags",
+        "contains": "\"models\""
+      }
+    },
+    {
+      "id": "local-chat",
+      "group": 1,
+      "who": "user",
+      "owner": 3,
+      "what": "A local model answers in OWUI",
+      "steps": "In OWUI on this PC, start a new chat with a local Ollama model and ask a short question. It answers, and 'ollama ps' shows the model at 100% GPU."
+    },
+    {
+      "id": "cloud-chat",
+      "group": 2,
+      "who": "user",
+      "owner": 7,
+      "what": "OpenAI, Anthropic and Cline each answer",
+      "steps": "In OWUI, send one short message through each cloud connection: an OpenAI model, an Anthropic model and a Cline model from the model menu. Each answers."
+    },
+    {
+      "id": "server:browser",
+      "group": 3,
+      "who": "auto",
+      "owner": 8,
+      "what": "mcpo browser: browser_tabs answers",
+      "server": "/browser/?$",
+      "probe": {
+        "type": "mcpo",
+        "server": "browser",
+        "operation": "browser_tabs",
+        "body": {
+          "action": "list"
+        },
+        "contains": "Result",
+        "timeoutSec": 90
+      }
+    },
+    {
+      "id": "server:censys",
+      "group": 3,
+      "who": "auto",
+      "owner": 8,
+      "what": "mcpo censys: lists its tools (not called: no tool of it is known to be free and read-only)",
+      "server": "/censys/?$",
+      "probe": {
+        "type": "mcpo",
+        "server": "censys"
+      }
+    },
+    {
+      "id": "server:companies_house",
+      "group": 3,
+      "who": "auto",
+      "owner": 8,
+      "what": "mcpo companies_house: search_companies answers",
+      "server": "/companies_house/?$",
+      "probe": {
+        "type": "mcpo",
+        "server": "companies_house",
+        "operation": "search_companies",
+        "body": {
+          "query": "The Open University"
+        },
+        "contains": "### Company search"
+      }
+    },
+    {
+      "id": "server:context7",
+      "group": 3,
+      "who": "auto",
+      "owner": 8,
+      "what": "mcpo context7: resolve-library-id answers",
+      "server": "/context7/?$",
+      "probe": {
+        "type": "mcpo",
+        "server": "context7",
+        "operation": "resolve-library-id",
+        "body": {
+          "query": "React hooks",
+          "libraryName": "React"
+        },
+        "contains": "Available Libraries",
+        "timeoutSec": 90
+      }
+    },
+    {
+      "id": "server:filesystem",
+      "group": 3,
+      "who": "auto",
+      "owner": 8,
+      "what": "mcpo filesystem: list_allowed_directories answers",
+      "server": "/filesystem/?$",
+      "probe": {
+        "type": "mcpo",
+        "server": "filesystem",
+        "operation": "list_allowed_directories",
+        "body": {},
+        "contains": "Allowed directories"
+      }
+    },
+    {
+      "id": "server:gcal-bridge",
+      "group": 3,
+      "who": "auto",
+      "owner": 8,
+      "what": "the gcal bridge serves its OpenAPI description",
+      "server": ":18100(/|$)",
+      "probe": {
+        "type": "http",
+        "url": "http://127.0.0.1:18100/openapi.json",
+        "contains": "/events/next"
+      }
+    },
+    {
+      "id": "server:github",
+      "group": 3,
+      "who": "auto",
+      "owner": 8,
+      "what": "mcpo github: lists its tools (not called: no tool of it is known to be free and read-only)",
+      "server": "/github/?$",
+      "probe": {
+        "type": "mcpo",
+        "server": "github"
+      }
+    },
+    {
+      "id": "server:gmail-bridge",
+      "group": 3,
+      "who": "auto",
+      "owner": 8,
+      "what": "the Gmail bridge serves its OpenAPI description",
+      "server": ":18101(/|$)",
+      "probe": {
+        "type": "http",
+        "url": "http://127.0.0.1:18101/openapi.json",
+        "contains": "/profile"
+      }
+    },
+    {
+      "id": "server:jina_reader",
+      "group": 3,
+      "who": "auto",
+      "owner": 8,
+      "what": "mcpo jina_reader: read_url answers",
+      "server": "/jina_reader/?$",
+      "probe": {
+        "type": "mcpo",
+        "server": "jina_reader",
+        "operation": "read_url",
+        "body": {
+          "url": "https://example.com"
+        },
+        "contains": "Example Domain",
+        "timeoutSec": 90
+      }
+    },
+    {
+      "id": "server:mcp_risk_scanner",
+      "group": 3,
+      "who": "auto",
+      "owner": 8,
+      "what": "mcpo mcp_risk_scanner: explain_risk_model answers",
+      "server": "/mcp_risk_scanner/?$",
+      "probe": {
+        "type": "mcpo",
+        "server": "mcp_risk_scanner",
+        "operation": "explain_risk_model",
+        "body": {}
+      }
+    },
+    {
+      "id": "server:memory",
+      "group": 3,
+      "who": "auto",
+      "owner": 8,
+      "what": "mcpo memory: read_graph answers",
+      "server": "/memory/?$",
+      "probe": {
+        "type": "mcpo",
+        "server": "memory",
+        "operation": "read_graph",
+        "body": {},
+        "contains": "entities"
+      }
+    },
+    {
+      "id": "server:mitre_attack",
+      "group": 3,
+      "who": "auto",
+      "owner": 8,
+      "what": "mcpo mitre_attack: get_technique_by_id answers",
+      "server": "/mitre_attack/?$",
+      "probe": {
+        "type": "mcpo",
+        "server": "mitre_attack",
+        "operation": "get_technique_by_id",
+        "body": {
+          "technique_id": "T1055"
+        },
+        "contains": "Process Injection",
+        "timeoutSec": 90
+      }
+    },
+    {
+      "id": "server:open-terminal",
+      "group": 3,
+      "who": "auto",
+      "owner": 8,
+      "what": "open-terminal answers its key: GET /files/cwd",
+      "server": ":18019(/|$)",
+      "probe": {
+        "type": "http",
+        "url": "http://127.0.0.1:18019/files/cwd",
+        "uses": "terminal",
+        "contains": "cwd"
+      }
+    },
+    {
+      "id": "server:osint",
+      "group": 3,
+      "who": "auto",
+      "owner": 8,
+      "what": "mcpo osint: osint_list_sources answers",
+      "server": "/osint/?$",
+      "probe": {
+        "type": "mcpo",
+        "server": "osint",
+        "operation": "osint_list_sources",
+        "body": {},
+        "contains": "HackerTarget"
+      }
+    },
+    {
+      "id": "server:security_tools",
+      "group": 3,
+      "who": "auto",
+      "owner": 8,
+      "what": "mcpo security_tools: lists its tools (not called: no tool of it is known to be free and read-only)",
+      "server": "/security_tools/?$",
+      "probe": {
+        "type": "mcpo",
+        "server": "security_tools"
+      }
+    },
+    {
+      "id": "server:semgrep",
+      "group": 3,
+      "who": "auto",
+      "owner": 8,
+      "what": "mcpo semgrep: get_supported_languages answers",
+      "server": "/semgrep/?$",
+      "probe": {
+        "type": "mcpo",
+        "server": "semgrep",
+        "operation": "get_supported_languages",
+        "body": {},
+        "contains": "python"
+      }
+    },
+    {
+      "id": "server:sequential_thinking",
+      "group": 3,
+      "who": "auto",
+      "owner": 8,
+      "what": "mcpo sequential_thinking: sequentialthinking answers",
+      "server": "/sequential_thinking/?$",
+      "probe": {
+        "type": "mcpo",
+        "server": "sequential_thinking",
+        "operation": "sequentialthinking",
+        "body": {
+          "thought": "Stage 9 acceptance",
+          "nextThoughtNeeded": false,
+          "thoughtNumber": 1,
+          "totalThoughts": 1
+        },
+        "contains": "thoughtHistoryLength"
+      }
+    },
+    {
+      "id": "server:shodan",
+      "group": 3,
+      "who": "auto",
+      "owner": 8,
+      "what": "mcpo shodan: dns_lookup answers",
+      "server": "/shodan/?$",
+      "probe": {
+        "type": "mcpo",
+        "server": "shodan",
+        "operation": "dns_lookup",
+        "body": {
+          "hostnames": [
+            "example.com"
+          ]
+        },
+        "contains": "DNS Resolutions"
+      }
+    },
+    {
+      "id": "server:time",
+      "group": 3,
+      "who": "auto",
+      "owner": 8,
+      "what": "mcpo time: get_current_time answers",
+      "server": "/time/?$",
+      "probe": {
+        "type": "mcpo",
+        "server": "time",
+        "operation": "get_current_time",
+        "body": {
+          "timezone": "Europe/London"
+        },
+        "contains": "day_of_week"
+      }
+    },
+    {
+      "id": "server:web_fetch",
+      "group": 3,
+      "who": "auto",
+      "owner": 8,
+      "what": "mcpo web_fetch: fetch answers",
+      "server": "/web_fetch/?$",
+      "probe": {
+        "type": "mcpo",
+        "server": "web_fetch",
+        "operation": "fetch",
+        "body": {
+          "url": "https://example.com",
+          "max_length": 500
+        },
+        "contains": "Contents of https://example.com",
+        "timeoutSec": 90
+      }
+    },
+    {
+      "id": "server:web_search",
+      "group": 3,
+      "who": "auto",
+      "owner": 8,
+      "what": "mcpo web_search: searxng_web_search answers",
+      "server": "/web_search/?$",
+      "probe": {
+        "type": "mcpo",
+        "server": "web_search",
+        "operation": "searxng_web_search",
+        "body": {
+          "query": "open webui"
+        },
+        "timeoutSec": 90
+      }
+    },
+    {
+      "id": "server:youtube_transcript",
+      "group": 3,
+      "who": "auto",
+      "owner": 8,
+      "what": "mcpo youtube_transcript: get_available_languages answers",
+      "server": "/youtube_transcript/?$",
+      "probe": {
+        "type": "mcpo",
+        "server": "youtube_transcript",
+        "operation": "get_available_languages",
+        "body": {
+          "url": "dQw4w9WgXcQ"
+        },
+        "timeoutSec": 90
+      }
+    },
+    {
+      "id": "gateway-health",
+      "group": 4,
+      "who": "auto",
+      "owner": 5,
+      "what": "the VPS Brave/Jina gateway is up and holds its Brave key",
+      "probe": {
+        "type": "http",
+        "url": "http://127.0.0.1:13100/health",
+        "fields": {
+          "status": "ok",
+          "brave_configured": true
+        }
+      }
+    },
+    {
+      "id": "gateway-research",
+      "group": 4,
+      "who": "auto",
+      "owner": 5,
+      "what": "Brave research through the VPS returns sources",
+      "probe": {
+        "type": "http",
+        "method": "POST",
+        "url": "http://127.0.0.1:13100/research",
+        "body": {
+          "query": "open webui",
+          "depth": "quick"
+        },
+        "fields": {
+          "status": [
+            "ok",
+            "partial"
+          ]
+        },
+        "timeoutSec": 180
+      }
+    },
+    {
+      "id": "gateway-search",
+      "group": 4,
+      "who": "auto",
+      "owner": 5,
+      "what": "a Brave search through the VPS returns results",
+      "probe": {
+        "type": "http",
+        "method": "POST",
+        "url": "http://127.0.0.1:13100/search",
+        "body": {
+          "query": "open webui",
+          "count": 1
+        },
+        "fields": {
+          "status": "ok"
+        },
+        "timeoutSec": 60
+      }
+    },
+    {
+      "id": "searxng",
+      "group": 4,
+      "who": "auto",
+      "owner": 5,
+      "what": "SearXNG on the VPS returns results through the relay",
+      "probe": {
+        "type": "http",
+        "url": "http://127.0.0.1:8080/search?q=open+webui&format=json",
+        "contains": "\"results\"",
+        "timeoutSec": 60
+      }
+    },
+    {
+      "id": "tool:brave_research",
+      "group": 4,
+      "who": "auto",
+      "owner": 7,
+      "what": "OWUI loads the brave_research tool's code (its requirements are installed)",
+      "covers": [
+        "tool:brave_research"
+      ],
+      "probe": {
+        "type": "owui-load",
+        "kind": "tool",
+        "id": "brave_research"
+      }
+    },
+    {
+      "id": "tool:brave_search",
+      "group": 4,
+      "who": "auto",
+      "owner": 7,
+      "what": "OWUI loads the brave_search tool's code (its requirements are installed)",
+      "covers": [
+        "tool:brave_search"
+      ],
+      "probe": {
+        "type": "owui-load",
+        "kind": "tool",
+        "id": "brave_search"
+      }
+    },
+    {
+      "id": "gateway-read",
+      "group": 5,
+      "who": "auto",
+      "owner": 5,
+      "what": "Jina Reader on the VPS reads a page through the gateway",
+      "probe": {
+        "type": "http",
+        "method": "POST",
+        "url": "http://127.0.0.1:13100/read-url",
+        "body": {
+          "url": "https://www.iana.org/help/example-domains"
+        },
+        "fields": {
+          "status": "ok"
+        },
+        "timeoutSec": 90
+      }
+    },
+    {
+      "id": "tool:brave_reader",
+      "group": 5,
+      "who": "auto",
+      "owner": 7,
+      "what": "OWUI loads the brave_reader tool's code (its requirements are installed)",
+      "covers": [
+        "tool:brave_reader"
+      ],
+      "probe": {
+        "type": "owui-load",
+        "kind": "tool",
+        "id": "brave_reader"
+      }
+    },
+    {
+      "id": "function:comfyui_studio",
+      "group": 6,
+      "who": "auto",
+      "owner": 7,
+      "what": "OWUI loads the comfyui_studio function's code (its requirements are installed)",
+      "covers": [
+        "function:comfyui_studio"
+      ],
+      "probe": {
+        "type": "owui-load",
+        "kind": "function",
+        "id": "comfyui_studio"
+      }
+    },
+    {
+      "id": "tool:generate_image",
+      "group": 6,
+      "who": "auto",
+      "owner": 7,
+      "what": "OWUI loads the generate_image tool's code (its requirements are installed)",
+      "covers": [
+        "tool:generate_image"
+      ],
+      "probe": {
+        "type": "owui-load",
+        "kind": "tool",
+        "id": "generate_image"
+      }
+    },
+    {
+      "id": "tool:generate_video",
+      "group": 6,
+      "who": "auto",
+      "owner": 7,
+      "what": "OWUI loads the generate_video tool's code (its requirements are installed)",
+      "covers": [
+        "tool:generate_video"
+      ],
+      "probe": {
+        "type": "owui-load",
+        "kind": "tool",
+        "id": "generate_video"
+      }
+    },
+    {
+      "id": "media",
+      "group": 6,
+      "who": "user",
+      "owner": 6,
+      "what": "generate_image, generate_video and comfyui_studio produce output",
+      "steps": "In OWUI, ask generate_image for a small picture and generate_video for a short clip, then pick the comfyui_studio model and ask it for one image. Each produces output that opens."
+    },
+    {
+      "id": "stt-relay",
+      "group": 7,
+      "who": "auto",
+      "owner": 5,
+      "what": "the Groq STT relay answers on the VPS's tailnet address",
+      "probe": {
+        "type": "http",
+        "url": "http://{{VPS_TS_IP}}:18099/",
+        "anyStatus": true
+      }
+    },
+    {
+      "id": "stt",
+      "group": 7,
+      "who": "user",
+      "owner": 5,
+      "what": "Dictation turns speech into text",
+      "steps": "In an OWUI chat, press the microphone and say one sentence. The text appears in the message box."
+    },
+    {
+      "id": "kokoro-speech",
+      "group": 8,
+      "who": "auto",
+      "owner": 5,
+      "what": "Kokoro on the VPS speaks with af_heart",
+      "probe": {
+        "type": "http",
+        "method": "POST",
+        "url": "http://{{VPS_TS_IP}}:8880/v1/audio/speech",
+        "body": {
+          "model": "kokoro",
+          "voice": "af_heart",
+          "input": "Acceptance test.",
+          "response_format": "mp3"
+        },
+        "timeoutSec": 60
+      }
+    },
+    {
+      "id": "tts",
+      "group": 8,
+      "who": "user",
+      "owner": 5,
+      "what": "Read aloud uses Kokoro af_heart",
+      "steps": "Press Read aloud under any answer in OWUI. You hear the af_heart voice."
+    },
+    {
+      "id": "function:ntfy_push",
+      "group": 9,
+      "who": "auto",
+      "owner": 7,
+      "what": "OWUI loads the ntfy_push function's code (its requirements are installed)",
+      "covers": [
+        "function:ntfy_push"
+      ],
+      "probe": {
+        "type": "owui-load",
+        "kind": "function",
+        "id": "ntfy_push"
+      }
+    },
+    {
+      "id": "ntfy",
+      "group": 9,
+      "who": "user",
+      "owner": 7,
+      "what": "ntfy_push reaches the phone",
+      "steps": "Make ntfy_push send one notification the way you normally use it. It arrives on the phone."
+    },
+    {
+      "id": "gcal-auth",
+      "group": 10,
+      "who": "auto",
+      "owner": 4,
+      "what": "the gcal bridge holds a Google token",
+      "probe": {
+        "type": "http",
+        "url": "http://127.0.0.1:18100/auth/status",
+        "uses": "gcal",
+        "fields": {
+          "authenticated": true
+        }
+      }
+    },
+    {
+      "id": "gcal-events",
+      "group": 10,
+      "who": "auto",
+      "owner": 4,
+      "what": "the gcal bridge lists the next day's events from Google",
+      "probe": {
+        "type": "http",
+        "url": "http://127.0.0.1:18100/events/next?days=1",
+        "uses": "gcal",
+        "fields": {
+          "source": "google_calendar_live"
+        },
+        "timeoutSec": 60
+      }
+    },
+    {
+      "id": "gmail-auth",
+      "group": 10,
+      "who": "auto",
+      "owner": 4,
+      "what": "the Gmail bridge holds a Google token",
+      "probe": {
+        "type": "http",
+        "url": "http://127.0.0.1:18101/auth/status",
+        "uses": "gmail",
+        "fields": {
+          "authenticated": true
+        }
+      }
+    },
+    {
+      "id": "gmail-profile",
+      "group": 10,
+      "who": "auto",
+      "owner": 4,
+      "what": "the Gmail bridge reads the mailbox profile from Google",
+      "probe": {
+        "type": "http",
+        "url": "http://127.0.0.1:18101/profile",
+        "uses": "gmail",
+        "timeoutSec": 60
+      }
+    },
+    {
+      "id": "function:brave_command_router",
+      "group": 11,
+      "who": "auto",
+      "owner": 7,
+      "what": "OWUI loads the brave_command_router function's code (its requirements are installed)",
+      "covers": [
+        "function:brave_command_router"
+      ],
+      "probe": {
+        "type": "owui-load",
+        "kind": "function",
+        "id": "brave_command_router"
+      }
+    },
+    {
+      "id": "function:mermaid_modern_style",
+      "group": 11,
+      "who": "auto",
+      "owner": 7,
+      "what": "OWUI loads the mermaid_modern_style function's code (its requirements are installed)",
+      "covers": [
+        "function:mermaid_modern_style"
+      ],
+      "probe": {
+        "type": "owui-load",
+        "kind": "function",
+        "id": "mermaid_modern_style"
+      }
+    },
+    {
+      "id": "function:mermaid_render_guard",
+      "group": 11,
+      "who": "auto",
+      "owner": 7,
+      "what": "OWUI loads the mermaid_render_guard function's code (its requirements are installed)",
+      "covers": [
+        "function:mermaid_render_guard"
+      ],
+      "probe": {
+        "type": "owui-load",
+        "kind": "function",
+        "id": "mermaid_render_guard"
+      }
+    },
+    {
+      "id": "filters",
+      "group": 11,
+      "who": "user",
+      "owner": 7,
+      "what": "brave_command_router routes a command; Mermaid diagrams render",
+      "steps": "In OWUI, send a command that brave_command_router handles and check it goes to the right tool. Then ask for a small Mermaid flowchart: it renders, in the modern style."
+    },
+    {
+      "id": "bolt-from-vps",
+      "group": 12,
+      "who": "auto",
+      "owner": 8,
+      "what": "Bolt answers the VPS on the PC's tailnet address",
+      "probe": {
+        "type": "vps",
+        "url": "http://{{PC_TS_IP}}:3001/mcp",
+        "anyStatus": true
+      }
+    },
+    {
+      "id": "terminal-from-vps",
+      "group": 12,
+      "who": "auto",
+      "owner": 8,
+      "what": "open-terminal answers the VPS on the PC's tailnet address",
+      "probe": {
+        "type": "vps",
+        "url": "http://{{PC_TS_IP}}:18019/health",
+        "status": 200
+      }
+    },
+    {
+      "id": "pstool-health",
+      "group": 14,
+      "who": "auto",
+      "owner": 8,
+      "what": "the PowerShell tool's broker is running",
+      "probe": {
+        "type": "http",
+        "url": "http://{{PC_TS_IP}}:18110/health",
+        "fields": {
+          "status": "ok"
+        }
+      }
+    },
+    {
+      "id": "pstool-read",
+      "group": 14,
+      "who": "auto",
+      "owner": 8,
+      "what": "the broker runs a read-only command",
+      "probe": {
+        "type": "http",
+        "method": "POST",
+        "url": "http://{{PC_TS_IP}}:18110/execute",
+        "uses": "pstool",
+        "body": {
+          "mode": "read",
+          "requested_access": "read",
+          "reason": "Stage 9 acceptance",
+          "command": "Get-Date | Select-Object -Property DateTime",
+          "timeout_seconds": 20
+        },
+        "fields": {
+          "status": "ok",
+          "exit_code": 0
+        },
+        "timeoutSec": 40
+      }
+    },
+    {
+      "id": "tool:cited_analysis",
+      "group": 14,
+      "who": "auto",
+      "owner": 7,
+      "what": "OWUI loads the cited_analysis tool's code (its requirements are installed)",
+      "covers": [
+        "tool:cited_analysis"
+      ],
+      "probe": {
+        "type": "owui-load",
+        "kind": "tool",
+        "id": "cited_analysis"
+      }
+    },
+    {
+      "id": "tool:extract_schema",
+      "group": 14,
+      "who": "auto",
+      "owner": 7,
+      "what": "OWUI loads the extract_schema tool's code (its requirements are installed)",
+      "covers": [
+        "tool:extract_schema"
+      ],
+      "probe": {
+        "type": "owui-load",
+        "kind": "tool",
+        "id": "extract_schema"
+      }
+    },
+    {
+      "id": "tool:generate_audio",
+      "group": 14,
+      "who": "auto",
+      "owner": 7,
+      "what": "OWUI loads the generate_audio tool's code (its requirements are installed)",
+      "covers": [
+        "tool:generate_audio"
+      ],
+      "probe": {
+        "type": "owui-load",
+        "kind": "tool",
+        "id": "generate_audio"
+      }
+    },
+    {
+      "id": "tool:local_subagent",
+      "group": 14,
+      "who": "auto",
+      "owner": 7,
+      "what": "OWUI loads the local_subagent tool's code (its requirements are installed)",
+      "covers": [
+        "tool:local_subagent"
+      ],
+      "probe": {
+        "type": "owui-load",
+        "kind": "tool",
+        "id": "local_subagent"
+      }
+    },
+    {
+      "id": "tool:model_feature_manager",
+      "group": 14,
+      "who": "auto",
+      "owner": 7,
+      "what": "OWUI loads the model_feature_manager tool's code (its requirements are installed)",
+      "covers": [
+        "tool:model_feature_manager"
+      ],
+      "probe": {
+        "type": "owui-load",
+        "kind": "tool",
+        "id": "model_feature_manager"
+      }
+    },
+    {
+      "id": "tool:nvd_recent_cves",
+      "group": 14,
+      "who": "auto",
+      "owner": 7,
+      "what": "OWUI loads the nvd_recent_cves tool's code (its requirements are installed)",
+      "covers": [
+        "tool:nvd_recent_cves"
+      ],
+      "probe": {
+        "type": "owui-load",
+        "kind": "tool",
+        "id": "nvd_recent_cves"
+      }
+    },
+    {
+      "id": "tool:self_osint_footprint_recon_removal_uk",
+      "group": 14,
+      "who": "auto",
+      "owner": 7,
+      "what": "OWUI loads the self_osint_footprint_recon_removal_uk tool's code (its requirements are installed)",
+      "covers": [
+        "tool:self_osint_footprint_recon_removal_uk"
+      ],
+      "probe": {
+        "type": "owui-load",
+        "kind": "tool",
+        "id": "self_osint_footprint_recon_removal_uk"
+      }
+    },
+    {
+      "id": "tool:smart_read_aloud",
+      "group": 14,
+      "who": "auto",
+      "owner": 7,
+      "what": "OWUI loads the smart_read_aloud tool's code (its requirements are installed)",
+      "covers": [
+        "tool:smart_read_aloud"
+      ],
+      "probe": {
+        "type": "owui-load",
+        "kind": "tool",
+        "id": "smart_read_aloud"
+      }
+    },
+    {
+      "id": "tool:windows_powershell",
+      "group": 14,
+      "who": "auto",
+      "owner": 7,
+      "what": "OWUI loads the windows_powershell tool's code (its requirements are installed)",
+      "covers": [
+        "tool:windows_powershell"
+      ],
+      "probe": {
+        "type": "owui-load",
+        "kind": "tool",
+        "id": "windows_powershell"
+      }
+    },
+    {
+      "id": "tool:youtube_channel_videos",
+      "group": 14,
+      "who": "auto",
+      "owner": 7,
+      "what": "OWUI loads the youtube_channel_videos tool's code (its requirements are installed)",
+      "covers": [
+        "tool:youtube_channel_videos"
+      ],
+      "probe": {
+        "type": "owui-load",
+        "kind": "tool",
+        "id": "youtube_channel_videos"
+      }
+    },
+    {
+      "id": "other-tools",
+      "group": 14,
+      "who": "user",
+      "owner": 7,
+      "what": "The other tools each work in a chat",
+      "steps": "In OWUI, use each of these tools once, with a model that has it: local_subagent, cited_analysis, extract_schema, model_feature_manager, nvd_recent_cves, self_osint_footprint_recon_removal_uk, smart_read_aloud, windows_powershell (a read-only command), youtube_channel_videos and generate_audio. Each returns a sensible result."
+    },
+    {
+      "id": "serve-pages",
+      "group": 15,
+      "who": "user",
+      "owner": 8,
+      "what": "The dashboard and Dozzle open through Serve",
+      "steps": "From the phone on the tailnet, open the dashboard and Dozzle on the PC's tailnet name (their ports are in manifests/serve.json). Both load."
+    }
+  ],
+  "models": {
+    "group": 13,
+    "owner": 7,
+    "prompt": "Reply with the single word OK.",
+    "timeoutSec": 300
+  }
+}

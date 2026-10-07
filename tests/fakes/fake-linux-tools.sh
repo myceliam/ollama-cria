@@ -41,6 +41,11 @@ case "$tool" in
     ;;
   curl)
     case " $* " in
+      *'%{http_code}'*)
+        # 09-reach.sh: the status in fake/reach-<port>, else nothing answers.
+        url="${*: -1}"; port=${url##*:}; port=${port%%/*}
+        if [ -f "$f/reach-$port" ]; then cat "$f/reach-$port"; else printf 000; exit 7; fi
+        ;;
       *' -o '*) cp "$f/download" "${*: -1}" ;;
       *api.ipify.org*) cat "$f/host-ip" 2>/dev/null || exit 7 ;;
     esac
