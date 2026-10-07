@@ -7,11 +7,26 @@
 
 | | |
 |---|---|
-| **Version** | DRAFT v0.3, 5 October 2026 (v0.1 kept as `RESTORE-v0.1.md`) |
+| **Version** | DRAFT v0.4, 7 October 2026 (v0.1 kept as `RESTORE-v0.1.md`) |
 | **Author** | Claude |
-| **Ledger** | AICL-0122 (plan) · AICL-0123 to AICL-0125 (round one) · AICL-0126 (v0.2) · AICL-0127, AICL-0131 (Liam's decisions) · AICL-0129, AICL-0130 (round two) · this revision's row |
-| **Verification** | ☐ ChatGPT (adversarial review) · ☐ Antigravity (on-machine check) · ☐ Liam (sign-off) |
-| **Status** | Design document. Nothing in it has been executed. No stage module exists yet unless marked ✅. Next step (Liam, 5 Oct): **build `ollama-cria` module by module**, each rehearsed on a throwaway target. |
+| **Ledger** | AICL-0122 (plan) · AICL-0123 to AICL-0125 (round one) · AICL-0126 (v0.2) · AICL-0127, AICL-0131 (Liam's decisions) · AICL-0129, AICL-0130 (round two) · AICL-0132 (v0.3) · this revision's row (v0.4, Module 7) |
+| **Verification** | Claude reviews its own work adversarially; CI runs every test on Windows and Linux (external review rounds ended on 6 October 2026) · ☐ Liam (sign-off) |
+| **Status** | Being built. The capture tools, the restorer, the controller and Stages 1, 3, 4 and 6 exist and pass their tests (✅ in Appendix A); none has run on a new machine yet. Next: the VPS stages (2 and 5) and Stages 7 to 11, then a rehearsal on a throwaway target. |
+
+### 🔄 What changed in v0.4 (the controller is built)
+
+| Change | Why |
+|---|---|
+| The controller **plans by default** and runs **one stage per `-Execute`**, then stops at its checkpoint | Each checkpoint is where a person (or an assistant) reads the evidence before going on |
+| Only Stages 3 and 8 run elevated, each in its own Admin window; every other stage runs as you | Files, Docker Desktop and Ollama never end up belonging to the Administrators group |
+| ComfyUI, its venv and its custom nodes moved from Stage 3d to **Stage 6** | They are downloads, and Stage 6 runs as you |
+| A stage that needs you stops with `ASK` lines; a question with an id is answered with `-Accept <id>` (`gpu`, `model:<name>`) and kept in `state.json` | C-48 |
+| Download tokens go in `E:\recovery-secrets\download-tokens\<auth>-token.txt` (6c) | A fixed place inside the protected folder, deleted in Stage 11 |
+| Ownership is proved by the file ID (Windows) or inode (Linux) | C-45. A creation time can be handed to a new file by NTFS "tunnelling" |
+| A stage that passes marks what it created `keep`, so a later attempt never wipes it | C-45 |
+| Stage 4 writes **the whole stack** from the repo, not only the templated files; VPS files are rendered under `E:\recovery-state\rendered\` for Stage 5 | Stage 1 no longer copies the stack |
+| Installing Docker Desktop asks for a restart | Membership of `docker-users` only counts from your next sign-in |
+| Exit codes: 0 done (or plan), 1 failed, 2 needs you, 3 restart and run again | Scripts and assistants can tell the outcomes apart |
 
 ### 🔄 What changed in v0.3
 
@@ -55,7 +70,7 @@
 | 🛠️ | To build. The guide gives the manual equivalent until it exists |
 | ❓ | Open item with an ID in [Appendix C](#appendix-c--register). Resolve it, never guess |
 
-**Checkpoints.** Every stage ends with a 🛑 **Checkpoint** table. The controller stops there, prints the evidence, and waits for the named checker to type `continue`. A failed check stops the run; it never "warns and carries on".
+**Checkpoints.** Every stage ends with a 🛑 **Checkpoint** table. The controller runs it, prints the evidence, saves it under `E:\recovery-state\evidence\`, and stops; running the same `-Execute` command again is the "continue". A failed check stops the run; it never "warns and carries on".
 
 ---
 
@@ -175,25 +190,27 @@ flowchart TD
 
 ## 🎛️ The controller
 
-> **Module:** 🛠️ `Invoke-StackRecovery.ps1`, at the root of the recovery repo
+> **Module:** ✅ `Invoke-StackRecovery.ps1`, at the root of the recovery repo
 
 ```powershell
-pwsh -File .\Invoke-StackRecovery.ps1 -Plan           # print every stage and what it would do; touch nothing
-pwsh -File .\Invoke-StackRecovery.ps1                 # run from the first unfinished stage
-pwsh -File .\Invoke-StackRecovery.ps1 -Stage 5        # run one stage (its prerequisites must already be done)
-pwsh -File .\Invoke-StackRecovery.ps1 -Resume         # carry on after a reboot or a stop
+pwsh -File .\Invoke-StackRecovery.ps1                        # plan: every stage, its state, what the next one would do; changes nothing
+pwsh -File .\Invoke-StackRecovery.ps1 -Execute               # run the next ready stage and its checkpoint, then stop
+pwsh -File .\Invoke-StackRecovery.ps1 -Execute -Stage 6      # run (or run again) one stage; the stages it needs must be done
+pwsh -File .\Invoke-StackRecovery.ps1 -Execute -Accept gpu   # answer a question a stage asked, by its id
 ```
+
+Run the same `-Execute` command again after each checkpoint, after a restart, or after doing what an `ASK` line said. Each run prints its steps, its checks and one `Result:` line.
 
 | Behaviour | Rule |
 |---|---|
-| State file | `E:\recovery-state\state.json`. Records each stage, its result, the release commit and manifest hashes. **No secrets, ever.** |
-| Resume | A finished stage is skipped only after its checkpoint is re-validated. A reboot-required flag resumes the same stage. |
-| Ownership | Every folder, file and volume the controller creates is recorded as **owned** in the state file. If a stage is interrupted, the controller wipes only what that stage owns and runs the stage again. It never deletes or overwrites anything it did not create (C-45). |
+| State file | `E:\recovery-state\state.json` (`controller.stateRoot` in `manifests\topology.json`). Records each stage (status, attempts, answers, data), the release commit and manifest hashes, and every item the controller created. **No secrets, ever.** Written to a temporary file and moved into place, so a crash leaves the old copy or the new one. One run at a time: `state.lock`; a lock whose process is gone is taken over. |
+| Order | A stage runs once every stage it needs is done. Their checkpoints run again first; one that no longer passes stops the run. After Stage 1, nothing runs unless the repo is still at the commit and manifest hashes Stage 1 recorded. A stage that asked for a restart runs again from where it was. |
+| Ownership | Every folder and file the controller creates is recorded with its identity (file ID on Windows, inode on Linux) and a rule: `wipe` or `keep`. If a stage was cut off (still marked running), only its `wipe` items are removed, only while each is still the same object, never through a link or junction; then the stage runs again. A stage that passes marks its items `keep`. It never deletes or overwrites anything it did not create (C-45). |
 | Paths | One helper, 🛠️ `tools\Test-RecoveryPath.ps1`, checks every path before anything is written, copied, extracted or deleted. It must resolve inside a configured root; it rejects `..`, absolute paths in archives, links or junctions that escape, alternate data streams, device names and case-only duplicates (C-44, C-49). |
-| Failure | Any failed command throws. The stage is marked `failed`, the evidence is kept, and the run stops. Exit code is non-zero. |
-| Elevation | The controller asks for Admin once at the start, passes every non-secret parameter through, and returns the child's exit code (C-14). |
+| Failure | A stage that throws or reports a problem is marked `failed`, its evidence is kept, and the run stops. A stage that needs you stops with `ASK` lines. Exit codes: 0 done (or plan), 1 failed, 2 needs you, 3 restart the PC and run the same command again. |
+| Elevation | Stages 3 and 8 only. The controller starts an elevated copy of itself for that one stage (one UAC prompt); the child checks it holds the same lock and returns its exit code. Answers travel through `state.json`, never on the command line (C-14). |
 | Secrets | Never in arguments, URLs, transcripts or the state file. Read from the protected staging folder only (C-14, C-05). |
-| Evidence | Metadata only: names, counts, hashes, exit codes and HTTP status. Stages that touch secrets keep no transcript; native error text goes through a redaction step that is tested with fake secrets before first use (C-50). |
+| Evidence | `E:\recovery-state\evidence\stage-NN-attempt-K.json` and `.txt`: names, counts, hashes, statuses and exit codes only. After every stage that reads the bundle (1, 4, 7), each evidence file and `state.json` are matched against every value in the unpacked bundle (whole short files, `NAME=value` values, JSON strings and long lines, also as JSON escapes them). A match deletes that evidence file, keeps only the report's title and the problem, and fails the stage. A matched value is never printed (C-50). |
 | VPS stages | The PC copies `linux\stages\*.sh` to the VPS and runs them with `ssh vps 'bash -euo pipefail …'`. Their output comes back as evidence. |
 
 ---
@@ -202,22 +219,27 @@ pwsh -File .\Invoke-StackRecovery.ps1 -Resume         # carry on after a reboot 
 
 > **Delivers:** the recovery repo on disk, validated manifests, the target folders, a protected staging folder, and the secrets bundle checked and unpacked inside it
 > **Where:** 🖥️ PowerShell 7
-> **Module:** 🛠️ `windows\stages\01-release.ps1`
+> **Module:** ✅ `windows\stages\01-release.ps1`
 
 1. Clone the repo with Git Credential Manager (browser sign-in). **Never** put a token in the URL (C-14).
    ```powershell
    git clone https://github.com/<owner>/ollama-cria.git E:\recovery
    git -C E:\recovery checkout <release-tag>
    ```
-2. Validate every manifest in `E:\recovery\manifests\` against its schema (Appendix B lists them).
+   Then start the controller (it runs Stage 1 first):
+   ```powershell
+   pwsh -File E:\recovery\Invoke-StackRecovery.ps1 -Execute -BundleSha256 <the SHA-256 stored with the bundle in Bitwarden>
+   ```
+   The repo must be a clean checkout: local changes stop the stage. No release tag is a warning; the commit is recorded either way.
+2. Validate every manifest in `E:\recovery\manifests\` against the schema its `$schema` names (Appendix B lists them).
 3. Create the target roots from `manifests\topology.json`:
 
    | Root | Holds |
    |---|---|
-   | `E:\ai\ollama` | The stack: compose file, Dockerfiles, bridge source, scripts. Copied from `stack\` in the repo. |
+   | `E:\ai\ollama` | The stack: compose file, Dockerfiles, bridge source, scripts. Written from `stack\` in the repo by Stage 4. |
    | `E:\ai\ag-startuip\cline-dashboard` | Homelab dashboard source (its own compose project) |
    | `E:\ai\ollama\gmail-owui-bridge` | Gmail bridge (its own compose project) |
-   | `E:\ai\comfyui\ComfyUI` | Native ComfyUI (Stage 3 clones it) |
+   | `E:\ai\comfyui\ComfyUI` | Native ComfyUI (Stage 6 clones it; not created here) |
    | `E:\ollama-models` | Ollama model store |
    | `E:\ai\generated` | OWUI generated media bind mount |
    | `E:\ai\OpenFolders\workspace`, `E:\ai\OpenFolders\mcp\intel` | open-terminal and MCP bind mounts (created empty) |
@@ -282,15 +304,15 @@ Check in the admin console that the two new nodes have exactly the old names (no
 
 # STAGE 3 · Windows runtime
 
-> **Delivers:** GPU driver, WSL2, Docker Desktop, Python 3.11, Ollama with the Machine-scope profile, and ComfyUI at its pinned commit. **Nothing that writes stack data starts yet.**
-> **Where:** 🖥️ PowerShell 7, Admin
-> **Module:** 🛠️ `windows\stages\03-runtime.ps1` (reuses the good parts of ♻️ `windows\step2.ps1`, but **not** its Full install mode, C-13)
+> **Delivers:** the GPU checked, WSL2, Docker Desktop, Python 3.11, Ollama with the Machine-scope profile. **Nothing that writes stack data starts yet.** (ComfyUI moved to Stage 6 in v0.4.)
+> **Where:** 🖥️ PowerShell 7, Admin: the controller opens an elevated window for this stage only
+> **Module:** ✅ `windows\stages\03-runtime.ps1` (written fresh: not `windows\step2.ps1` and not its Full install mode, C-13)
 
 **3a · Virtualisation and drivers**
 
 1. Check that firmware virtualisation is on (`Get-CimInstance Win32_Processor`, `VirtualizationFirmwareEnabled`). If it is off, stop: that is a BIOS change 👤.
 2. `wsl --install --no-distribution`, then record reboot-required and resume after the reboot.
-3. NVIDIA driver: install the version recorded in `manifests\windows-apps.json`, then `nvidia-smi` must list the RTX 4080 SUPER.
+3. NVIDIA driver: `nvidia-smi` must list the card recorded in `manifests\windows-apps.json`. If no driver answers, the stage asks you to install that driver version from nvidia.com (or let Windows Update do it) 👤. A different driver version only warns. On a machine without that card (a rehearsal), answer with `-Accept gpu`: ComfyUI and Ollama then run without CUDA.
 
 **3b · Applications** (pinned versions from `manifests\windows-apps.json`)
 
@@ -300,7 +322,7 @@ Check in the admin console that the two new nodes have exactly the old names (no
 | Ollama | `Ollama.Ollama` |
 | Python 3.11 | `Python.Python.3.11` |
 
-After each install the controller refreshes `PATH` in its own process and waits until `docker info` answers, not just until the installer exits (C-53).
+Every package in the manifest is installed at its recorded version with `winget install --exact --version` (a row with `"exact": false` takes any version), then Docker Desktop and Ollama are pinned with `winget pin add` so `winget upgrade --all` never moves them (C-30). After each install the controller refreshes `PATH` in its own process. Installing Docker Desktop asks for a restart, because its `docker-users` group only counts from your next sign-in. Then the controller starts Docker Desktop **as you** (through Explorer, never as Admin) and waits until `docker info` answers, not just until the installer exits (C-53).
 
 **3c · Ollama profile, Machine scope only** (C-12)
 
@@ -322,15 +344,7 @@ Live values captured on 5 October 2026:
 
 > ✅ **R-16 resolved:** Liam confirmed on 5 October 2026 that `45s` is the intended policy. `AGENTS.md` and the master document (Ch. 8.2, 13.6) were updated to match (`AICL-0127`).
 
-**3d · ComfyUI at a pinned commit** (C-18)
-
-```powershell
-git clone https://github.com/comfyanonymous/ComfyUI E:\ai\comfyui\ComfyUI
-git -C E:\ai\comfyui\ComfyUI checkout bb131be9e83d2f773c90f1d6f1e4b248a498c8c5
-py -3.11 -m venv E:\ai\comfyui\ComfyUI\.venv
-```
-
-Then the controller installs packages from `manifests\comfyui-requirements.lock` with **both** index URLs every time, so the CUDA wheels resolve (`--index-url https://download.pytorch.org/whl/cu124 --extra-index-url https://pypi.org/simple`), and clones each custom node at the commit listed in `manifests\comfyui-nodes.json` (ComfyUI-Manager included).
+**3d · ComfyUI** moved to Stage 6 (6 · ComfyUI) in v0.4.
 
 🛑 **Checkpoint 3**
 
@@ -340,8 +354,9 @@ Then the controller installs packages from `manifests\comfyui-requirements.lock`
 | 🤖 | `docker info --format {{.ServerVersion}}` | A server version (the engine, not only the CLI) |
 | 🤖 | Every `OLLAMA_*` at Machine scope | Matches the manifest |
 | 🤖 | Any `OLLAMA_*` at User scope | None |
-| 🤖 | `git -C E:\ai\comfyui\ComfyUI rev-parse HEAD` | `bb131be9…` |
-| 🤖 | `.venv\Scripts\python -c "import torch; print(torch.cuda.is_available())"` | `True` |
+| 🤖 | Virtualisation, WSL and the Virtual Machine Platform | On and ready |
+| 🤖 | Every package in `windows-apps.json` | Installed |
+| 🤖 | `winget pin list` | Docker Desktop and Ollama pinned |
 
 ---
 
@@ -349,11 +364,13 @@ Then the controller installs packages from `manifests\comfyui-requirements.lock`
 
 > **Delivers:** every config file filled in with the **new** tailnet addresses, and every remaining credential in its place with tight permissions
 > **Where:** 🖥️ → ☁️ · 🔐
-> **Modules:** 🛠️ `windows\stages\04-render.ps1`, 🛠️ `tools\Restore-StackSecrets.ps1`
+> **Modules:** ✅ `windows\stages\04-render.ps1`, ✅ `tools\Restore-StackSecrets.ps1`
 
 **4a · Render the endpoint contract** (C-22)
 
-The repo stores templates with placeholders such as `{{PC_TS_IP}}` and `{{VPS_TS_IP}}`, never the old addresses. The controller reads the two new IPs from `tailscale status --json` and renders every file listed in `manifests\endpoints.json`: the PC compose file, the relay config, the VPS compose file, `guard.nft`, the nginx relay, CORS settings, scripts that dial the other host, and the OWUI seed's URLs. Appendix E lists the full contract.
+The repo stores templates with placeholders such as `{{PC_TS_IP}}` and `{{VPS_TS_IP}}`, never the old addresses. The controller reads the new addresses and names from `tailscale status --json` (kept in memory only, never in state or evidence) and renders every file listed in `manifests\endpoints.json`: the PC compose file, the relay config, the VPS compose file, `guard.nft`, the nginx relay, CORS settings, scripts that dial the other host, and the OWUI seed's URLs. Appendix E lists the full contract. A placeholder with no value stops the stage.
+
+Stage 4 writes **every** file in `manifests\stack-files.json`, templated or not: PC sources to their root (`E:\ai\ollama`, the dashboard folder), VPS sources under `E:\recovery-state\rendered\<source>\` for Stage 5 to copy, and `windows\` sources wait for Stage 8. A file that is not listed in `endpoints.json` must hold no placeholder. Each file is written under a new temporary name and moved into place without replacing anything. A file already there is left alone when it holds the same bytes, replaced only when the controller wrote it and nobody changed it since, and refused otherwise.
 
 **4b · Place every remaining secret** 🤖
 
@@ -382,7 +399,7 @@ The bundle was downloaded, checked and unpacked in Stage 1. `Restore-StackSecret
 
 | Who | Check | Expected |
 |---|---|---|
-| 🤖 | Search every rendered file for the old tailnet IPs | No matches |
+| 🤖 | Every rendered file: no placeholder left, and no tailnet address but the new nodes' own | All of them |
 | 🤖 | Restore map: required rows placed, hashes and lengths matching | All of them |
 | 🤖 | `ssh vps 'stat -c "%a %U %n" ~/owui-web-egress/.env'` | `600 liam` |
 | 🤖 | Evidence files tested against every bundle value (match test only, nothing printed) | No matches |
@@ -456,32 +473,44 @@ Install `vps\nginx\groq-relay.conf` (rendered with the new IP, listening on `{{V
 
 # STAGE 6 · Fetch models and weights
 
-> **Delivers:** every Ollama model and every ComfyUI weight, downloaded from its origin and checked
-> **Where:** 🖥️ PowerShell 7 (can run in parallel with Stages 2, 4 and 5)
-> **Module:** 🛠️ `windows\stages\06-fetch.ps1` with `manifests\ollama-models.json` and `manifests\comfyui-weights.json`
+> **Delivers:** ComfyUI at its pinned commit with its venv and custom nodes, every Ollama model and every ComfyUI weight, each downloaded from its origin and checked
+> **Where:** 🖥️ PowerShell 7, as you (needs Stages 1 and 3; can run before Stages 2, 4 and 5)
+> **Module:** ✅ `windows\stages\06-fetch.ps1` with `manifests\comfyui-nodes.json`, `comfyui-requirements.lock`, `ollama-models.json` and `comfyui-weights.json`
+
+**6 · ComfyUI at a pinned commit** (C-18; was 3d)
+
+```powershell
+git clone --no-checkout https://github.com/comfyanonymous/ComfyUI E:\ai\comfyui\ComfyUI
+git -C E:\ai\comfyui\ComfyUI checkout --detach bb131be9e83d2f773c90f1d6f1e4b248a498c8c5
+py -3.11 -m venv E:\ai\comfyui\ComfyUI\.venv
+```
+
+Then the controller installs packages from `manifests\comfyui-requirements.lock` with **both** index URLs every time, so the CUDA wheels resolve (`--index-url https://download.pytorch.org/whl/cu124 --extra-index-url https://pypi.org/simple`), and clones each custom node at the commit listed in `manifests\comfyui-nodes.json` (ComfyUI-Manager included). Nodes listed under `manual` are reported for you to install by hand. A ComfyUI folder or venv the controller did not create is only checked, never changed; a clone of its own that never finished is removed and cloned again.
 
 **6a · Ollama** (C-17; `pullall.ps1` is not used because it only refreshes models that are already installed)
 
-For each row: `ollama pull <name:tag>`, then compare the digest with the manifest. **If the digest differs** (the tag has moved on), the controller pauses and asks Liam to accept the newer build or stop; it never swaps silently (C-48). Custom models whose base can't be re-downloaded have that base mirrored as a named resource in the manifest. Custom models (rows with `"modelfile"`) are rebuilt with `ollama create <name> -f manifests\modelfiles\<name>.Modelfile` after their base model is pulled. 45 models today.
+Ollama is started as you if it does not answer, and free space on the model drive is checked first. For each row: `ollama pull <name:tag>`, then compare the digest with the manifest. **If the digest differs** (the tag has moved on), the controller pauses and asks Liam to accept the newer build (`-Accept 'model:<name>'`) or stop; it never swaps silently (C-48). Custom models whose base can't be re-downloaded have that base mirrored as a named resource in the manifest. Custom models (rows with `"modelfile"`) are rebuilt with `ollama create <name> -f manifests\modelfiles\<name>.Modelfile` after their base model is pulled. 45 models today.
 
 **6b · ComfyUI weights**
 
 Each row has `url`, `dest` (relative to `models\`), `bytes`, `sha256`, `role` and `auth` (none, Hugging Face token, or Civitai token). The fetcher:
 
-1. Downloads to `<dest>.partial`, resuming if a partial file exists.
+1. Checks free space, then downloads with `curl` to `<dest>.partial`, resuming if a partial file exists. Links are `https` only, also after redirects.
 2. Checks SHA-256 and size.
 3. Only then renames to the final name.
 4. Fails the stage if any **required** row fails. Placeholder and cache rows are not weights and are not in the manifest.
 
 **6c · Gated models** 👤
 
-Rows with `auth` other than `none` pause for Liam to accept the licence in the browser and put the token in Bitwarden. The controller reads the token from the protected folder, never from the command line.
+Rows with `auth` other than `none` pause for Liam to accept the licence in the browser and keep the token in Bitwarden. Copy the token into a new file `E:\recovery-secrets\download-tokens\<auth>-token.txt` (`civitai` or `huggingface`), one line, and run again. The controller reads it from there, never from the command line, and hands it to `curl` in an owner-only header file it deletes straight afterwards; `curl` does not send it on after a redirect to another host (C-14). Stage 11 deletes the token file.
 
 🛑 **Checkpoint 6**
 
 | Who | Check | Expected |
 |---|---|---|
-| 🤖 | `ollama list` vs `ollama-models.json` | Every row present, digests matching |
+| 🤖 | ComfyUI and every custom node | At their commits |
+| 🤖 | `.venv\Scripts\python -c "import torch; print(torch.cuda.is_available())"` | `True` (or `-Accept gpu` given in Stage 3) |
+| 🤖 | `ollama list` vs `ollama-models.json` | Every row present, digests matching (or accepted) |
 | 🤖 | Weights fetcher summary | Every required row `verified`; zero `failed` |
 | 🤖 | `mxbai-embed-large` present | Yes (OWUI's embedding model) |
 
@@ -714,9 +743,10 @@ tailscale serve --bg --https 9000 http://127.0.0.1:18088 # Dozzle
 2. Fix this guide before you forget what went wrong.
 3. Delete the plaintext staging with the helper, never by hand (C-31, C-44):
    ```powershell
-   .\tools\Remove-RecoveryPlaintext.ps1
+   .\tools\Remove-RecoveryPlaintext.ps1            # lists what it would remove
+   .\tools\Remove-RecoveryPlaintext.ps1 -Execute   # removes it
    ```
-   It deletes only paths the state file records as **owned** plaintext staging, after `Test-RecoveryPath` confirms each one is inside `E:\recovery-secrets\` and is the same object the controller created. Anything uncertain is refused and reported, not deleted.
+   It deletes only items the state file records as plaintext (the bundle ZIP, the unpacked bundle, download tokens and their header files), after `Test-RecoveryPath` confirms each one is inside its root and it is the same object the controller recorded; links are never followed. The staging folder goes last, and only when nothing else is in it: anything the controller did not create is named, never removed. Exit code 1 while anything plaintext is left.
 
 ---
 
@@ -725,23 +755,23 @@ tailscale serve --bg --https 9000 http://127.0.0.1:18088 # Dozzle
 | Module | Status | Stage |
 |---|---|---|
 | `bootstrap\Install-Baseline.ps1` | 🛠️ | 0 |
-| `Invoke-StackRecovery.ps1` | 🛠️ | all |
-| `windows\stages\01-release.ps1` | 🛠️ | 1 |
+| `Invoke-StackRecovery.ps1`, `tools\RecoveryState.psm1`, `tools\RecoveryHost.psm1` | ✅ Module 7 | all |
+| `windows\stages\01-release.ps1` | ✅ Module 7 | 1 |
 | `linux\stages\02-base.sh` | 🛠️ from ♻️ `E:\ai\OWUI\Ollama-OWUI-MCP-setup\linux\step1.sh` | 2 |
-| `windows\stages\03-runtime.ps1` | 🛠️ from ♻️ `E:\ai\OWUI\Ollama-OWUI-MCP-setup\windows\step2.ps1` (C-12, C-13, C-14) | 3 |
-| `windows\stages\04-render.ps1` | 🛠️ | 4 |
-| `tools\Restore-StackSecrets.ps1` | 🛠️ | 4 |
-| `tools\Test-RecoveryPath.ps1` | 🛠️ Shared path check (C-44, C-49) | 1, 4, 6, 11 |
-| `tools\Remove-RecoveryPlaintext.ps1` | 🛠️ Owned-only clean-up | 11 |
+| `windows\stages\03-runtime.ps1` | ✅ Module 7 (C-12, C-13, C-14) | 3 |
+| `windows\stages\04-render.ps1` | ✅ Module 7 | 4 |
+| `tools\Restore-StackSecrets.ps1` | ✅ Module 5 | 1, 4, 7 |
+| `tools\Test-RecoveryPath.ps1` | ✅ Shared path check (C-44, C-49) | 1, 4, 6, 11 |
+| `tools\Remove-RecoveryPlaintext.ps1` | ✅ Module 7. Owned-only clean-up | 11 |
 | `linux\stages\05-*.sh` | 🛠️ | 5 |
-| `windows\stages\06-fetch.ps1` | 🛠️ | 6 |
-| `tools\Export-OwuiSeed.py`, `tools\Import-OwuiSeed.py` | 🛠️ Run inside the OWUI container (C-39) | 7, 10 |
+| `windows\stages\06-fetch.ps1` | ✅ Module 7 | 6 |
+| `tools\Export-OwuiSeed.py`, `tools\Import-OwuiSeed.py` | ✅ Modules 3 and 5. Run inside the OWUI container (C-39) | 7, 10 |
 | `start-stack.ps1` | ♻️ (C-27) | 8 |
 | `install-startup-task.ps1`, `install-mcpo-watchdog-task.ps1` | ✅ | 8 |
 | `windows\stages\08-serve.ps1`, `08-automation.ps1` | 🛠️ | 8 |
 | `windows\stages\09-acceptance.ps1` | 🛠️ | 9 |
 | `windows\stages\10-rehearsal.ps1` | 🛠️ | 10 |
-| `tools\Collect-StackSecrets.ps1` | ♻️ **Rewrite** to the shared versioned map; SQLite backup API for ntfy (C-03 to C-10) | before recovery, and 10 |
+| `tools\Collect-StackSecrets.ps1` | ✅ Modules 2 and 4. Rewritten to the shared versioned map; SQLite backup API for ntfy (C-03 to C-10) | before recovery, and 10 |
 | `Add-AIChange.ps1` | ✅ | 11 |
 | `pullall.ps1` | Not used for recovery (C-17) | — |
 | `kais_chat_tidy.ps1` | 🗄️ Retired (R-20). Never committed: it holds a dead hard-coded key | — |
@@ -750,7 +780,7 @@ tailscale serve --bg --https 9000 http://127.0.0.1:18088 # Dozzle
 
 | File | Holds | Source today |
 |---|---|---|
-| `topology.json` | Roots, hosts, compose projects | This guide |
+| `topology.json` | The controller's folders, hosts, roots (and which Stage 1 creates), compose projects | Hand-kept (Module 7), checked against its schema |
 | `endpoints.json` | Every templated file and its placeholders | `tools/Sync-StackFiles.ps1` (Appendix E) |
 | `stack-files.json` | Which live files are copied into `stack\`, `extras\`, `vps\` and `windows\startup\` | Hand-kept; `tools/Sync-StackFiles.ps1` copies them |
 | `windows-apps.json` | winget IDs and versions, the GPU driver | `tools/Sync-StackManifests.ps1` |
@@ -853,4 +883,4 @@ ollama-cria/
 
 ---
 
-*Draft v0.3. Where this guide and the live machine disagree, the live machine is right.*
+*Draft v0.4. Where this guide and the live machine disagree, the live machine is right.*

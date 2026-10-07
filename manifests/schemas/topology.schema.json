@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/myceliam/ollama-cria/blob/main/manifests/schemas/topology.schema.json",
+  "title": "ollama-cria topology",
+  "description": "Where the controller keeps its state, the folders Stage 1 creates, the two hosts and the compose projects (RESTORE.md Stage 1 and Appendix B). Kept by hand.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "controller",
+    "hosts",
+    "roots",
+    "composeProjects"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "formatVersion": {
+      "const": 1
+    },
+    "note": {
+      "type": "string"
+    },
+    "controller": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repoRoot",
+        "stateRoot",
+        "stagingRoot"
+      ],
+      "properties": {
+        "repoRoot": {
+          "$ref": "#/$defs/windowsFolder"
+        },
+        "stateRoot": {
+          "$ref": "#/$defs/windowsFolder"
+        },
+        "stagingRoot": {
+          "$ref": "#/$defs/windowsFolder"
+        }
+      }
+    },
+    "hosts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pc",
+        "vps"
+      ],
+      "properties": {
+        "pc": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "os"
+          ],
+          "properties": {
+            "os": {
+              "const": "windows"
+            }
+          }
+        },
+        "vps": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "os",
+            "sshAlias",
+            "user"
+          ],
+          "properties": {
+            "os": {
+              "const": "linux"
+            },
+            "sshAlias": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,62}$"
+            },
+            "user": {
+              "type": "string",
+              "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+            }
+          }
+        }
+      }
+    },
+    "roots": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]{0,31}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "host",
+          "path",
+          "create",
+          "holds"
+        ],
+        "properties": {
+          "host": {
+            "enum": [
+              "pc",
+              "vps"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "description": "A Windows folder (drive, then at least one folder) on the PC; an absolute folder on the VPS. Never a drive or filesystem root.",
+            "pattern": "^([A-Za-z]:\\\\[^\\\\/:*?\"<>|]+(\\\\[^\\\\/:*?\"<>|]+)*|/[a-z0-9._-]+(/[a-zA-Z0-9._-]+)*)$"
+          },
+          "create": {
+            "description": "true: Stage 1 (PC) or Stage 5 (VPS) creates it empty. false: a stage creates it with its content.",
+            "type": "boolean"
+          },
+          "holds": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "composeProjects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "root",
+          "file"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]*$"
+          },
+          "root": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,31}$"
+          },
+          "file": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_][A-Za-z0-9._-]*(/[A-Za-z0-9_][A-Za-z0-9._-]*)*$"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "windowsFolder": {
+      "type": "string",
+      "pattern": "^[A-Za-z]:\\\\[^\\\\/:*?\"<>|]+(\\\\[^\\\\/:*?\"<>|]+)*$"
+    }
+  }
+}

@@ -37,6 +37,7 @@
       ConvertFrom-StackTemplate
                               the reverse, for Stage 4a; fails on a placeholder
                               it has no value for
+      Find-TailnetAddress     the addresses in Tailscale's ranges a text holds
       Get-StackPlaceholder    the endpoint placeholders a text holds
       Export-EndpointManifest writes manifests/endpoints.json: every templated
                               file in the folders that are deployed or read by
@@ -207,6 +208,26 @@ function ConvertTo-StackTemplate {
     $Text = $script:StaleIp.Replace($Text, '{{STALE_TS_IP}}')
     $Text = $script:StaleIp6.Replace($Text, '{{STALE_TS_IP6}}')
     return [pscustomobject]@{ Text = $Text; Placeholders = (Get-StackPlaceholder -Text $Text); StaleLines = [int[]]@($staleLines) }
+}
+
+function Find-TailnetAddress {
+    <#
+    .SYNOPSIS
+        Every address in Tailscale's ranges that -Text holds, each once.
+        Tailscale's service address and ranges written as networks are left
+        out, as in ConvertTo-StackTemplate. Stage 4 uses it to prove a
+        rendered file holds only the new nodes' addresses.
+    #>
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]$Text
+    )
+    $found = [Collections.Generic.SortedSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($m in @($script:StaleIp.Matches($Text)) + @($script:StaleIp6.Matches($Text))) { [void]$found.Add($m.Value) }
+    return , [string[]]@($found)
 }
 
 function ConvertFrom-StackTemplate {
@@ -404,5 +425,5 @@ function Export-EndpointManifest {
     return $false
 }
 
-Export-ModuleMember -Function Get-TailnetEndpoint, ConvertTo-StackTemplate, ConvertFrom-StackTemplate, Get-StackPlaceholder, Export-EndpointManifest,
+Export-ModuleMember -Function Get-TailnetEndpoint, ConvertTo-StackTemplate, ConvertFrom-StackTemplate, Get-StackPlaceholder, Find-TailnetAddress, Export-EndpointManifest,
     Write-RepoFile, Get-RepoFileStatus, Test-RepoContent

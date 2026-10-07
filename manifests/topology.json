@@ -1,0 +1,103 @@
+{
+  "$schema": "./schemas/topology.schema.json",
+  "formatVersion": 1,
+  "note": "Kept by hand from docs/RESTORE.md. Invoke-StackRecovery.ps1 keeps its state and evidence under controller.stateRoot; Stage 1 creates every root marked create and the protected staging folder; the stages read the hosts and compose projects from here.",
+  "controller": {
+    "repoRoot": "E:\\recovery",
+    "stateRoot": "E:\\recovery-state",
+    "stagingRoot": "E:\\recovery-secrets"
+  },
+  "hosts": {
+    "pc": {
+      "os": "windows"
+    },
+    "vps": {
+      "os": "linux",
+      "sshAlias": "vps",
+      "user": "liam"
+    }
+  },
+  "roots": {
+    "stack": {
+      "host": "pc",
+      "path": "E:\\ai\\ollama",
+      "create": true,
+      "holds": "The stack: compose file, Dockerfiles, bridge source and scripts, rendered from stack/ in Stage 4"
+    },
+    "dashboard": {
+      "host": "pc",
+      "path": "E:\\ai\\ag-startuip\\cline-dashboard",
+      "create": true,
+      "holds": "Homelab dashboard source, its own compose project, rendered from extras/dashboard/ in Stage 4"
+    },
+    "comfyui": {
+      "host": "pc",
+      "path": "E:\\ai\\comfyui\\ComfyUI",
+      "create": false,
+      "holds": "Native ComfyUI, cloned at its pinned commit in Stage 6"
+    },
+    "ollama-models": {
+      "host": "pc",
+      "path": "E:\\ollama-models",
+      "create": true,
+      "holds": "Ollama model store (OLLAMA_MODELS)"
+    },
+    "generated": {
+      "host": "pc",
+      "path": "E:\\ai\\generated",
+      "create": true,
+      "holds": "OWUI generated media bind mount"
+    },
+    "workspace": {
+      "host": "pc",
+      "path": "E:\\ai\\OpenFolders\\workspace",
+      "create": true,
+      "holds": "open-terminal, MCP and Gmail bridge bind mount, created empty"
+    },
+    "mcp-intel": {
+      "host": "pc",
+      "path": "E:\\ai\\OpenFolders\\mcp\\intel",
+      "create": true,
+      "holds": "open-terminal MCP bind mount, created empty"
+    },
+    "vps-egress": {
+      "host": "vps",
+      "path": "/home/liam/owui-web-egress",
+      "create": true,
+      "holds": "VPS web egress compose project, rendered from vps/web-egress/ in Stage 4 and placed in Stage 5"
+    },
+    "vps-kokoro": {
+      "host": "vps",
+      "path": "/home/liam/kokoro",
+      "create": true,
+      "holds": "Kokoro TTS compose project, placed in Stage 5"
+    }
+  },
+  "composeProjects": [
+    {
+      "name": "ollama",
+      "root": "stack",
+      "file": "docker-compose.yml"
+    },
+    {
+      "name": "gmail-owui-bridge",
+      "root": "stack",
+      "file": "gmail-owui-bridge/docker-compose.yml"
+    },
+    {
+      "name": "cline-dashboard",
+      "root": "dashboard",
+      "file": "docker-compose.yml"
+    },
+    {
+      "name": "owui-web-egress",
+      "root": "vps-egress",
+      "file": "compose.yml"
+    },
+    {
+      "name": "kokoro",
+      "root": "vps-kokoro",
+      "file": "compose.yml"
+    }
+  ]
+}
