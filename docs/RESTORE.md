@@ -11,7 +11,7 @@
 | **Author** | Claude |
 | **Ledger** | AICL-0122 (plan) · AICL-0123 to AICL-0125 (round one) · AICL-0126 (v0.2) · AICL-0127, AICL-0131 (Liam's decisions) · AICL-0129, AICL-0130 (round two) · AICL-0132 (v0.3) · AICL-0147 (v0.4, Module 7) · AICL-0148 (v0.5, Module 8) · this revision's row (v0.6, Module 9) |
 | **Verification** | Claude reviews its own work adversarially; CI runs every test on Windows and Linux (external review rounds ended on 6 October 2026) · ☐ Liam (sign-off) |
-| **Status** | Being built. The capture tools, the restorer, the controller and Stages 1 to 8 exist and pass their tests (✅ in Appendix A); none has run on a new machine yet. Next: Stages 9 to 11, then a rehearsal on a throwaway target. |
+| **Status** | Built, not yet run. The capture tools, the restorer, the controller and Stages 1 to 11 exist and pass their tests (✅ in Appendix A); none has run on a new machine yet. Next: the first real capture (the seed committed, the bundle in Bitwarden), then a rehearsal on a throwaway target. |
 
 ### 🔄 What changed in v0.6 (the PC stages are built)
 
@@ -27,6 +27,13 @@
 | Stage 3 installs Python 3.13 at `C:\Python313` | The PowerShell tool's task and scripts name that path. On the live PC it is gone, so that task fails at sign-in |
 | Stage 9's 🤖 rows test the services behind web search, page reading, speech, the bridges and the PowerShell tool directly, and each tool and function by loading its code | A model choosing to call a tool is not a safe, repeatable test; the 👤 rows cover the chat side |
 | Stage 9 checks each preset's tools and skills against the seed and asks it one prompt, except presets built on the `comfyui_studio` pipe | That pipe makes media (a 👤 row) |
+| Stage 7 run again once done places nothing twice and leaves a running stack alone | ntfy changes its `user.db` as it runs, so placing folder 07 again would be refused |
+| `state.json` counts each stage's interruptions; Stage 10 reads the count for the interruption test | C-45 |
+| Stage 10 is built: the PC restart with every task's sign of life, probes from outside the tailnet over IPv4 and IPv6, the VPS tests behind `-Accept vps-tests`, the monthly reminder, the first backup with its round trip, and the second run | C-20, C-21, C-43, C-45, C-47, C-51, C-52 |
+| The kill-switch test asks for a word made up for each run | A cached answer would hide a leak |
+| Stage 10 probes nothing while this PC uses an exit node, and only from a host with the same address family | An exit node would carry the probes through the tailnet; a missing IPv6 route would read as a closed port |
+| Stage 10's seed export goes to `E:\recovery-state\owui-seed-new`, not into the repo | Changing `manifests\` before Stage 11 would stop every later stage at the release check |
+| Stage 11 removes the plaintext itself and writes `rebuild-record.json`; it prints the ledger row for an assistant to add | The ledger's protocol: an assistant writes every row |
 
 ### 🔄 What changed in v0.5 (the VPS stages are built)
 
@@ -241,7 +248,7 @@ Run the same `-Execute` command again after each checkpoint, after a restart, or
 | Elevation | Stages 3 and 8 only. The controller starts an elevated copy of itself for that one stage (one UAC prompt); the child checks it holds the same lock and returns its exit code. Answers travel through `state.json`, never on the command line (C-14). |
 | Secrets | Never in arguments, URLs, transcripts or the state file. Read from the protected staging folder only (C-14, C-05). |
 | Evidence | `E:\recovery-state\evidence\stage-NN-attempt-K.json` and `.txt`: names, counts, hashes, statuses and exit codes only. After every stage that reads the bundle (1, 4, 7), each evidence file and `state.json` are matched against every value in the unpacked bundle (whole short files, `NAME=value` values, JSON strings and long lines, also as JSON escapes them). A match deletes that evidence file, keeps only the report's title and the problem, and fails the stage. A matched value is never printed (C-50). |
-| VPS stages | 🛠️ `tools\RecoveryVps.psm1` sends each `linux\stages\*.sh` inside the SSH command, runs it once as root with `sudo -n` and removes it; files and image lists travel on its standard input, never as arguments. `ssh` runs with `BatchMode=yes` and `StrictHostKeyChecking=yes`. The scripts print `STEP`, `WARN`, `FACT` and `FAIL` lines, which become the stage's steps, warnings, checks and problems; they never print a file's content or an address. On the VPS they leave only what they set up, their logs in `/var/log/ollama-cria/` and Stage 5's ledger. |
+| VPS stages | 🛠️ `tools\RecoveryVps.psm1` sends each `linux\stages\*.sh` inside the SSH command, runs it once as root with `sudo -n` and removes it; files and image lists travel on its standard input, never as arguments. `ssh` runs with `BatchMode=yes` and `StrictHostKeyChecking=yes`. The scripts print `STEP`, `WARN`, `FACT` and `FAIL` lines, which become the stage's steps, warnings, checks and problems; they never print a file's content or an address, except Stage 10's public addresses (10b), which the controller keeps in memory and never writes down. On the VPS they leave only what they set up, their logs in `/var/log/ollama-cria/` and Stage 5's ledger. |
 
 ---
 
@@ -658,7 +665,7 @@ What you see in OWUI (functions, pinned models, the sub-agent prompt) is tested 
 
 > **Delivers:** the whole PC stack running, reachable on the tailnet, and coming back on its own after a reboot
 > **Where:** 🖥️ PowerShell 7; the controller opens an elevated window for this stage
-> **Modules:** 🛠️ `windows\stages\08-serve.ps1`; ♻️ `start-stack.ps1` (C-27)
+> **Modules:** ✅ `windows\stages\08-serve.ps1`; ♻️ `start-stack.ps1` (C-27)
 
 The stage works for the account signed in at the console. If the admin prompt is answered as another account, it stops, because the tasks and startup items would be that account's.
 
@@ -786,47 +793,107 @@ The checkpoint reads the results the last run recorded and calls nothing; to tes
 
 # STAGE 10 · Reboot, rerun and the backup routine
 
-> **Delivers:** proof that it survives a reboot, an interruption and a second run, plus a first backup and the routine that keeps it current
-> **Where:** 🖥️ and ☁️
-> **Module:** 🛠️ `windows\stages\10-rehearsal.ps1`
+> **Delivers:** proof that it survives a reboot, an interruption and a second run, that nothing answers from outside the tailnet, that the VPS fails closed, plus a first backup and the routine that keeps it current
+> **Where:** 🖥️ and ☁️, with 👤 for the restart, the phone and Bitwarden
+> **Modules:** ✅ `windows\stages\10-rehearsal.ps1`, `linux\stages\10-vps.sh`, `linux\stages\10-killswitch.py`, `windows\reminder\`
 
-1. **Reboot the PC.** After logon, wait for the startup tasks, then re-run the 🤖 rows of Stage 9 and check every scheduled task left its log line or heartbeat.
-2. **Reboot the VPS.** Check the guard starts before Docker and the egress stack returns healthy. Then, on the rebuilt host only, break the guard on purpose and confirm **Docker refuses to start**; restore it.
-3. **Kill-switch test (on the rebuilt VPS only):** stop gluetun's tunnel and show that requests from the gateway, Jina Reader and the proxies **fail** with no direct fallback, including over IPv6 and DNS; then restore it (C-21).
-4. **Reachability from outside (C-52):** from the phone on the tailnet, every Serve rule answers; from a network **off** the tailnet, nothing on either host answers except what Appendix E allows.
-5. **Interruption test:** kill the controller in the middle of Stage 7 and run it again. It must wipe only what it owns and finish cleanly (C-45).
-6. **Rerun the controller** with no changes. Every stage must report "already done" after re-validating.
-7. **First backup:** run the rewritten collector on the new system, upload the bundle to Bitwarden, then download it again and compare hashes (round trip). Re-export the OWUI seed with `Export-OwuiSeed.py` and commit it.
-8. **Keep it current (C-47):** a monthly ntfy reminder asks Liam to re-run the collector and the seed export, upload, and do the round-trip check. Any change to a credential or tool also triggers it. This replaces the retired backup tasks.
+The stage takes several visits: run the same `-Execute` command again after the restart and after each answer. A part that passed is not run again; one that failed runs again on the next visit.
+
+**10a · Restart the PC** 👤🤖
+
+The first visit records when Windows last started and stops with exit code 3. Restart (Start → Power → Restart), sign in, wait for the desktop, and run the same command again. Then:
+
+1. Checkpoint 8 must pass again, waiting up to ten minutes for the stack. The pagefile must now be in effect.
+2. Stage 9's 🤖 rows run again.
+3. Every scheduled task and startup item must show it ran since the restart (C-51): a line its script logs (`mcpo-watchdog.log`, `ntfy-monitor.log`, `autofree.log`), a file it writes (`start-stack-*.log`, the dashboard's `tailscale-status.json`), Task Scheduler showing it running (the PowerShell tool, LibreHardwareMonitor), or ComfyUI answering. The stage waits until 25 minutes after the restart for them.
+
+**10b · From outside the tailnet** 🤖 (C-52)
+
+- This PC must not use a Tailscale exit node during this part: through one, its probes would leave from the tailnet and its public address would be the exit node's. The stage checks `tailscale status` and probes nothing while an exit node is on.
+- The VPS reports its public IPv4 and IPv6 from the host, not the tunnel, and every TCP port anything listens on (`10-vps.sh public-ip`). This PC asks `api.ipify.org` and `api6.ipify.org` for its own.
+- This PC probes the VPS's public addresses on those ports and the stack's (Appendix E, 22, 80, 443 and the rest). The VPS probes this PC's public addresses on the stack's ports and Windows' own (135, 139, 445, 3389, 5985 and the rest) with `10-vps.sh probe`. **Nothing may answer.**
+- An address is probed only from a host with the same family, so a missing IPv6 route never reads as a closed port. A side with no IPv6 is a warning; IPv4 must be probed.
+- This is the one place a stage script prints an address. The controller keeps the addresses in memory; the evidence holds families and ports only.
+- 👤 **The LAN.** From the phone on the home Wi-Fi with Tailscale switched off, open `http://<this PC's LAN address>:3000`, then `:8188`, `:11434` and `:6080` (`ipconfig` shows the address). None may load. Then run again with `-Accept lan-closed`.
+
+The phone on the tailnet is Stage 9's `serve-pages` row.
+
+**10c · The VPS tests** 🤖, only after `-Accept vps-tests`
+
+They restart the VPS, break its egress guard on purpose and stop its VPN tunnel, so web search, page reading and speech are down for a few minutes. Run them only on the **rebuilt** VPS, when nothing needs it for twenty minutes. They run only while checkpoint 2 passes, that is while `known_hosts` holds the host key you checked on the console, and each runs only after the one before it passed.
+
+1. **Restart the VPS.** It must come back with a new boot ID, the guard active **before** Docker started, and the egress and Kokoro projects up with gluetun healthy. Checkpoint 5 must pass again.
+2. **Break the guard on purpose.** A drop-in under `/run` (gone after any boot) makes the guard fail; with Docker and the guard stopped, systemd must **refuse to start Docker** (C-20, C-43). Then the drop-in goes, the guard and Docker start, and both projects must come back healthy. A trap restores everything on any exit.
+3. **Kill switch.** `10-killswitch.py` runs inside the Brave/Jina gateway's container, which shares gluetun's network. It stops the tunnel through gluetun's control server, and everything must **fail closed** (C-21): the gateway's search and page reading, Jina Reader, SearXNG, both HTTP proxies, a direct connection over IPv4 and IPv6, a lookup of a new name, and plain DNS to two public resolvers. Each search and page carries a word made up for this run, so no cache can answer. The tunnel must still be stopped at the end. Then it starts the tunnel again, and a search must work. A trap starts the tunnel on any exit. If gluetun's control server ever asks for credentials, the test changes nothing and fails; it needs the same unauthenticated route as the live `verify_killswitch.py`.
+
+**10d · The monthly reminder** 🤖👤 (C-47)
+
+`windows\reminder\Send-BackupReminder.ps1` goes next to `NtfyCore.psm1` in `_support\scripts\scheduled\`, and the task `OWUI-ntfy-BackupReminder` is registered for this account: on the 1st of each month at 10:00, through `run-hidden.vbs`. The stage starts it once, and its log line must show ntfy took the notification. When *Monthly backup check* is on your phone, run again with `-Accept reminder`.
+
+The reminder lists the routine: pull `main` into `E:\recovery` and run the collector there, upload the bundle to Bitwarden with its SHA-256, download it again and compare (the round trip), delete both copies with Shift+Delete (nothing may wait in the Recycle Bin), then commit the new seed and push. Any change to a key, token, tool, function or model preset is a reason to run it early. This replaces the retired backup tasks.
+
+**10e · The first backup** 🤖👤, once 10a has passed
+
+1. 🤖 `tools\Collect-StackSecrets.ps1 -Execute` runs on the new system into `E:\recovery-secrets\`, and writes the OWUI seed to `E:\recovery-state\owui-seed-new`, **not** into the repo. Changing `manifests\` now would stop every later stage at the release check; Stage 11 says how to commit it.
+2. 👤 Upload the new `stack-secrets-<date>.zip` to the bundle's Bitwarden item, replacing the old attachment, with its SHA-256 (the stage prints it) in the notes.
+3. 👤 Download it from Bitwarden into `E:\recovery-secrets\roundtrip\` (owner-only, made by the stage) and run again. Its SHA-256 must match.
+
+The collector's run folder and the round-trip folder are recorded as plaintext, so Stage 11 removes them.
+
+**Interruption test** 👤🤖 (C-45)
+
+Run `-Execute -Stage 9` and press **Ctrl+C** once it says `running`. Run the same command again: it must say Stage 9 was interrupted and finish with checkpoint 9 passed. Then run Stage 10 again. Any stage from 1 to 9 counts; Stage 9 is the quickest and changes nothing. `state.json` counts the interruption, and this stage compares the count with the one it recorded on its first visit. That only what a stage owns is wiped is proved by the controller's tests (`tests\Invoke-StackRecovery.Tests.ps1`), not again here.
+
+**10f · The second run** 🤖, last
+
+Once everything above has passed and been answered, every checkpoint from 1 to 9 runs again. All must pass, changing nothing.
 
 🛑 **Checkpoint 10**
 
 | Who | Check | Expected |
 |---|---|---|
-| 🤖 | Stage 9 🤖 rows and task heartbeats after the PC reboot | All pass |
-| 🤖 | Guard broken on purpose | Docker does not start |
-| 🤖 | Kill-switch test | Fails closed, then recovers |
-| 🤖 | Off-tailnet probe | Nothing reachable beyond Appendix E |
-| 🤖 | Interrupted run, then rerun | Finishes cleanly; nothing outside its ownership touched |
-| 🤖 | Second controller run | No changes made |
-| 👤 | Bitwarden bundle round trip | Hashes match |
-| 👤 | Monthly reminder | Arrives on the phone |
+| 🤖 | After the PC restart: checkpoint 8 with the pagefile in effect, Stage 9's 🤖 rows, every task and startup item's sign of life | All pass |
+| 🤖 | From outside the tailnet, both hosts | Nothing answers |
+| 👤 | The PC's LAN address from the phone, Tailscale off | Nothing loads (`-Accept lan-closed`) |
+| 🤖 | VPS restart | Guard before Docker; checkpoint 5 passes (after `-Accept vps-tests`) |
+| 🤖 | Guard broken on purpose | Docker refuses to start, then everything returns |
+| 🤖 | Kill switch | Fails closed, then recovers |
+| 🤖👤 | Monthly reminder | Registered, sent, and on the phone (`-Accept reminder`) |
+| 🤖 | First backup | Bundle collected, seed exported |
+| 👤 | Bitwarden round trip | Hashes match |
+| 👤 | Interrupted run, then run again | Finishes |
+| 🤖 | Second run | Checkpoints 1 to 9 pass |
+
+`-Accept vps-tests,reminder,lan-closed` answers all three at once. The checkpoint reads what the visits recorded and calls nothing.
 
 ---
 
 # STAGE 11 · Log and clean up
 
+> **Delivers:** no plaintext left on the PC, a record of the rebuild, and the list of what is left for a person
 > **Where:** 🖥️
-> **Module:** ✅ `_support\scripts\maintenance\Add-AIChange.ps1`
+> **Module:** ✅ `windows\stages\11-cleanup.ps1`
 
-1. Log the rebuild: release tag, manifest hashes, bundle date, any stage that needed a workaround.
-2. Fix this guide before you forget what went wrong.
-3. Delete the plaintext staging with the helper, never by hand (C-31, C-44):
-   ```powershell
-   .\tools\Remove-RecoveryPlaintext.ps1            # lists what it would remove
-   .\tools\Remove-RecoveryPlaintext.ps1 -Execute   # removes it
-   ```
-   It deletes only items the state file records as plaintext (the bundle ZIP, the unpacked bundle, download tokens and their header files), after `Test-RecoveryPath` confirms each one is inside its root and it is the same object the controller recorded; links are never followed. The staging folder goes last, and only when nothing else is in it: anything the controller did not create is named, never removed. Exit code 1 while anything plaintext is left.
+It runs only after checkpoint 10, so the new bundle is already in Bitwarden and its round trip matched before the old one goes.
+
+1. 🤖 **Delete the plaintext**, never by hand (C-31, C-44). It removes only what `state.json` records as plaintext: the bundle ZIP and the unpacked bundle, the VPS bootstrap, the download tokens, the OWUI API key file, and Stage 10's collector run folder and round-trip folder. Before each one, `Test-RecoveryPath` must confirm it is inside its root, and it must be the same object the controller recorded; links are never followed. The staging folder goes last, and only when nothing else is in it. Anything the controller did not create is named, never removed, and fails the stage until you have looked at it. `tools\Remove-RecoveryPlaintext.ps1` does the same on its own (without `-Execute` it lists what it would remove).
+2. 🤖 **Record the rebuild** in `E:\recovery-state\rebuild-record.json`: the release commit and tag, the manifest hashes, the bundle it started from and the one Stage 10 made (file names and SHA-256), each stage's status, attempts and interruptions, the stages that took more than one attempt, and what step 1 removed. No secret and no address.
+3. 🤖 **Scan the new seed** in `E:\recovery-state\owui-seed-new` with `tools\Test-NoSecrets.ps1`.
+4. 👤 **What is left**, printed as steps:
+   - **The ledger row.** An assistant writes every `AI-CHANGELOG.csv` row, so the stage prints the `Add-AIChange.ps1` command, filled in from the record, for Claude or ChatGPT to run. The ledger and `AI-CHANGELOG-PROTOCOL.md` are in neither the bundle nor the repo (R-21): copy them from the old PC or a backup first; the stage warns when they are missing.
+   - **The new seed.** In `E:\recovery` (switch to `main` and pull) or another clone, replace `manifests\owui-seed\seed` with the files in `owui-seed-new`, run `./tools/Test-NoSecrets.ps1` and `Invoke-Pester ./tests`, then commit, push and tag the next release. From then on, a stage after Stage 1 runs again only once Stage 1 has run again and recorded the new commit. A seed the scan finds anything in is not offered.
+   - **This guide.** Fix it wherever the rebuild went differently; the evidence for every attempt is in `E:\recovery-state\evidence\`.
+
+Running it again is safe. Afterwards, Stages 1 to 7 need the bundle again (they read it, or need checkpoint 1, which checks it): to run one of them, download the bundle into `E:\recovery-secrets\` and start with `-Stage 1`.
+
+🛑 **Checkpoint 11**
+
+| Who | Check | Expected |
+|---|---|---|
+| 🤖 | Plaintext recorded in `state.json` | None |
+| 🤖 | `E:\recovery-secrets\` | Gone, or empty when the controller did not create it |
+| 🤖 | `rebuild-record.json` | Written, with the release commit |
+| 👤 | Ledger row, seed commit, this guide | Done |
 
 ---
 
@@ -841,8 +908,8 @@ The checkpoint reads the results the last run recorded and calls nothing; to tes
 | `windows\stages\03-runtime.ps1` | ✅ Module 7 (C-12, C-13, C-14) | 3 |
 | `windows\stages\04-render.ps1` | ✅ Module 7 | 4 |
 | `tools\Restore-StackSecrets.ps1` | ✅ Module 5 | 1, 4, 7 |
-| `tools\Test-RecoveryPath.ps1` | ✅ Shared path check (C-44, C-49) | 1, 4, 6, 11 |
-| `tools\Remove-RecoveryPlaintext.ps1` | ✅ Module 7. Owned-only clean-up | 11 |
+| `tools\Test-RecoveryPath.ps1` | ✅ Shared path check (C-44, C-49) | all |
+| `tools\Remove-RecoveryPlaintext.ps1` | ✅ Module 7. Owned-only clean-up, the same as Stage 11's own | 11 |
 | `windows\stages\05-vps.ps1`, `linux\stages\05-place.sh`, `linux\stages\05-services.sh`, `linux\files\web-egress\` | ✅ Module 8 (R-13) | 5 |
 | `windows\stages\06-fetch.ps1` | ✅ Module 7 | 6 |
 | `tools\Export-OwuiSeed.py`, `tools\Import-OwuiSeed.py` | ✅ Modules 3 and 5. Run inside the OWUI container (C-39) | 7, 10 |
@@ -851,9 +918,10 @@ The checkpoint reads the results the last run recorded and calls nothing; to tes
 | `install-startup-task.ps1`, `install-mcpo-watchdog-task.ps1` | Not used: Stage 8 imports the live XML of both tasks | — |
 | `windows\stages\08-serve.ps1` | ✅ Module 9 | 8 |
 | `windows\stages\09-acceptance.ps1`, `linux\stages\09-reach.sh` | ✅ Module 9 | 9 |
-| `windows\stages\10-rehearsal.ps1` | 🛠️ | 10 |
+| `windows\stages\10-rehearsal.ps1`, `linux\stages\10-vps.sh`, `linux\stages\10-killswitch.py`, `windows\reminder\` | ✅ Module 9 | 10 |
 | `tools\Collect-StackSecrets.ps1` | ✅ Modules 2 and 4. Rewritten to the shared versioned map; SQLite backup API for ntfy (C-03 to C-10) | before recovery, and 10 |
-| `Add-AIChange.ps1` | ✅ | 11 |
+| `windows\stages\11-cleanup.ps1` | ✅ Module 9 | 11 |
+| `Add-AIChange.ps1` | ✅ The stack's own; Stage 11 prints its command for an assistant | 11 |
 | `pullall.ps1` | Not used for recovery (C-17) | — |
 | `kais_chat_tidy.ps1` | 🗄️ Retired (R-20). Never committed: it holds a dead hard-coded key | — |
 
@@ -902,6 +970,7 @@ The checkpoint reads the results the last run recorded and calls nothing; to tes
 | R-18 | Ollama and Docker updater policy | ⏳ Open, Liam | Pins stop winget only (C-30) |
 | R-19 | Discord bridge history | ✅ Moot | Bridge retired by Liam, 5 Oct (`AICL-0131`) |
 | R-20 | Retire `OWUI-Automation-Chat-Tidy` and `kais_chat_tidy.ps1` | 🆕 🟢 Proposed | Fails daily with 401; OWUI has no automations left. Not rebuilt; script goes on the Phase 1 clean-up list |
+| R-21 | Where are `AI-CHANGELOG.csv` and `AI-CHANGELOG-PROTOCOL.md` backed up? | ⏳ Open, Liam | Neither the bundle nor the repo carries them; Stage 11 warns when they are missing. In the bundle, the evidence check would treat every long ledger line as a secret, so that needs a change first |
 
 An item moves to **Resolved** only when ChatGPT, Antigravity and Liam all agree.
 
@@ -912,11 +981,13 @@ ollama-cria/
 ├── Invoke-StackRecovery.ps1
 ├── bootstrap/Install-Baseline.ps1
 ├── windows/
-│   ├── stages/        01-release … 10-rehearsal
+│   ├── stages/        01-release … 11-cleanup
+│   ├── reminder/      Send-BackupReminder.ps1, its task XML
 │   ├── startup/       start_comfyui_hidden.vbs
 │   └── tasks/         *.xml (SID placeholders)
 ├── linux/
-│   ├── stages/        02-bootstrap.sh, 02-base.sh, 05-place.sh, 05-services.sh
+│   ├── stages/        02-bootstrap.sh, 02-base.sh, 05-place.sh, 05-services.sh,
+│   │                  09-reach.sh, 10-vps.sh, 10-killswitch.py
 │   └── files/         web-egress/ restore-only: searxng-mcp/Dockerfile, compose.override.yml
 ├── stack/             → E:\ai\ollama (compose, Dockerfiles, bridges, relay, scripts;
 │                      not discord-owui-bridge\ or kais_chat_tidy.ps1)

@@ -10,7 +10,8 @@ BeforeAll {
     $script:Stages = Join-Path $PSScriptRoot '../linux/stages'
     $script:FakeTools = Join-Path $PSScriptRoot 'fakes/fake-linux-tools.sh'
     $script:TsIp = @('100', '64', '0', '8') -join '.'
-    $script:Tools = 'id', 'tailscale', 'dpkg-query', 'apt-get', 'curl', 'gpg', 'systemctl', 'sysctl', 'ufw', 'sshd', 'docker', 'ss', 'chown', 'nft', 'ip', 'nginx'
+    $script:Tools = 'id', 'tailscale', 'dpkg-query', 'apt-get', 'curl', 'gpg', 'systemctl', 'sysctl', 'ufw', 'sshd', 'docker', 'ss', 'chown', 'nft', 'ip', 'nginx',
+    'systemd-run', 'timeout'
 
     function New-Box {
         # A fresh Ubuntu 24.04 server with the account and Tailscale up.
@@ -369,6 +370,144 @@ Describe '09-reach.sh' -Skip:$IsWindows {
             $r = Invoke-Box $b '09-reach.sh' @() @($line)
             $r.ExitCode | Should -Be 1 -Because $line
             $r.Output | Should -Be @("FAIL input line 1 is not '<name> <tailnet URL>'")
+        }
+    }
+}
+
+Describe '10-vps.sh' -Skip:$IsWindows {
+
+    BeforeAll {
+        function New-RunningBox {
+            # The rebuilt VPS after Stage 5: guard and Docker up, both projects running.
+            $b = New-PlacedBox
+            Set-Fake $b 'active' "owui-web-egress-guard.service`ndocker.service"
+            $null = New-Item -ItemType File -Path (Join-Path $b.Fake 'guard-loaded') -Force
+            foreach ($p in 'owui-web-egress', 'kokoro') { $null = New-Item -ItemType File -Path (Join-Path $b.Fake "up-$p") -Force }
+            Set-BoxFile $b '/proc/sys/kernel/random/boot_id' "0f6c1c3e-2b1a-4c55-9d1e-7a0d0a6b9e21`n"
+            return $b
+        }
+        function Get-Fact($Run) { $o = @{}; foreach ($l in $Run.Output) { if ($l -match '^FACT (\S+) ?(.*)$') { $o[$Matches[1]] = $Matches[2] } }; $o }
+        $script:Dropin = 'run/systemd/system/owui-web-egress-guard.service.d/zz-ollama-cria-break.conf'
+    }
+
+    It 'reports the boot and whether the guard came up before Docker' {
+        $b = New-RunningBox
+        Set-Fake $b 'guard-mono' '4100200'
+        Set-Fake $b 'docker-mono' '5300400'
+        $r = Invoke-Box $b '10-vps.sh' @('boot')
+        $r.ExitCode | Should -Be 0
+        $f = Get-Fact $r
+        $f['boot_id'] | Should -Be '0f6c1c3e-2b1a-4c55-9d1e-7a0d0a6b9e21'
+        $f['guard_first'] | Should -Be 'yes'
+        $f['guard_active'] | Should -Be 'yes'
+        $f['docker_active'] | Should -Be 'yes'
+        Set-Fake $b 'guard-mono' '6300400'
+        (Get-Fact (Invoke-Box $b '10-vps.sh' @('boot')))['guard_first'] | Should -Be 'no'
+        Set-Fake $b 'guard-mono' '0'
+        (Get-Fact (Invoke-Box $b '10-vps.sh' @('boot')))['guard_first'] | Should -Be 'unknown'
+    }
+
+    It 'schedules the restart so the SSH command returns first' {
+        $b = New-RunningBox
+        $r = Invoke-Box $b '10-vps.sh' @('reboot')
+        $r.ExitCode | Should -Be 0
+        $r.Steps | Should -Be @('STEP the VPS restarts in 5 seconds')
+        Test-Path -LiteralPath (Join-Path $b.Fake 'reboot-scheduled') | Should -BeTrue
+        Get-Fake $b 'calls' | Where-Object { $_ -like 'systemd-run *' } | Should -Match '--on-active=5 .*/bin/systemctl reboot'
+    }
+
+    It 'breaks the guard, finds that Docker refuses to start, and puts everything back' {
+        $b = New-RunningBox
+        $r = Invoke-Box $b '10-vps.sh' @('guard-break', 'liam')
+        $r.ExitCode | Should -Be 0
+        $f = Get-Fact $r
+        $f['docker_refused'] | Should -Be 'yes'
+        $f['guard_active'] | Should -Be 'yes'
+        $f['guard_loaded'] | Should -Be 'yes'
+        $f['docker_active'] | Should -Be 'yes'
+        $f['egress_running'] | Should -Be '3/3'
+        $f['kokoro_running'] | Should -Be '1/1'
+        $f['gluetun_health'] | Should -Be 'healthy'
+        Test-Path -LiteralPath (Join-Path $b.Root $script:Dropin) | Should -BeFalse
+        $calls = @(Get-Fake $b 'calls' | Where-Object { $_ -like 'systemctl st*' })
+        $calls[0] | Should -Be 'systemctl stop docker.socket docker.service'
+        $calls | Should -Contain 'systemctl start docker.service'
+        $calls[-1] | Should -Be 'systemctl start docker.socket docker.service'
+    }
+
+    It 'reports a Docker that starts without its guard' {
+        $b = New-RunningBox
+        $null = New-Item -ItemType File -Path (Join-Path $b.Fake 'docker-ignores-guard') -Force
+        $r = Invoke-Box $b '10-vps.sh' @('guard-break', 'liam')
+        (Get-Fact $r)['docker_refused'] | Should -Be 'no'
+        Test-Path -LiteralPath (Join-Path $b.Root $script:Dropin) | Should -BeFalse
+    }
+
+    It 'changes nothing when the guard or Docker is not up to begin with' {
+        $b = New-RunningBox
+        Set-Fake $b 'active' 'docker.service'
+        $r = Invoke-Box $b '10-vps.sh' @('guard-break', 'liam')
+        $r.ExitCode | Should -Be 1
+        $r.Output | Should -Contain 'FAIL the guard is not active; nothing was changed'
+        Test-Path -LiteralPath (Join-Path $b.Root 'run/systemd') | Should -BeFalse
+        Get-Fake $b 'calls' | Where-Object { $_ -like 'systemctl stop*' } | Should -BeNullOrEmpty
+    }
+
+    It 'runs the kill-switch test inside the gateway and always starts the tunnel again' {
+        $b = New-RunningBox
+        $py = @(Get-Content -LiteralPath (Join-Path $script:Stages '10-killswitch.py'))
+        Set-Fake $b 'killswitch-out' "FACT ks_search network_error`nFACT ks_recovered yes"
+        $r = Invoke-Box $b '10-vps.sh' @('kill-switch') $py
+        $r.ExitCode | Should -Be 0
+        (Get-Fact $r)['ks_search'] | Should -Be 'network_error'
+        (Get-Fake $b 'killswitch-in') -join "`n" | Should -Match 'def main'
+        Test-Path -LiteralPath (Join-Path $b.Fake 'tunnel-resumed') | Should -BeTrue
+
+        $b = New-RunningBox
+        Set-Fake $b 'killswitch-exit' '3'
+        $r = Invoke-Box $b '10-vps.sh' @('kill-switch') $py
+        $r.ExitCode | Should -Be 1
+        $r.Output | Should -Contain 'FAIL the test stopped (exit 3); the tunnel was started again'
+        Test-Path -LiteralPath (Join-Path $b.Fake 'tunnel-resumed') | Should -BeTrue
+    }
+
+    It 'touches nothing without the test or a running gateway' {
+        $b = New-RunningBox
+        $r = Invoke-Box $b '10-vps.sh' @('kill-switch') @('print(1)')
+        $r.Output | Should -Contain 'FAIL no test on standard input'
+        Set-Fake $b 'gateway-running' 'false'
+        $r = Invoke-Box $b '10-vps.sh' @('kill-switch') @('def main(): pass')
+        $r.Output | Should -Contain 'FAIL the gateway container is not running; nothing was changed'
+        Get-Fake $b 'calls' | Where-Object { $_ -like 'docker exec*' } | Should -BeNullOrEmpty
+    }
+
+    It 'gives its public addresses and listening ports, and nothing private' {
+        $b = New-RunningBox
+        Set-Fake $b 'host-ip' '203.0.113.10'
+        Set-Fake $b 'host-ip6' '2001:db8::10'
+        Set-Fake $b 'listen-8880' $script:TsIp
+        Set-Fake $b 'listen-53' '127.0.0.53'
+        $f = Get-Fact (Invoke-Box $b '10-vps.sh' @('public-ip'))
+        $f['public_ipv4'] | Should -Be '203.0.113.10'
+        $f['public_ipv6'] | Should -Be '2001:db8::10'
+        $f['tcp_ports'] | Should -Be '22,53,8880'
+        Set-Fake $b 'host-ip' '192.168.1.20'
+        Remove-Item -LiteralPath (Join-Path $b.Fake 'host-ip6')
+        $f = Get-Fact (Invoke-Box $b '10-vps.sh' @('public-ip'))
+        $f['public_ipv4'] | Should -Be 'none'
+        $f['public_ipv6'] | Should -Be 'none'
+    }
+
+    It 'probes public addresses from the VPS without printing them' {
+        $b = New-RunningBox
+        $null = New-Item -ItemType File -Path (Join-Path $b.Fake 'tcp-open-3000') -Force
+        $r = Invoke-Box $b '10-vps.sh' @('probe') @('198.51.100.7 3000', '198.51.100.7 443', '2001:db8::7 3000')
+        $r.ExitCode | Should -Be 0
+        $r.Output | Should -Be @('FACT probe_4_3000 open', 'FACT probe_4_443 closed', 'FACT probe_6_3000 open', 'STEP probed 3 port(s) from the VPS')
+        foreach ($line in "$($script:TsIp) 3000", '192.168.1.5 80', '10.0.0.1 22', 'fe80::1 22', '198.51.100.7 70000', '198.51.100.7 80 x') {
+            $r = Invoke-Box $b '10-vps.sh' @('probe') @($line)
+            $r.ExitCode | Should -Be 1 -Because $line
+            $r.Output | Should -Be @("FAIL input line 1 is not '<public address> <port>'")
         }
     }
 }

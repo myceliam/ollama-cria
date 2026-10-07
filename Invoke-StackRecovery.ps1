@@ -33,7 +33,8 @@
       - Interrupted. A stage still marked running was cut off: the items it
         created and marked 'wipe' are removed (only those, and only while
         they are still the objects it created), then it runs again (C-45).
-        A stage that asked for a restart runs again without wiping.
+        state.json counts the interruptions, which Stage 10 tests. A stage
+        that asked for a restart runs again without wiping.
       - Elevation. A stage that needs admin rights (Stage 3) runs in an
         elevated child of this script, which holds the same lock and returns
         its exit code. Everything else runs as the signed-in user, so files,
@@ -252,6 +253,7 @@ function Get-StageContext([int]$Number, $State, [string]$StatePath, [string]$Mod
         Mode        = $Mode
         RepoRoot    = [IO.Path]::GetFullPath($RepoRoot)
         StateRoot   = $script:StateRoot
+        StatePath   = $StatePath
         StagingRoot = $topology['controller']['stagingRoot']
         Topology    = $topology
         Machine     = $machine
@@ -262,9 +264,11 @@ function Get-StageContext([int]$Number, $State, [string]$StatePath, [string]$Mod
         HostKey     = $HostKeyFingerprint
         PathCheck   = $pathCheck
         RootsPath   = Join-Path $RepoRoot 'manifests/recovery-roots.json'
+        StageRoot   = [IO.Path]::GetFullPath($StageRoot)
         Tools       = @{
             RestoreSecrets = Join-Path $PSScriptRoot 'tools/Restore-StackSecrets.ps1'
             StackCapture   = Join-Path $PSScriptRoot 'tools/StackCapture.psm1'
+            CollectSecrets = Join-Path $PSScriptRoot 'tools/Collect-StackSecrets.ps1'
         }
         Own         = $ownership.Own
         Keep        = $ownership.Keep
@@ -419,6 +423,7 @@ function Invoke-Execute {
         $wiped = @()
         if ($entry['status'] -eq 'running') {
             Say "Stage $number was interrupted last time; removing what it created and starting it again."
+            $entry['interruptions'] = [int]$entry['interruptions'] + 1
             $wiped = @(Clear-StageOwned -State $state -StatePath $statePath -Stage $number)
         }
         $entry['attempts'] = [int]$entry['attempts'] + 1

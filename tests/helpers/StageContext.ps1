@@ -40,6 +40,9 @@ function Reset-Fake {
         OnStart        = $null
         Account        = @{ Sid = 'S-1-5-21-1000-2000-3000-1001'; Id = 'PC\liam'; Profile = 'C:\Users\liam'; Startup = $null; Console = 'PC\liam' }
         Tasks          = @{}
+        TaskInfo       = @{}
+        Boot           = [DateTime]::new(2026, 10, 7, 8, 0, 0, [DateTimeKind]::Utc)
+        Tcp            = { param($Address, $Ports) $o = @{}; foreach ($p in $Ports) { $o[$p] = 'closed' }; $o }
         Registered     = @{}
         Shortcuts      = @{}
         Firewall       = [Collections.Generic.List[object]]::new()
@@ -91,8 +94,16 @@ function New-FakeMachine {
         BitLocker      = { param($Path) $global:CriaFake.BitLocker }
         IsElevated     = { $true }
         Wait           = { param($Seconds) }
+        BootTime       = { $global:CriaFake.Boot }
+        TcpProbe       = {
+            param($Address, $Ports, $TimeoutMs = 4000)
+            if (-not (Test-PublicAddress $Address)) { throw [ArgumentException]::new('TcpProbe only reaches public addresses') }
+            $global:CriaCalls.Add("tcp $(@($Ports).Count) ports")
+            & $global:CriaFake.Tcp $Address @($Ports)
+        }
         Account        = { $global:CriaFake.Account }
         TaskState      = { param($Name) $global:CriaFake.Tasks[$Name] }
+        TaskInfo       = { param($Name) $global:CriaFake.TaskInfo[$Name] }
         RegisterTask   = {
             param($Name, $Xml)
             $global:CriaCalls.Add("register $Name")

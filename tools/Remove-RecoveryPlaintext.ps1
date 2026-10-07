@@ -60,49 +60,11 @@ Import-Module (Join-Path $PSScriptRoot 'RecoveryState.psm1')
 $rows = [Collections.Generic.List[object]]::new()
 $problems = [Collections.Generic.List[string]]::new()
 $statePath = Join-Path $StateRoot 'state.json'
-$comparison = if ($IsWindows) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
-
-function Add-Row([string]$Path, [string]$Status) {
-    $rows.Add([pscustomobject]@{ Path = $Path; Status = $Status })
-}
 
 function Invoke-Removal {
     if (-not (Test-Path -LiteralPath $statePath -PathType Leaf)) { $problems.Add("no controller state at $statePath"); return }
     $state = Read-RecoveryState -Path $statePath
-    $items = @(Get-OwnedItem -State $state -Plaintext | Sort-Object { $_['path'].Length } -Descending)
-    # Roots (the staging folder) last, and only when empty.
-    $containers = @($items | Where-Object { $_['kind'] -eq 'folder' -and $_['path'].Equals($_['root'], $comparison) })
-    $trees = @($items | Where-Object { $_ -notin $containers })
-    foreach ($item in $trees) {
-        if (-not $state['owned'].Contains($item)) { continue }
-        if (-not $Execute) {
-            $identity = Get-ItemIdentity $item['path']
-            Add-Row $item['path'] $(if ($null -eq $identity) { 'already gone' } elseif ($identity -ne $item['identity']) { 'changed since it was recorded; would be left' } else { 'would remove' })
-            continue
-        }
-        $r = Remove-OwnedItem -State $state -StatePath $statePath -Item $item
-        Add-Row $item['path'] $(switch ($r) {
-                'removed' { 'removed' }
-                'gone' { 'already gone' }
-                'changed' { 'left: another item is there now' }
-                'link' { 'left: a link or junction is on the way or inside' }
-                'path' { 'left: it fails the path check now' }
-                default { "left: $r" }
-            })
-    }
-    foreach ($item in $containers) {
-        $path = $item['path']
-        if (-not (Test-Path -LiteralPath $path -PathType Container)) { Add-Row $path 'already gone'; continue }
-        # In plan, what this run would remove does not count.
-        $left = @(Get-ChildItem -LiteralPath $path -Force | Where-Object {
-                $full = $_.FullName
-                $Execute -or -not @($trees | Where-Object { $_['path'].Equals($full, $comparison) }).Count
-            } | ForEach-Object Name)
-        if ($left.Count) { Add-Row $path "left: not empty ($($left.Count) items the controller did not create: $($left -join ', '))"; continue }
-        if (-not $Execute) { Add-Row $path 'would remove once empty'; continue }
-        $r = Remove-OwnedItem -State $state -StatePath $statePath -Item $item
-        Add-Row $path $(if ($r -eq 'removed') { 'removed' } else { "left: $r" })
-    }
+    foreach ($r in @(Invoke-PlaintextRemoval -State $state -StatePath $statePath -Execute:$Execute)) { $rows.Add($r) }
 }
 
 try {

@@ -20,8 +20,8 @@
                       identity when created, and two flags. retry 'wipe' items
                       are removed when their stage was interrupted and runs
                       again; 'keep' items are re-checked instead. plaintext
-                      items hold or contain secrets and are removed by
-                      tools/Remove-RecoveryPlaintext.ps1 in Stage 11. adopted
+                      items hold or contain secrets and are removed in Stage
+                      11 (Invoke-PlaintextRemoval). adopted
                       items were not created by the controller but handed to
                       it on purpose (the bundle ZIP, a download token).
 
@@ -54,6 +54,9 @@
       Remove-OwnedItem        removes one owned item if it is still the same
                               object, never following a link
       Clear-StageOwned        removes a stage's 'wipe' items, deepest first
+      Invoke-PlaintextRemoval removes every plaintext item, the staging
+                              folder last and only when empty (Stage 11 and
+                              tools/Remove-RecoveryPlaintext.ps1)
       Get-OwnershipCallback   the Own, Keep, IsOwned and RemoveOwned script
                               blocks a stage gets in its context
       New-StageResult         the object every stage mode returns
@@ -473,6 +476,62 @@ function Clear-StageOwned {
     }
 }
 
+function Invoke-PlaintextRemoval {
+    <#
+    .SYNOPSIS
+        Removes every item -State records as plaintext, deepest first, each
+        only while it passes the path check against its root and is still the
+        object recorded; a link is never followed. A recorded folder that is
+        its own root (the staging folder) goes last, and only when nothing is
+        left in it: anything else there is named, never removed. Without
+        -Execute it only says what it would do. Returns one row per item:
+        Path and Status ('removed', 'already gone', 'would remove', ... or
+        'left: <why>').
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)][hashtable]$State,
+        [Parameter(Mandatory)][string]$StatePath,
+        [switch]$Execute
+    )
+    $comparison = if ($script:OnWindows) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
+    $items = @(Get-OwnedItem -State $State -Plaintext | Sort-Object { $_['path'].Length } -Descending)
+    $containers = @($items | Where-Object { $_['kind'] -eq 'folder' -and $_['path'].Equals($_['root'], $comparison) })
+    $trees = @($items | Where-Object { $_ -notin $containers })
+    foreach ($item in $trees) {
+        if (-not $State['owned'].Contains($item)) { continue }
+        if (-not $Execute) {
+            $identity = Get-ItemIdentity $item['path']
+            [pscustomobject]@{ Path = $item['path']; Status = $(if ($null -eq $identity) { 'already gone' } elseif ($identity -ne $item['identity']) { 'changed since it was recorded; would be left' } else { 'would remove' }) }
+            continue
+        }
+        $r = Remove-OwnedItem -State $State -StatePath $StatePath -Item $item
+        [pscustomobject]@{ Path = $item['path']; Status = $(switch ($r) {
+                    'removed' { 'removed' }
+                    'gone' { 'already gone' }
+                    'changed' { 'left: another item is there now' }
+                    'link' { 'left: a link or junction is on the way or inside' }
+                    'path' { 'left: it fails the path check now' }
+                    default { "left: $r" }
+                })
+        }
+    }
+    foreach ($item in $containers) {
+        $path = $item['path']
+        if (-not (Test-Path -LiteralPath $path -PathType Container)) { [pscustomobject]@{ Path = $path; Status = 'already gone' }; continue }
+        # In plan, what this call would remove does not count.
+        $left = @(Get-ChildItem -LiteralPath $path -Force | Where-Object {
+                $full = $_.FullName
+                $Execute -or -not @($trees | Where-Object { $_['path'].Equals($full, $comparison) }).Count
+            } | ForEach-Object Name)
+        if ($left.Count) { [pscustomobject]@{ Path = $path; Status = "left: not empty ($($left.Count) items the controller did not create: $($left -join ', '))" }; continue }
+        if (-not $Execute) { [pscustomobject]@{ Path = $path; Status = 'would remove once empty' }; continue }
+        $r = Remove-OwnedItem -State $State -StatePath $StatePath -Item $item
+        [pscustomobject]@{ Path = $path; Status = $(if ($r -eq 'removed') { 'removed' } else { "left: $r" }) }
+    }
+}
+
 function New-StageResult {
     <#
     .SYNOPSIS
@@ -596,4 +655,4 @@ function Test-EvidenceSecretFree {
 
 Export-ModuleMember -Function Read-RecoveryState, Save-RecoveryState, Enter-RecoveryLock, Exit-RecoveryLock,
 Get-ItemIdentity, Add-OwnedItem, Get-OwnedItem, Set-OwnedItemRetry, Test-OwnedItem, Remove-OwnedItem,
-Clear-StageOwned, Get-OwnershipCallback, New-StageResult, Add-StageCheck, Add-StageAsk, Test-EvidenceSecretFree
+Clear-StageOwned, Invoke-PlaintextRemoval, Get-OwnershipCallback, New-StageResult, Add-StageCheck, Add-StageAsk, Test-EvidenceSecretFree

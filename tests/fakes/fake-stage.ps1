@@ -8,6 +8,7 @@
 #   Data     a table returned as the stage's data
 #   Step     a step line to report
 #   Ask      an id the stage asks about until it is accepted
+#   Rows     extra checkpoint rows, each @{ What; Actual; Ok }
 param(
     [Parameter(Mandatory)][ValidateSet('Plan', 'Run', 'Check')][string]$Mode,
     [Parameter(Mandatory)][hashtable]$Context
@@ -26,6 +27,7 @@ if ($Mode -eq 'Check') {
     $r = New-StageResult -Status 'passed'
     if ($status -eq 'needs-user') { Add-StageAsk $r 'a person must look' }
     else { Add-StageCheck $r 'fake check' 'passed' $status ($status -eq 'passed') }
+    foreach ($row in @($cfg['Rows'])) { if ($row) { Add-StageCheck $r $row.What '' $row.Actual $row.Ok } }
     return $r
 }
 if ($Mode -eq 'Plan') {

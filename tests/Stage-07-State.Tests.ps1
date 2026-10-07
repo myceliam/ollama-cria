@@ -240,6 +240,29 @@ Describe 'Stage 7: run' {
         $k.Checks.Count | Should -Be 10
     }
 
+    It 'run again after Stage 8 places nothing twice and leaves OWUI running' {
+        $c = New-Stage7
+        $null = Invoke-Visit $c
+        $global:CriaDocker.Admin = $true
+        $null = Invoke-Visit $c
+        $global:CriaDocker.Key = 'sk-' + ('d4' * 16)
+        [IO.File]::WriteAllText((Get-KeyFile $c), $global:CriaDocker.Key)
+        (Invoke-Visit $c).Status | Should -Be 'done'
+        $global:CriaRestore.Calls.Clear()
+        # Stage 8 started the stack; ntfy has changed its user.db since.
+        $global:CriaDocker.Running = $true
+        $global:CriaRestore.Rows = @([pscustomobject]@{ Id = 'ntfy-user-db'; Folder = '07'; Destination = 'ntfy-data:user.db'; Status = 'refused' })
+        $global:CriaCalls.Clear()
+        $r = Invoke-Visit $c
+        $r.Problems | Should -BeNullOrEmpty
+        $r.Status | Should -Be 'done'
+        $r.Steps | Should -Contain 'service state: placed by an earlier attempt'
+        $global:CriaRestore.Calls | Should -HaveCount 0
+        $global:CriaDocker.Running | Should -BeTrue
+        Get-Call 'docker compose * stop *' | Should -HaveCount 0
+        Get-Call 'docker compose * up *' | Should -HaveCount 0
+    }
+
     It 'asks again for a key OWUI refuses, and leaves the consumers alone' {
         $c = New-Stage7
         $null = Invoke-Visit $c

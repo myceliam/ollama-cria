@@ -168,6 +168,9 @@ $wantedTasks = [ordered]@{
 }
 # Retired; never recreated (RESTORE.md Stage 8d, R-20).
 $retiredTasks = @('OWUI-Nightly-Backup', 'OWUI-Weekly-VPS-Push', 'OWUI-ntfy-Backups', 'Ollama Weekly Backup', 'OWUI-Automation-Chat-Tidy')
+# Installed by the recovery itself (Stage 10, from windows/reminder/), so
+# neither captured nor 'not covered'.
+$recoveryTasks = @('OWUI-ntfy-BackupReminder')
 # Live folders and where their files are in this repo.
 $repoOf = [ordered]@{ 'E:\ai\ollama\' = 'stack/'; 'E:\ai\ag-startuip\cline-dashboard\' = 'extras/dashboard/' }
 
@@ -594,7 +597,7 @@ function Read-Task {
         }
         elseif ($item.Name -ne 'desktop.ini') { $startupOther.Add($item.Name) }
     }
-    $known = @($wantedTasks.Keys) + $retiredTasks
+    $known = @($wantedTasks.Keys) + $retiredTasks + $recoveryTasks
     Add-JsonOutput 'manifests/tasks.json' ([ordered]@{
             '$schema'     = './schemas/tasks.schema.json'
             formatVersion = 1

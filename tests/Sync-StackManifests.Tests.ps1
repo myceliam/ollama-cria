@@ -355,6 +355,7 @@ Describe 'Sync-StackManifests.ps1 on Windows' -Skip:(-not $IsWindows) {
                 [pscustomobject]@{ TaskName = 'OWUI-ntfy-Fast'; State = 'Ready'; Actions = @([pscustomobject]@{ Execute = 'pwsh.exe'; Arguments = '-File "E:\ai\ollama\_support\scripts\ntfy\Watch-Fast.ps1"' }) }
                 [pscustomobject]@{ TaskName = 'OWUI-ntfy-MorningBrief'; State = 'Disabled'; Actions = @() }
                 [pscustomobject]@{ TaskName = 'OWUI-Nightly-Backup'; State = 'Ready'; Actions = @() }
+                [pscustomobject]@{ TaskName = 'OWUI-ntfy-BackupReminder'; State = 'Ready'; Actions = @() }
                 [pscustomobject]@{ TaskName = 'Some vendor task'; State = 'Ready'; Actions = @() }
             )
         }

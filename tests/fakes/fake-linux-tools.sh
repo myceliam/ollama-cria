@@ -12,6 +12,10 @@ mkdir -p "$f"
 printf '%s %s\n' "$tool" "$*" >> "$f/calls"
 has() { [ -f "$f/$1" ] && grep -qxF -- "$2" "$f/$1"; }
 add() { has "$1" "$2" || printf '%s\n' "$2" >> "$f/$1"; }
+drop() { [ -f "$f/$1" ] && grep -vxF -- "$2" "$f/$1" > "$f/$1.new"; [ -f "$f/$1.new" ] && mv "$f/$1.new" "$f/$1"; return 0; }
+# Stage 10's guard-break drop-in: while it exists the guard fails, so
+# Docker (which Requires= it) does not start.
+broken=$CRIA_ROOT/run/systemd/system/owui-web-egress-guard.service.d/zz-ollama-cria-break.conf
 
 case "$tool" in
   id)
@@ -48,6 +52,7 @@ case "$tool" in
         ;;
       *' -o '*) cp "$f/download" "${*: -1}" ;;
       *api.ipify.org*) cat "$f/host-ip" 2>/dev/null || exit 7 ;;
+      *api6.ipify.org*) cat "$f/host-ip6" 2>/dev/null || exit 7 ;;
     esac
     ;;
   chown) ;;
@@ -75,14 +80,30 @@ case "$tool" in
       is-active) has active "${*: -1}" ;;
       enable) add enabled "${*: -1}" ;;
       start | restart | reload)
-        u=${*: -1}
-        if [ "$u" = owui-web-egress-guard.service ]; then
-          [ -f "$f/guard-fails" ] && exit 1
-          [ -f "$f/guard-empty" ] || touch "$f/guard-loaded"
-        fi
-        add active "$u"
+        shift
+        for u in "$@"; do
+          case "$u" in -*) continue ;; esac
+          if [ "$u" = owui-web-egress-guard.service ]; then
+            { [ -f "$f/guard-fails" ] || [ -f "$broken" ]; } && exit 1
+            [ -f "$f/guard-empty" ] || touch "$f/guard-loaded"
+          fi
+          if [ "$u" = docker.service ] && [ -f "$broken" ] && [ ! -f "$f/docker-ignores-guard" ]; then exit 1; fi
+          add active "$u"
+        done
         ;;
+      stop)
+        shift
+        for u in "$@"; do drop active "$u"; done
+        ;;
+      reset-failed) ;;
       show)
+        if [ "${*: -1}" = --value ]; then
+          case "$*" in
+            *ActiveEnterTimestampMonotonic*) cat "$f/guard-mono" 2>/dev/null || echo 0 ;;
+            *ExecMainStartTimestampMonotonic*) cat "$f/docker-mono" 2>/dev/null || echo 0 ;;
+          esac
+          exit 0
+        fi
         if [ -f "$CRIA_ROOT/etc/systemd/system/docker.service.d/owui-web-egress.conf" ] && [ ! -f "$f/dropin-inactive" ]; then
           echo 'Requires=docker.socket owui-web-egress-guard.service'
           echo 'After=network-online.target owui-web-egress-guard.service'
@@ -141,8 +162,20 @@ case "$tool" in
         [ -n "$line" ] || exit 1
         case "$*" in *--format*) echo "${line#* }" ;; esac
         ;;
-      inspect) cat "$f/gluetun-health" 2>/dev/null || echo healthy ;;
-      exec) cat "$f/tunnel-ip" 2>/dev/null || exit 1 ;;
+      inspect)
+        case "$*" in
+          *State.Running*) cat "$f/gateway-running" 2>/dev/null || echo true ;;
+          *) cat "$f/gluetun-health" 2>/dev/null || echo healthy ;;
+        esac
+        ;;
+      exec)
+        case " $* " in
+          # 10-vps.sh kill-switch: the test arrives on stdin.
+          *' -i '*) cat > "$f/killswitch-in"; cat "$f/killswitch-out" 2>/dev/null; exit "$(cat "$f/killswitch-exit" 2>/dev/null || echo 0)" ;;
+          *vpn/status*) touch "$f/tunnel-resumed" ;;
+          *) cat "$f/tunnel-ip" 2>/dev/null || exit 1 ;;
+        esac
+        ;;
       compose)
         [ "$*" = 'compose version --short' ] && { echo 5.6.0; exit 0; }
         dir=$(basename "$3")
@@ -160,12 +193,29 @@ case "$tool" in
     esac
     ;;
   ss)
+    if [[ $* != *sport* ]]; then
+      # Every listening socket: one line per address in each listen-<port>.
+      for src in "$f"/listen-* "$f/ssh-listen"; do
+        [ -f "$src" ] || continue
+        port=${src##*listen-}; [ "$src" = "$f/ssh-listen" ] && port=22
+        while read -r a; do echo "LISTEN 0 4096 $a:$port 0.0.0.0:*"; done < "$src"
+      done
+      exit 0
+    fi
     port=${*: -1}
     port=${port##*:}
     src=$f/listen-$port
     [ "$port" = 22 ] && src=$f/ssh-listen
     [ -f "$src" ] || exit 0
     while read -r a; do echo "LISTEN 0 4096 $a:$port 0.0.0.0:*"; done < "$src"
+    ;;
+  systemd-run) touch "$f/reboot-scheduled" ;;
+  timeout)
+    case "${*: -1}" in
+      # 10-vps.sh probe: a port is open when fake/tcp-open-<port> exists.
+      */dev/tcp/*) port=${*: -1}; port=${port##*/}; [ -f "$f/tcp-open-$port" ] ;;
+      *) shift; exec "$@" ;;
+    esac
     ;;
   *)
     echo "fake-linux-tools: no fake for $tool" >&2

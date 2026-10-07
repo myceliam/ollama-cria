@@ -150,6 +150,8 @@ Describe 'execute' {
         Test-Path -LiteralPath (Join-Path $rig.Live 'keep.txt') | Should -BeTrue
         Test-Path -LiteralPath (Join-Path $rig.Live 'stranger.txt') | Should -BeTrue
         (Get-State $rig).stages['2'].attempts | Should -Be 2
+        (Get-State $rig).stages['2'].interruptions | Should -Be 1
+        (Get-State $rig).stages['1'].ContainsKey('interruptions') | Should -BeFalse
     }
 
     It "keeps a finished stage's items from being wiped by a later attempt" {
@@ -172,6 +174,9 @@ Describe 'execute' {
         (Get-State $rig).stages['1'].accepted | Should -Be @('gpu')
         $null = Invoke-Controller $rig -Execute
         $global:CriaStageSeen['1:Check'].Accepted | Should -Contain 'gpu'
+        $global:CriaStageSeen['1:Check'].StageRoot | Should -Be ([IO.Path]::GetFullPath($rig.Stages))
+        $global:CriaStageSeen['1:Check'].Tools.CollectSecrets | Should -Match 'Collect-StackSecrets\.ps1$'
+        $global:CriaStageSeen['1:Check'].StatePath | Should -Be (Join-Path $global:CriaStageSeen['1:Check'].StateRoot 'state.json')
     }
 
     It 'runs a stage that asked for a restart again without wiping it' {

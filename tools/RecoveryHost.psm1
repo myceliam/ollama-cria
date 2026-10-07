@@ -6,10 +6,10 @@
 .DESCRIPTION
     New-RecoveryHost returns a table of script blocks: native commands, ssh,
     environment variables, Windows features, processes, HTTP on this machine
-    and the tailnet, free space, BitLocker, the account, scheduled tasks,
-    shortcuts, firewall rules and the pagefile. Stages touch the machine only
-    through it, so the tests can hand a stage a fake machine and check every
-    decision it makes.
+    and the tailnet, TCP probes of public addresses, free space, BitLocker,
+    the account, the boot time, scheduled tasks, shortcuts, firewall rules
+    and the pagefile. Stages touch the machine only through it, so the tests
+    can hand a stage a fake machine and check every decision it makes.
 
     The other exported functions create and check owner-only folders and
     files, the same way tools/Collect-StackSecrets.ps1 and
@@ -25,6 +25,9 @@
                               owner-only from birth
       New-FolderChain         creates the missing folders down to a path, one
                               at a time, and returns the ones it created
+      Test-PublicAddress      whether an IP address is on the public
+                              internet (not loopback, private, link-local,
+                              the tailnet's range or multicast)
 #>
 
 Set-StrictMode -Version Latest
@@ -149,6 +152,38 @@ function Open-NewOwnerOnlyFile {
     $options.Share = [IO.FileShare]::None
     $options.UnixCreateMode = [IO.UnixFileMode]'UserRead, UserWrite'
     return [IO.FileStream]::new($Path, $options)
+}
+
+function Test-PublicAddress {
+    <#
+    .SYNOPSIS
+        $true when -Address is an IPv4 or IPv6 address on the public
+        internet: not unspecified, loopback, private, link-local, the
+        tailnet's range (100.64.0.0/10, fd7a:115c:a1e0::/48), multicast or
+        reserved. Documentation ranges count as public; they go nowhere.
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([AllowEmptyString()][string]$Address)
+    # Only the plain forms: a dotted quad, or IPv6 without a zone.
+    if ($Address -notmatch '^([0-9]{1,3}(\.[0-9]{1,3}){3}|[0-9a-fA-F:.]*:[0-9a-fA-F:.]*)$') { return $false }
+    $ip = $null
+    if (-not [Net.IPAddress]::TryParse($Address, [ref]$ip)) { return $false }
+    if ($ip.AddressFamily -eq [Net.Sockets.AddressFamily]::InterNetwork) {
+        $b = $ip.GetAddressBytes()
+        if ($b[0] -in 0, 10, 127 -or $b[0] -ge 224) { return $false }
+        if ($b[0] -eq 100 -and $b[1] -ge 64 -and $b[1] -le 127) { return $false }
+        if ($b[0] -eq 169 -and $b[1] -eq 254) { return $false }
+        if ($b[0] -eq 172 -and $b[1] -ge 16 -and $b[1] -le 31) { return $false }
+        if ($b[0] -eq 192 -and $b[1] -eq 168) { return $false }
+        return $true
+    }
+    if ($ip.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetworkV6) { return $false }
+    if ($ip.IsIPv4MappedToIPv6 -or $ip.IsIPv6LinkLocal -or $ip.IsIPv6SiteLocal -or $ip.IsIPv6Multicast) { return $false }
+    if ($ip.Equals([Net.IPAddress]::IPv6Loopback) -or $ip.Equals([Net.IPAddress]::IPv6Any)) { return $false }
+    $b = $ip.GetAddressBytes()
+    if (($b[0] -band 0xfe) -eq 0xfc) { return $false }
+    return (($b[0] -band 0xe0) -eq 0x20)
 }
 
 function Get-BitLockerProtection([string]$Path) {
@@ -320,6 +355,29 @@ function New-RecoveryHost {
             catch { return @{ Status = 0; Body = '' } }
         }
 
+        # Which of -Ports accept a TCP connection at a public -Address
+        # (Test-PublicAddress) within -TimeoutMs, all tried at once:
+        # @{ <port> = 'open' or 'closed' }. Stage 10's probes from outside.
+        TcpProbe       = {
+            param([string]$Address, [int[]]$Ports, [int]$TimeoutMs = 4000)
+            if (-not (Test-PublicAddress $Address)) { throw [ArgumentException]::new('TcpProbe only reaches public addresses') }
+            $ip = [Net.IPAddress]::Parse($Address)
+            $tries = @{}
+            foreach ($p in @($Ports | Sort-Object -Unique)) {
+                $c = [Net.Sockets.TcpClient]::new($ip.AddressFamily)
+                $tries[$p] = @{ Client = $c; Task = $c.ConnectAsync($ip, $p) }
+            }
+            try { $null = [Threading.Tasks.Task]::WaitAll([Threading.Tasks.Task[]]@($tries.Values | ForEach-Object { $_.Task }), $TimeoutMs) }
+            catch { $null = $_ }
+            $out = @{}
+            foreach ($p in $tries.Keys) {
+                $t = $tries[$p]
+                $out[$p] = if ($t.Task.Status -eq 'RanToCompletion' -and $t.Client.Connected) { 'open' } else { 'closed' }
+                $t.Client.Dispose()
+            }
+            return $out
+        }
+
         FreeBytes      = { param([string]$Path) [IO.DriveInfo]::new([IO.Path]::GetPathRoot([IO.Path]::GetFullPath($Path))).AvailableFreeSpace }
 
         BitLocker      = { param([string]$Path) Get-BitLockerProtection $Path }
@@ -330,6 +388,10 @@ function New-RecoveryHost {
         }
 
         Wait           = { param([int]$Seconds) Start-Sleep -Seconds $Seconds }
+
+        # When Windows last started, in UTC (a restart changes it; Fast
+        # Startup's shut down does not).
+        BootTime       = { (Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop).LastBootUpTime.ToUniversalTime() }
 
         # The account running this window and the one signed in at the
         # console, for the scheduled tasks and the Startup folder (Stage 8).
@@ -351,6 +413,17 @@ function New-RecoveryHost {
             $t = Get-ScheduledTask -TaskPath '\' -TaskName $Name -ErrorAction SilentlyContinue
             if ($t) { return [string]$t.State }
             return $null
+        }
+
+        # A scheduled task in the root folder: its state, when it last ran
+        # (UTC, $null if never) and its last result; $null when there is none.
+        TaskInfo       = {
+            param([string]$Name)
+            $t = Get-ScheduledTask -TaskPath '\' -TaskName $Name -ErrorAction SilentlyContinue
+            if (-not $t) { return $null }
+            $i = Get-ScheduledTaskInfo -InputObject $t -ErrorAction SilentlyContinue
+            $last = if ($i -and $i.LastRunTime -and $i.LastRunTime.Year -gt 2000) { $i.LastRunTime.ToUniversalTime() } else { $null }
+            @{ State = [string]$t.State; LastRunTime = $last; LastTaskResult = $(if ($i) { [long]$i.LastTaskResult } else { $null }) }
         }
 
         # A new task from its XML; never replaces one.
@@ -440,4 +513,4 @@ function New-RecoveryHost {
 }
 
 Export-ModuleMember -Function Get-CurrentUserSid, Get-ProtectionProblem, Initialize-ProtectedFolder, New-FolderChain,
-Open-NewOwnerOnlyFile, New-RecoveryHost
+Open-NewOwnerOnlyFile, New-RecoveryHost, Test-PublicAddress

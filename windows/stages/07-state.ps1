@@ -36,6 +36,12 @@
           file in manifests/owui-api-consumers.json, and OWUI is stopped.
           Nothing runs until Stage 8.
 
+    Run again once it is done (for example after Stage 8 has started the
+    stack), it places nothing a second time: folder 07 is not placed again
+    (ntfy changes its user.db as it runs, so the restorer would find a
+    different file and refuse), the seed and the key are not asked for, and
+    OWUI is stopped only when this run started it.
+
     Check is checkpoint 7: every image is there, OWUI's at the seed's digest;
     owui-data is this stage's; bundle folder 07 was placed; in OWUI's
     database every seeded table holds the seed's row count, no {{OWNER}} or
@@ -217,7 +223,9 @@ function Get-HelperImage {
 }
 
 function Restore-ServiceState {
-    # 7c.
+    # 7c, once.
+    $done = @($result.Data['ServiceState'])
+    if ($done -contains 'ntfy-user-db' -and $done -contains 'bolt-server-keys') { $result.Steps.Add('service state: placed by an earlier attempt'); return $true }
     $zip = $bundleData['BundlePath']
     $sha = $bundleData['BundleSha256']
     if (-not $zip -or -not $sha) { $result.Problems.Add('Stage 1 has not recorded the bundle'); return $false }
@@ -236,6 +244,7 @@ function Restore-ServiceState {
 function Open-Owui {
     $r = Invoke-Docker ((Get-ComposeArgument $owuiProject) + @('up', '-d', '--no-deps', '--pull', 'never', 'open-webui'))
     if ($r.ExitCode -ne 0) { $result.Problems.Add("could not start OWUI alone (exit $($r.ExitCode))"); return $false }
+    $script:opened = $true
     foreach ($i in 1..36) {
         $h = & $machine.HttpJson "$owuiUrl/health"
         if ($h) { return $true }
@@ -504,7 +513,8 @@ if ($Mode -eq 'Plan') {
     return $result
 }
 
-if ($seed -and (Install-Image $seed) -and (Initialize-Volume) -and (Restore-ServiceState) -and (Invoke-Seed $seed) -and (Invoke-ApiKey)) {
+$script:opened = $false
+if ($seed -and (Install-Image $seed) -and (Initialize-Volume) -and (Restore-ServiceState) -and (Invoke-Seed $seed) -and (Invoke-ApiKey) -and $script:opened) {
     $null = Close-Owui
 }
 
