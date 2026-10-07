@@ -337,6 +337,9 @@ Describe 'Sync-StackManifests.ps1 on Windows' -Skip:(-not $IsWindows) {
         $d = Get-Doc $repo 'windows-apps.json'
         @($d.packages.id) | Should -Be @('Ollama.Ollama', 'Git.Git')
         $d.gpu.driver | Should -Be '999.01'
+        ($d.packages | Where-Object id -EQ 'Git.Git').version | Should -Be '2.51.0'
+        ($d.packages | Where-Object id -EQ 'Git.Git').exact | Should -BeFalse
+        $r.Warnings | Should -Contain "windows-apps: Git.Git is newer here than winget's source knows (above 2.51.0); Stage 3 installs the newest it has"
         $r.Warnings | Should -Contain 'windows-apps: Docker.DockerDesktop is not installed through winget here'
     }
 

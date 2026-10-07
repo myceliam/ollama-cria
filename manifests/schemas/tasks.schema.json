@@ -103,7 +103,8 @@
               "kind",
               "target",
               "arguments",
-              "workingDirectory"
+              "workingDirectory",
+              "runs"
             ],
             "properties": {
               "name": {
@@ -122,6 +123,14 @@
               },
               "workingDirectory": {
                 "type": "string"
+              },
+              "runs": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_][A-Za-z0-9._ -]*(/[A-Za-z0-9_][A-Za-z0-9._ -]*)*$"
+                },
+                "uniqueItems": true
               }
             }
           }

@@ -38,6 +38,10 @@
           "version": {
             "type": "string"
           },
+          "exact": {
+            "type": "boolean",
+            "description": "false when the installed version is newer than winget's source knows; Stage 3 installs the newest."
+          },
           "why": {
             "type": "string",
             "minLength": 1

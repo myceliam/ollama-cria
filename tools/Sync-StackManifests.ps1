@@ -315,6 +315,12 @@ function Read-WindowsApp {
     $apps = [Collections.Generic.List[object]]::new()
     foreach ($id in $wantedApps.Keys) {
         if (-not $found.ContainsKey($id)) { $warnings.Add("windows-apps: $id is not installed through winget here"); continue }
+        # winget writes '> 3.13.15' for a version newer than its source knows.
+        if ($found[$id] -match '^>\s*(\S+)$') {
+            $warnings.Add("windows-apps: $id is newer here than winget's source knows (above $($Matches[1])); Stage 3 installs the newest it has")
+            $apps.Add([ordered]@{ id = $id; version = $Matches[1]; exact = $false; why = $wantedApps[$id] })
+            continue
+        }
         $apps.Add([ordered]@{ id = $id; version = $found[$id]; why = $wantedApps[$id] })
     }
     $gpu = $null
@@ -525,6 +531,17 @@ function ConvertTo-TaskTemplate([string]$Text) {
     return $Text
 }
 
+function Get-RepoScript([string]$Name, [string]$CommandLine) {
+    # The repo paths of the stack scripts a command line runs, with a note
+    # for each one the repo does not have.
+    foreach ($m in [regex]::Matches($CommandLine, '[A-Za-z]:\\[^"]+?\.(ps1|psm1|py|vbs|exe)\b')) {
+        $rel = Get-RepoRelative $m.Value
+        if (-not $rel) { continue }
+        if (-not (Test-Path -LiteralPath (Join-Path $RepoPath $rel) -PathType Leaf)) { $warnings.Add("tasks: $Name runs $rel, which is not in the repo") }
+        $rel
+    }
+}
+
 function Read-Task {
     if (-not $IsWindows) { $problems.Add('tasks: reads the Task Scheduler, so it runs on Windows only'); return }
     $all = @(Get-ScheduledTask -TaskPath '\' -ErrorAction Stop)
@@ -539,15 +556,7 @@ function Read-Task {
         $xml = $xml -replace '^(<\?xml[^>]*encoding=")UTF-16(")', '${1}UTF-8$2'
         $file = 'windows/tasks/' + ($name -replace '[^A-Za-z0-9._-]', '-') + '.xml'
         Add-Output $file $xml
-        $runs = [Collections.Generic.List[string]]::new()
-        foreach ($a in $t.Actions) {
-            foreach ($m in [regex]::Matches("$($a.Execute) $($a.Arguments)", '[A-Za-z]:\\[^"]+?\.(ps1|psm1|py|vbs|exe)\b')) {
-                $rel = Get-RepoRelative $m.Value
-                if (-not $rel) { continue }
-                if (-not (Test-Path -LiteralPath (Join-Path $RepoPath $rel) -PathType Leaf)) { $warnings.Add("tasks: $name runs $rel, which is not in the repo") }
-                $runs.Add($rel)
-            }
-        }
+        $runs = @(foreach ($a in $t.Actions) { Get-RepoScript $name "$($a.Execute) $($a.Arguments)" })
         $installer = $wantedTasks[$name]
         $tasks.Add([ordered]@{
                 name    = $name
@@ -573,6 +582,7 @@ function Read-Task {
                     target           = ConvertTo-TaskTemplate $l.TargetPath
                     arguments        = ConvertTo-TaskTemplate $l.Arguments
                     workingDirectory = ConvertTo-TaskTemplate $l.WorkingDirectory
+                    runs             = @(Get-RepoScript $item.Name "$($l.TargetPath) $($l.Arguments)" | Select-Object -Unique)
                 })
         }
         elseif ($item.Name -ne 'desktop.ini') { $startupOther.Add($item.Name) }
