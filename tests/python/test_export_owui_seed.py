@@ -191,7 +191,7 @@ class ExportTests(unittest.TestCase):
             # mode prints on stdout is on stderr.
             if p.returncode == 0:
                 doc = json.loads(p.stdout)
-                seed_dir.mkdir()
+                seed_dir.mkdir(exist_ok=True)  # file mode accepts an empty folder too
                 for name, text in doc['seed'].items():
                     (seed_dir / name).write_text(text, encoding='utf-8', newline='\n')
                 secrets_file.write_text(doc['secrets_file'], encoding='utf-8', newline='\n')
