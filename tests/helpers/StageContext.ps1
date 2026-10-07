@@ -32,6 +32,8 @@ function Reset-Fake {
         Feature        = @{ VirtualMachinePlatform = 'Enabled' }
         Virtualization = @{ Firmware = $true; Hypervisor = $false }
         Http           = { param($Uri) $null }
+        Status         = { param($Uri, $Headers) 0 }
+        Input          = @{}
         Free           = [long]4TB
         BitLocker      = 'On'
         OnStart        = $null
@@ -53,6 +55,13 @@ function New-FakeMachine {
             $global:CriaCalls.Add(("vps $Alias $($call.Name) " + ($call.Arguments -join ' ')).Trim())
             & $global:CriaFake.Vps $call @($InputLines)
         }
+        ExecInput      = {
+            # The input is kept by command for the tests to read, never logged.
+            param([string]$Name, [string[]]$Arguments = @(), [string]$InputText = '')
+            $global:CriaCalls.Add(("$Name " + (@($Arguments) -join ' ')).Trim())
+            $global:CriaFake.Input[$Name] = $InputText
+            & $global:CriaFake.Exec $Name @($Arguments)
+        }
         GetEnv         = { param($Name, $Scope) $global:CriaFake.Env["$Scope/$Name"] }
         SetEnv         = {
             param($Name, $Value, $Scope)
@@ -65,6 +74,7 @@ function New-FakeMachine {
         StopProcess    = { param($Name) $global:CriaCalls.Add("stop $Name"); 1 }
         StartProcess   = { param($Path) $global:CriaCalls.Add("start $Path"); if ($global:CriaFake.OnStart) { & $global:CriaFake.OnStart $Path } }
         HttpJson       = { param($Uri) & $global:CriaFake.Http $Uri }
+        HttpStatus     = { param($Uri, $Headers = @{}) $global:CriaCalls.Add("status $Uri"); & $global:CriaFake.Status $Uri $Headers }
         FreeBytes      = { param($Path) $global:CriaFake.Free }
         BitLocker      = { param($Path) $global:CriaFake.BitLocker }
         IsElevated     = { $true }

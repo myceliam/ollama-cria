@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/myceliam/ollama-cria/blob/main/manifests/schemas/owui-api-consumers.schema.json",
+  "title": "ollama-cria OWUI API key consumers",
+  "description": "Every file that holds the OWUI API key, and the setting in it. Stage 7e writes the new key into each one (RESTORE.md Stage 7). Names only, never a value.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "consumers"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "formatVersion": {
+      "const": 1
+    },
+    "note": {
+      "type": "string"
+    },
+    "consumers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "location",
+          "setting"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+          },
+          "location": {
+            "description": "<root>:<relative path> under a root in recovery-roots.json; a dotenv file.",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*:[A-Za-z0-9._/-]+$"
+          },
+          "setting": {
+            "description": "The NAME in NAME=value.",
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+          },
+          "why": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

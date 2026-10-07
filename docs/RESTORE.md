@@ -546,9 +546,11 @@ Rows with `auth` other than `none` pause for Liam to accept the licence in the b
 
 > **Delivers:** every local image, every Docker volume, the small service state from the bundle, and an OWUI database that holds your tools, functions, skills, model presets, settings and user settings, with no chats
 > **Where:** 🖥️ PowerShell 7
-> **Modules:** 🛠️ `windows\stages\07-state.ps1`, 🛠️ `tools\Import-OwuiSeed.py`
+> **Modules:** ✅ `windows\stages\07-state.ps1`, ✅ `tools\Import-OwuiSeed.py`, `manifests\owui-api-consumers.json`
 
 **7a · Build local images first** (moved from Stage 8, C-36)
+
+For each PC compose project (`ollama`, `gmail-owui-bridge`, `cline-dashboard`), `docker compose build` runs first; every image the project names that is still missing is then pulled **at its digest** and tagged as the compose file names it. OWUI comes from the digest the seed records (C-40); the rest from `manifests\images.json`. An image with nothing to build it from and no pinned digest stops the stage.
 
 | Image | Build from |
 |---|---|
@@ -563,11 +565,11 @@ Registry images (OWUI at its **recorded** digest, Tika, Playwright MCP, ntfy, Do
 **7b · Volumes**
 
 ```powershell
-docker volume create owui-data          # external: true in the compose file
-docker compose create                   # creates the other volumes and containers; starts nothing
+docker volume create --label ollama-cria.stage=7 owui-data                  # external: true in the compose file
+docker compose create --pull never --no-build --no-recreate                # each project: volumes and containers; starts nothing
 ```
 
-The controller **refuses** to write into a volume it does not own (see Controller → Ownership).
+The label is how the controller knows `owui-data` is its own. An `owui-data` without it is **refused**: never used, never removed (see Controller → Ownership).
 
 **7c · Small service state** (from bundle folder 07; R-08, R-09)
 
@@ -577,7 +579,7 @@ The controller **refuses** to write into a volume it does not own (see Controlle
 | `ollama_bolt-data` | `server-keys.json` | Bolt's server identity. Without it every Bolt client must be re-keyed. |
 | `ollama_mcpo-core-data` | `config.runtime.json` | **Not restored.** mcpo regenerates it from `mcpo-core-config.pinned.json` (proof required, R-09) |
 
-The rewritten collector captures `user.db` with SQLite's backup API, so the copy is consistent and there is no `-wal` file to lose (C-03). Restore copies it in with the container stopped.
+The rewritten collector captures `user.db` with SQLite's backup API, so the copy is consistent and there is no `-wal` file to lose (C-03). Restore copies it in with the container stopped, through a throw-away helper container of the `web-vps-relay` image (pinned `python@sha256:…`, no network).
 
 **7d · The OWUI functional seed** (R-17)
 
@@ -610,12 +612,11 @@ The seed lives at `manifests\owui-seed\` and is produced by 🛠️ `tools\Expor
 
 **How the seed is installed**
 
-1. **Schema.** Start OWUI alone at the recorded version: `docker compose up -d --no-deps open-webui`, reachable on `127.0.0.1` only. It creates its empty schema. Stop it.
-2. **Check.** `Import-OwuiSeed.py` refuses to continue unless the database's version and Alembic revision match the seed (C-40).
-3. **Admin account** 👤. Start OWUI alone again, create the admin account at the sign-in page, then stop it.
-4. **Import, with OWUI stopped.** In one transaction the importer writes the seed rows and points **every** owner and member reference at the new admin: tools, functions, models, skills, prompts, groups, group members and grants (C-38). It applies the `user.settings` projection to the new admin, fills each secret reference from bundle folder 03, and encrypts Valves through OWUI's own code with this install's `WEBUI_SECRET_KEY`. It then checks that no reference to the old user ID remains.
-5. **API key** 👤. Generate a new OWUI API key in Settings → Account. The controller writes it into every consumer in `manifests\owui-api-consumers.json` (gcal and Gmail bridges, dashboard). This is the one time a fresh key is correct.
-6. **Upgrade later.** OWUI stays at the recorded version until Stage 9 passes, then moves to `latest` by the normal update route (C-40).
+1. **Schema.** The controller starts OWUI alone at the recorded version (`docker compose up -d --no-deps open-webui`), reachable on `127.0.0.1:3000` only. It creates its empty schema.
+2. **Admin account** 👤. While OWUI has no account, the stage stops with an `ASK`: open `http://127.0.0.1:3000`, create the admin account (the first account is the admin), then run the same `-Execute` again.
+3. **Check and import, with OWUI stopped.** `Import-OwuiSeed.py` runs in a new container of the same service (`docker compose run --rm --no-deps -T`), with the seed, the secrets file from bundle folder 03 and the new tailnet addresses on its **standard input**, never on a command line. It refuses to continue unless the database's version and Alembic revision match the seed (C-40) and the database is fresh: one admin, nothing in the seeded tables. In one transaction it writes the seed rows and points **every** owner and member reference at the new admin: tools, functions, models, skills, prompts, groups, group members and grants (C-38). It applies the `user.settings` projection to the new admin, fills each secret reference, and encrypts Valves through OWUI's own code with this install's `WEBUI_SECRET_KEY`. It then checks that no reference to the old user ID remains. A rerun that finds the seed already in does not import it twice.
+4. **API key** 👤. The controller starts OWUI alone again, writes an empty owner-only `E:\recovery-secrets\owui-api-key.txt`, and asks you to create a key in Settings → Account → API keys and paste it there; then run the same `-Execute` again. The key must open OWUI's calendar API, then goes into every consumer in `manifests\owui-api-consumers.json`. That is only the gcal bridge's `.env` (`OWUI_API_KEY`): the code was read on 7 October 2026, and the Gmail bridge and the dashboard never call OWUI. This is the one time a fresh key is correct. OWUI is stopped again; nothing runs until Stage 8, which recreates the gcal bridge with the new key. Stage 11 deletes the key file.
+5. **Upgrade later.** OWUI stays at the recorded version until Stage 9 passes, then moves to `latest` by the normal update route (C-40).
 
 > ⚠️ `ENABLE_PERSISTENT_CONFIG=true` means the `config` table wins over compose environment variables. That is why the settings travel in the seed, not in `.env`.
 
@@ -623,13 +624,17 @@ The seed lives at `manifests\owui-seed\` and is produced by 🛠️ `tools\Expor
 
 | Who | Check | Expected |
 |---|---|---|
-| 🤖 | Every image in `topology.json` present locally | Yes, before any container was created |
-| 🤖 | Row counts for the seeded tables | 409 / 15 / 5 / 33 / 21 / 5, and the grants listed in the seed |
-| 🤖 | References to the old user ID | **Zero** |
-| 🤖 | Secret references | Every **required** one resolved; optional ones may stay blank by design (C-50) |
+| 🤖 | Every image of the PC compose projects present locally; OWUI's at the seed's digest | Yes (and none was created before they were, C-36) |
+| 🤖 | `owui-data` | Carries this stage's label |
+| 🤖 | Row counts for the seeded tables (tool, function, model, skill, prompt, group, group member, grant) | The counts the seed's provenance records (15 / 5 / 33 / 21 / 5 / … today) |
+| 🤖 | `{{OWNER}}` or `{{BUNDLE:…}}` left anywhere in them | **Zero** |
+| 🤖 | Accounts | One |
+| 🤖 | Secret references | Every **required** one resolved (the importer stops otherwise); optional ones may stay blank by design (C-50) |
 | 🤖 | `PRAGMA integrity_check` and `PRAGMA foreign_key_check` | `ok` and no rows |
-| 🤖 | ntfy and Bolt files in their volumes, hashes matching the map | Yes |
-| 👤 | Sign in; Admin → Functions lists all five; Settings shows your pinned models and the sub-agent prompt | Yes |
+| 🤖 | ntfy and Bolt files in their volumes, hashes matching the map | Placed |
+| 🤖 | Every API key consumer | Holds a key, and the key opened OWUI's calendar API when it was placed |
+
+What you see in OWUI (functions, pinned models, the sub-agent prompt) is tested in Stage 9.
 
 ---
 
@@ -792,6 +797,7 @@ tailscale serve --bg --https 9000 http://127.0.0.1:18088 # Dozzle
 | `windows\stages\05-vps.ps1`, `linux\stages\05-place.sh`, `linux\stages\05-services.sh`, `linux\files\web-egress\` | ✅ Module 8 (R-13) | 5 |
 | `windows\stages\06-fetch.ps1` | ✅ Module 7 | 6 |
 | `tools\Export-OwuiSeed.py`, `tools\Import-OwuiSeed.py` | ✅ Modules 3 and 5. Run inside the OWUI container (C-39) | 7, 10 |
+| `windows\stages\07-state.ps1` | ✅ Module 9 | 7 |
 | `start-stack.ps1` | ♻️ (C-27) | 8 |
 | `install-startup-task.ps1`, `install-mcpo-watchdog-task.ps1` | ✅ | 8 |
 | `windows\stages\08-serve.ps1`, `08-automation.ps1` | 🛠️ | 8 |
@@ -820,7 +826,7 @@ tailscale serve --bg --https 9000 http://127.0.0.1:18088 # Dozzle
 | `acceptance.json` | One test row per capability (C-46) | Stage 9 |
 | `owui-seed\schema.json` | Field allowlist: repo-safe, secret reference or excluded (C-41) | 🛠️ |
 | `owui-seed\*.json` | Functional seed, with OWUI version, image digest and Alembic revision | 🛠️ `Export-OwuiSeed.py` |
-| `owui-api-consumers.json` | Where the OWUI API key goes: gcal and Gmail bridges, dashboard | 🛠️ |
+| `owui-api-consumers.json` | Every file that holds the OWUI API key: only the gcal bridge's `.env` | Hand-kept (Module 9), from reading the stack's code |
 | `secrets.json` | Required and optional secret rows (names and logical destinations, no values) | Stage 4b table |
 
 ## Appendix C · Register

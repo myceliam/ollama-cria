@@ -207,6 +207,24 @@ function New-RecoveryHost {
             return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = [string[]]$output }
         }.GetNewClosure()
 
+        # The same, with -InputText on the program's standard input (UTF-8),
+        # so a secret or a script never goes on a command line.
+        ExecInput      = {
+            param([string]$Name, [string[]]$Arguments = @(), [string]$InputText = '')
+            $program = if ($commands.ContainsKey($Name)) { $commands[$Name] } else { $Name }
+            if (-not (Get-Command -Name $program -ErrorAction SilentlyContinue)) {
+                return [pscustomobject]@{ ExitCode = -1; Output = [string[]]@("$Name is not installed") }
+            }
+            $global:LASTEXITCODE = 0
+            $saved = $OutputEncoding
+            try {
+                $OutputEncoding = [Text.UTF8Encoding]::new($false)
+                $output = @($InputText | & $program @Arguments 2>&1 | ForEach-Object { "$_" })
+            }
+            finally { $OutputEncoding = $saved }
+            return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = [string[]]$output }
+        }.GetNewClosure()
+
         GetEnv         = { param([string]$Name, [string]$Scope) [Environment]::GetEnvironmentVariable($Name, $Scope) }
 
         # $null as the value removes the variable.
@@ -270,6 +288,15 @@ function New-RecoveryHost {
             if ($Uri -notmatch '^http://127\.0\.0\.1:[0-9]+/') { throw [ArgumentException]::new('HttpJson only reads from 127.0.0.1') }
             try { return Invoke-RestMethod -Uri $Uri -TimeoutSec 10 -ErrorAction Stop }
             catch { return $null }
+        }
+
+        # The HTTP status of a GET on this machine only, with headers that
+        # stay in this process; 0 when nothing answers.
+        HttpStatus     = {
+            param([string]$Uri, [hashtable]$Headers = @{})
+            if ($Uri -notmatch '^http://127\.0\.0\.1:[0-9]+/') { throw [ArgumentException]::new('HttpStatus only reads from 127.0.0.1') }
+            try { return [int](Invoke-WebRequest -Uri $Uri -Headers $Headers -TimeoutSec 10 -SkipHttpErrorCheck -ErrorAction Stop).StatusCode }
+            catch { return 0 }
         }
 
         FreeBytes      = { param([string]$Path) [IO.DriveInfo]::new([IO.Path]::GetPathRoot([IO.Path]::GetFullPath($Path))).AvailableFreeSpace }

@@ -13,10 +13,11 @@ param(
     [switch]$PassThru,
     [string]$SshHost,
     [string]$SshCommand,
-    [string]$DockerCommand
+    [string]$DockerCommand,
+    [string]$HelperImage
 )
 $fake = $global:CriaRestore
-$fake.Calls.Add([pscustomobject]@{ Zip = $ZipPath; Sha256 = $Sha256; Folder = ($Folder -join ','); Execute = [bool]$Execute; SshHost = $SshHost; SshCommand = $SshCommand })
+$fake.Calls.Add([pscustomobject]@{ Zip = $ZipPath; Sha256 = $Sha256; Folder = ($Folder -join ','); Execute = [bool]$Execute; SshHost = $SshHost; SshCommand = $SshCommand; HelperImage = $HelperImage })
 $root = Join-Path ([IO.Path]::GetDirectoryName($ZipPath)) ([IO.Path]::GetFileNameWithoutExtension($ZipPath))
 if (-not (Test-Path -LiteralPath $root)) {
     if ($IsWindows) { Initialize-ProtectedFolder -Path $root }

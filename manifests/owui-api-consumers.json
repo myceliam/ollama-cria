@@ -1,0 +1,13 @@
+{
+  "$schema": "./schemas/owui-api-consumers.schema.json",
+  "formatVersion": 1,
+  "note": "Hand-kept. Found by reading the stack's code on 7 October 2026: only the gcal bridge calls OWUI with an API key. The Gmail bridge and the dashboard never call OWUI; web-vps-relay/deploy_tools.py reads a key from OWUI's database; the mcpo watchdog uses mcpo's own key.",
+  "consumers": [
+    {
+      "name": "gcal-owui-bridge",
+      "location": "stack:gcal-owui-bridge/.env",
+      "setting": "OWUI_API_KEY",
+      "why": "Syncs Google Calendar events into OWUI's calendar (app/owui_client.py)"
+    }
+  ]
+}
