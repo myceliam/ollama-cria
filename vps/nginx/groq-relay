@@ -9,7 +9,7 @@
 #  a VPN kill switch that is otherwise absolute - and it would expose the home
 #  ISP address for that one service.
 #
-#  This VPS host egresses IONOS London directly (185.230.216.117) and is NOT
+#  This VPS host egresses IONOS London directly ({{VPS_PUBLIC_IP}}) and is NOT
 #  tunnelled - only the owui-web-egress docker subnet is. Groq accepts that
 #  address: measured 401 "Invalid API Key", which is the healthy answer.
 #

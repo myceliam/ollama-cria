@@ -39,7 +39,7 @@
             "uniqueItems": true,
             "items": {
               "type": "string",
-              "pattern": "^([A-Z][A-Z0-9_]*_TS_(IP|IP6|NAME)|TS_DOMAIN)$"
+              "pattern": "^([A-Z][A-Z0-9_]*_TS_(IP|IP6|NAME)|TS_DOMAIN|VPS_PUBLIC_IP6?)$"
             }
           }
         }

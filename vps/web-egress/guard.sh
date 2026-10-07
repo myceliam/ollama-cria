@@ -38,5 +38,5 @@ ensure_rule -6 5265 prohibit
 # incidentally independent.
 # NOTE it was already inert for the HOST: rule 5264 (from all lookup main)
 # sits ahead of Tailscale's own 5270 (from all lookup 52), so host traffic
-# never reached it. Measured host egress was always 185.230.216.117.
+# never reached it. Measured host egress was always {{VPS_PUBLIC_IP}}.
 tailscale set --exit-node= --exit-node-allow-lan-access=true

@@ -575,7 +575,7 @@ _details () {
     case "$1" in
       exposure) cat <<'EOF'
 WHY THIS EXISTS:
-  This host has a public IP (185.230.216.117). Docker inserts its own iptables
+  This host has a public IP ({{VPS_PUBLIC_IP}}). Docker inserts its own iptables
   rules AHEAD of UFW, so a container published as "3000:8080" is reachable from
   the whole internet while `ufw status` still reports DENY.
 ! Every ports: entry in docker-compose.yml is pinned to 127.0.0.1 deliberately.

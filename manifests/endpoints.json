@@ -81,6 +81,7 @@
         "EXT_SE_STO_WG_201_TS_IP",
         "PC_TS_IP",
         "PC_TS_NAME",
+        "VPS_PUBLIC_IP",
         "VPS_TS_IP",
         "VPS_TS_NAME"
       ]
@@ -106,6 +107,7 @@
     {
       "file": "vps/nginx/groq-relay",
       "placeholders": [
+        "VPS_PUBLIC_IP",
         "VPS_TS_IP"
       ]
     },
@@ -119,6 +121,12 @@
       "file": "vps/web-egress/guard.nft",
       "placeholders": [
         "PC_TS_IP"
+      ]
+    },
+    {
+      "file": "vps/web-egress/guard.sh",
+      "placeholders": [
+        "VPS_PUBLIC_IP"
       ]
     }
   ]
