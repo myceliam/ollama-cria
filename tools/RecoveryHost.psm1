@@ -6,7 +6,8 @@
 .DESCRIPTION
     New-RecoveryHost returns a table of script blocks: native commands, ssh,
     environment variables, Windows features, processes, HTTP on this machine,
-    free space and BitLocker. Stages touch the machine only through it, so the
+    free space, BitLocker, the account, scheduled tasks, shortcuts, firewall
+    rules and the pagefile. Stages touch the machine only through it, so the
     tests can hand a stage a fake machine and check every decision it makes.
 
     The other exported functions create and check owner-only folders and
@@ -282,11 +283,12 @@ function New-RecoveryHost {
             return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = [string[]]$output }
         }.GetNewClosure()
 
-        # GET on this machine only; $null when nothing answers.
+        # GET on this machine only, with headers that stay in this process;
+        # $null when nothing answers.
         HttpJson       = {
-            param([string]$Uri)
+            param([string]$Uri, [hashtable]$Headers = @{})
             if ($Uri -notmatch '^http://127\.0\.0\.1:[0-9]+/') { throw [ArgumentException]::new('HttpJson only reads from 127.0.0.1') }
-            try { return Invoke-RestMethod -Uri $Uri -TimeoutSec 10 -ErrorAction Stop }
+            try { return Invoke-RestMethod -Uri $Uri -Headers $Headers -TimeoutSec 10 -ErrorAction Stop }
             catch { return $null }
         }
 
@@ -309,6 +311,112 @@ function New-RecoveryHost {
         }
 
         Wait           = { param([int]$Seconds) Start-Sleep -Seconds $Seconds }
+
+        # The account running this window and the one signed in at the
+        # console, for the scheduled tasks and the Startup folder (Stage 8).
+        Account        = {
+            $console = try { [string](Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop).UserName } catch { '' }
+            @{
+                Sid     = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+                Id      = "$env:USERDOMAIN\$env:USERNAME"
+                Profile = $env:USERPROFILE
+                Startup = [Environment]::GetFolderPath('Startup')
+                Console = $console
+            }
+        }
+
+        # A scheduled task in the root folder: its state (Ready, Running,
+        # Disabled, ...), or $null when there is none.
+        TaskState      = {
+            param([string]$Name)
+            $t = Get-ScheduledTask -TaskPath '\' -TaskName $Name -ErrorAction SilentlyContinue
+            if ($t) { return [string]$t.State }
+            return $null
+        }
+
+        # A new task from its XML; never replaces one.
+        RegisterTask   = {
+            param([string]$Name, [string]$Xml)
+            if (Get-ScheduledTask -TaskPath '\' -TaskName $Name -ErrorAction SilentlyContinue) { throw [InvalidOperationException]::new("the task $Name is already there") }
+            $null = Register-ScheduledTask -TaskPath '\' -TaskName $Name -Xml $Xml -ErrorAction Stop
+        }
+
+        DisableTask    = { param([string]$Name) $null = Disable-ScheduledTask -TaskPath '\' -TaskName $Name -ErrorAction Stop }
+
+        StartTask      = { param([string]$Name) Start-ScheduledTask -TaskPath '\' -TaskName $Name -ErrorAction Stop }
+
+        # A shortcut's target, arguments and working folder, or $null.
+        ReadShortcut   = {
+            param([string]$Path)
+            if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
+            $l = (New-Object -ComObject WScript.Shell).CreateShortcut($Path)
+            @{ Target = [string]$l.TargetPath; Arguments = [string]$l.Arguments; WorkingDirectory = [string]$l.WorkingDirectory }
+        }
+
+        WriteShortcut  = {
+            param([string]$Path, [string]$Target, [string]$Arguments, [string]$WorkingDirectory)
+            if (Test-Path -LiteralPath $Path) { throw [InvalidOperationException]::new("$Path is already there") }
+            $l = (New-Object -ComObject WScript.Shell).CreateShortcut($Path)
+            $l.TargetPath = $Target
+            $l.Arguments = $Arguments
+            $l.WorkingDirectory = $WorkingDirectory
+            $l.Save()
+        }
+
+        # The firewall rules that name TCP port -Port or a python(w).exe, as
+        # plain objects.
+        FirewallRules  = {
+            param([int]$Port)
+            $found = @(Get-NetFirewallPortFilter -ErrorAction SilentlyContinue | Where-Object { @($_.LocalPort) -contains [string]$Port } | Get-NetFirewallRule -ErrorAction SilentlyContinue) +
+            @(Get-NetFirewallApplicationFilter -ErrorAction SilentlyContinue | Where-Object { $_.Program -match '\\pythonw?\.exe$' } | Get-NetFirewallRule -ErrorAction SilentlyContinue)
+            foreach ($r in @($found | Sort-Object -Property Name -Unique)) {
+                $ports = $r | Get-NetFirewallPortFilter
+                [pscustomobject]@{
+                    DisplayName   = [string]$r.DisplayName
+                    Enabled       = [string]$r.Enabled -eq 'True'
+                    Direction     = [string]$r.Direction
+                    Action        = [string]$r.Action
+                    Protocol      = [string]$ports.Protocol
+                    LocalPort     = [string[]]@($ports.LocalPort)
+                    RemoteAddress = [string[]]@(($r | Get-NetFirewallAddressFilter).RemoteAddress)
+                    Program       = [string](($r | Get-NetFirewallApplicationFilter).Program)
+                }
+            }
+        }
+
+        # An inbound allow rule for TCP -Port from -RemoteAddress only, on
+        # every profile.
+        AddFirewallRule = {
+            param([string]$DisplayName, [int]$Port, [string[]]$RemoteAddress)
+            $null = New-NetFirewallRule -DisplayName $DisplayName -Direction Inbound -Action Allow -Protocol TCP -LocalPort $Port `
+                -RemoteAddress $RemoteAddress -Profile Any -ErrorAction Stop
+        }
+
+        # Whether Windows manages the pagefile, and each pagefile set by hand
+        # (sizes in MB).
+        Pagefile       = {
+            @{
+                Automatic = [bool](Get-CimInstance -ClassName Win32_ComputerSystem).AutomaticManagedPagefile
+                Files     = @(Get-CimInstance -ClassName Win32_PageFileSetting | ForEach-Object {
+                        @{ Name = [string]$_.Name; InitialSize = [int]$_.InitialSize; MaximumSize = [int]$_.MaximumSize }
+                    })
+            }
+        }
+
+        # Turns Windows' management off and sets one pagefile's sizes (MB);
+        # they take effect at the next restart.
+        SetPagefile    = {
+            param([string]$Name, [int]$InitialSize, [int]$MaximumSize)
+            $cs = Get-CimInstance -ClassName Win32_ComputerSystem
+            if ($cs.AutomaticManagedPagefile) { $null = Set-CimInstance -InputObject $cs -Property @{ AutomaticManagedPagefile = $false } -ErrorAction Stop }
+            $filter = "Name='$($Name.Replace("'", '').Replace('\', '\\'))'"
+            $pf = Get-CimInstance -ClassName Win32_PageFileSetting -Filter $filter -ErrorAction SilentlyContinue
+            if (-not $pf) {
+                $null = New-CimInstance -ClassName Win32_PageFileSetting -Property @{ Name = $Name } -ErrorAction Stop
+                $pf = Get-CimInstance -ClassName Win32_PageFileSetting -Filter $filter -ErrorAction Stop
+            }
+            $null = Set-CimInstance -InputObject $pf -Property @{ InitialSize = [uint32]$InitialSize; MaximumSize = [uint32]$MaximumSize } -ErrorAction Stop
+        }
     }
 }
 

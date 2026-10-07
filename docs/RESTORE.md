@@ -7,11 +7,24 @@
 
 | | |
 |---|---|
-| **Version** | DRAFT v0.5, 7 October 2026 (v0.1 kept as `RESTORE-v0.1.md`) |
+| **Version** | DRAFT v0.6, 7 October 2026 (v0.1 kept as `RESTORE-v0.1.md`) |
 | **Author** | Claude |
-| **Ledger** | AICL-0122 (plan) · AICL-0123 to AICL-0125 (round one) · AICL-0126 (v0.2) · AICL-0127, AICL-0131 (Liam's decisions) · AICL-0129, AICL-0130 (round two) · AICL-0132 (v0.3) · AICL-0147 (v0.4, Module 7) · this revision's row (v0.5, Module 8) |
+| **Ledger** | AICL-0122 (plan) · AICL-0123 to AICL-0125 (round one) · AICL-0126 (v0.2) · AICL-0127, AICL-0131 (Liam's decisions) · AICL-0129, AICL-0130 (round two) · AICL-0132 (v0.3) · AICL-0147 (v0.4, Module 7) · AICL-0148 (v0.5, Module 8) · this revision's row (v0.6, Module 9) |
 | **Verification** | Claude reviews its own work adversarially; CI runs every test on Windows and Linux (external review rounds ended on 6 October 2026) · ☐ Liam (sign-off) |
-| **Status** | Being built. The capture tools, the restorer, the controller and Stages 1 to 6 exist and pass their tests (✅ in Appendix A); none has run on a new machine yet. Next: Stages 7 to 11, then a rehearsal on a throwaway target. |
+| **Status** | Being built. The capture tools, the restorer, the controller and Stages 1 to 8 exist and pass their tests (✅ in Appendix A); none has run on a new machine yet. Next: Stages 9 to 11, then a rehearsal on a throwaway target. |
+
+### 🔄 What changed in v0.6 (the PC stages are built)
+
+| Change | Why |
+|---|---|
+| Stage 7 builds the local images, then pulls the rest at their digests, OWUI at the seed's (7a) | C-36, C-40 |
+| OWUI's volume carries a label Stage 7 checks; one it did not create is never used or removed (7b) | C-45 |
+| The seed and its secrets reach the importer on standard input, never on a command line (7d) | C-39 |
+| The new OWUI API key goes into the gcal bridge's `.env` only (`owui-api-consumers.json`) | The stack's code was read on 7 October 2026: nothing else calls OWUI with a key |
+| Stage 8 checks every service, health URL and the tool catalogue itself, and recreates a container left on older settings (8b) | `start-stack.ps1` still exits 0 when a service is down; C-27 changes a live file and waits for Liam |
+| Stage 8 imports `OWUI-Stack-Startup` and `OWUI-mcpo-Watchdog` from their live XML, not with their installers (8d) | The live watchdog runs as S4U; its installer would make it interactive |
+| The ComfyUI firewall rule is the live one: TCP 8188 from the tailnet range and `127.0.0.1` (8a) | The containers reach ComfyUI from this PC through Docker Desktop, not from Docker's network |
+| Stage 3 installs Python 3.13 at `C:\Python313` | The PowerShell tool's task and scripts name that path. On the live PC it is gone, so that task fails at sign-in |
 
 ### 🔄 What changed in v0.5 (the VPS stages are built)
 
@@ -641,52 +654,62 @@ What you see in OWUI (functions, pinned models, the sub-agent prompt) is tested 
 # STAGE 8 · Start services, Tailscale Serve and automation
 
 > **Delivers:** the whole PC stack running, reachable on the tailnet, and coming back on its own after a reboot
-> **Where:** 🖥️ PowerShell 7, Admin
-> **Modules:** ♻️ `start-stack.ps1` (C-27), 🛠️ `windows\stages\08-serve.ps1`, 🛠️ `windows\stages\08-automation.ps1`
+> **Where:** 🖥️ PowerShell 7; the controller opens an elevated window for this stage
+> **Modules:** 🛠️ `windows\stages\08-serve.ps1`; ♻️ `start-stack.ps1` (C-27)
 
-**8a · Images**
+The stage works for the account signed in at the console. If the admin prompt is answered as another account, it stops, because the tasks and startup items would be that account's.
 
-Already built and pulled in Stage 7a.
+**8a · Port, firewall and pagefile** (C-31, C-52, R-07)
+
+| Item | What the controller does |
+|---|---|
+| Port 8188 | Reserves it as an administered TCP exclusion, so WinNAT cannot take it after a restart. Only when it is not reserved: stops `winnat`, adds the range, and starts `winnat` again even when adding failed (C-31) |
+| Firewall | Adds the inbound rule **ComfyUI 8188 - loopback and tailnet only**: TCP 8188 from `100.64.0.0/10` and `127.0.0.1`, every profile, as on the old PC (read 7 October 2026). ComfyUI keeps `--listen 0.0.0.0`; the containers reach it through Docker Desktop, which connects from this PC. Any other rule that lets a wider network reach 8188 stops the stage with an ASK to turn it off (C-52) |
+| Pagefile | `C:\pagefile.sys` 32768–81920 MB with Windows' own management off, set only if different. It takes effect at the restart in Stage 10 |
+
+A rule or setting the controller did not make is reported, never changed.
 
 **8b · Start in order**
 
-1. Ollama (native) is already running from Stage 3.
-2. ComfyUI: install the logon launcher (8d), then start it once by hand so Stage 9 can test it.
-3. `start-stack.ps1` brings up the 10 PC compose services with their normal dependencies: tika, playwright-mcp, web-vps-relay, mcpo-core, open-webui, gcal-owui-bridge, ntfy, bolt, dozzle, open-terminal. OWUI starts only once mcpo and every tool server are ready.
-4. Then the Gmail bridge and the dashboard projects.
-5. The controller reads OWUI's tool catalogue and checks every one of the 18 tool servers is listed (any catalogue cached during the Stage 7 bootstrap is discarded first).
+1. Ollama (native) is already running from Stage 6; the controller starts it as you if it is not.
+2. ComfyUI: the controller copies `start_comfyui_hidden.vbs` into your Startup folder (8d), starts it once as you, and waits for `/system_stats` to answer.
+3. `start-stack.ps1` brings up the 10 PC compose services with their normal dependencies (tika, playwright-mcp, web-vps-relay, mcpo-core, open-webui, gcal-owui-bridge, ntfy, bolt, dozzle, open-terminal), then the Gmail bridge and dashboard projects.
+4. The controller then checks for itself, because `start-stack.ps1` still exits 0 when a service is down:
+   - every service of every PC compose project is running, and healthy where it has a health check;
+   - every container runs its current configuration (`docker compose config --hash` against the container's label). A container left from Stage 7 with older settings, such as the gcal bridge before its new API key, is recreated;
+   - 12 health URLs on this PC answer **200**: OWUI, mcpo-core, open-terminal, SearXNG and Jina Reader through the relay, both bridges, ntfy, Dozzle, the dashboard, ComfyUI and Ollama. Bolt publishes only on the tailnet address, so its health check and Stage 9 cover it.
+5. The controller reads OWUI's tool catalogue with the Stage 7 API key and checks that every tool server the seed enables is listed (18 today). If one is missing, it restarts OWUI once, in case OWUI cached its list while mcpo was still starting. If OWUI will not show the list to the key, it asks you to check the tool servers in OWUI's admin settings and run again with `-Accept tool-catalogue`.
 
-> ♻️ **C-27:** `start-stack.ps1` must exit non-zero when a required service fails, and a 401/404/500 response must count as a failure for health checks that expect 200.
+> ♻️ **C-27:** `start-stack.ps1` must exit non-zero when a required service fails, and a 401/404/500 response must count as a failure for health checks that expect 200. That is a change to a live file and waits for Liam. Until then Stage 8 applies the rule itself.
 
 **8c · Tailscale Serve** (C-23; tailnet only, **never** Funnel)
 
-From `manifests\serve.json`:
+From `manifests\serve.json`, only the rules that are missing:
 
 ```powershell
-tailscale serve --bg --tcp 11434 tcp://127.0.0.1:11434   # Ollama
-tailscale serve --bg --tcp 8188  tcp://127.0.0.1:8188    # ComfyUI
-tailscale serve --bg --https 443  http://127.0.0.1:3000  # OWUI
-tailscale serve --bg --https 444  http://127.0.0.1:8188  # ComfyUI (HTTPS)
-tailscale serve --bg --https 2000 http://127.0.0.1:6080  # Dashboard
-tailscale serve --bg --https 8443 http://127.0.0.1:8090  # ntfy
-tailscale serve --bg --https 9000 http://127.0.0.1:18088 # Dozzle
+tailscale serve --bg --tcp=11434 tcp://127.0.0.1:11434   # Ollama
+tailscale serve --bg --tcp=8188  tcp://127.0.0.1:8188    # ComfyUI
+tailscale serve --bg --https=443  http://127.0.0.1:3000  # OWUI
+tailscale serve --bg --https=444  http://127.0.0.1:8188  # ComfyUI (HTTPS)
+tailscale serve --bg --https=2000 http://127.0.0.1:6080  # Dashboard
+tailscale serve --bg --https=8443 http://127.0.0.1:8090  # ntfy
+tailscale serve --bg --https=9000 http://127.0.0.1:18088 # Dozzle
 ```
 
-**8d · Startup and scheduled tasks** (C-28, R-10, R-11)
+A port that already serves something else, a rule that is not in `serve.json`, or Funnel on any port is reported with the command that turns it off. The controller never changes them.
+
+**8d · Startup items and scheduled tasks** (C-28, R-10, R-11)
 
 | Item | Kind | Action |
 |---|---|---|
-| `start_comfyui_hidden.vbs` | User Startup folder shortcut | Install from `windows\startup\`; it runs the venv with `--listen 0.0.0.0 --port 8188` |
-| `OWUI-Stack-Startup` | Scheduled task | ✅ `install-startup-task.ps1` |
-| `OWUI-mcpo-Watchdog` | Scheduled task | ✅ `install-mcpo-watchdog-task.ps1` |
-| `OWUI-ntfy-Fast`, `OWUI-ntfy-PcHealth` | Scheduled tasks | 🛠️ Import from `windows\tasks\*.xml` with the new user's SID substituted |
-| `OWUI-ntfy-MorningBrief` | Scheduled task | Import **disabled**, as it is today |
-| `OWUI-Windows-PowerShell-Tool` | Scheduled task | 🛠️ Import from XML; its broker token comes from bundle folder 01 |
-| Windows Firewall | Rule for ComfyUI on 8188 | Allow from Docker's network and the tailnet only; ComfyUI keeps `--listen 0.0.0.0` (C-52) |
-| Port 8188 reservation | `netsh` excluded range | Add only if missing, and always restart `winnat` even on failure (C-31) |
-| Pagefile | `C:\pagefile.sys` 32768–81920 MB | Set only if different, then reboot in Stage 10 (R-07) |
+| `start_comfyui_hidden.vbs` | File in your Startup folder | Copied from `windows\startup\` (8b); it runs the venv with `--listen 0.0.0.0 --port 8188` |
+| `OWUI ComfyUI AutoFree.lnk` | Shortcut in your Startup folder | Made from `tasks.json`: PowerShell 7 running `autofree-watchdog.ps1` |
+| `OWUI-Stack-Startup`, `OWUI-mcpo-Watchdog` | Scheduled tasks | Imported from XML like the rest. The XML is the live definition; the installer scripts in the stack would make a different task (the watchdog runs as S4U on the old PC, and its installer makes it interactive) |
+| `OWUI-ntfy-Fast`, `OWUI-ntfy-PcHealth`, `Tailscale-Status-Feed`, `LibreHardwareMonitor` | Scheduled tasks | Imported from `windows\tasks\*.xml` with your SID, account name and profile folder filled in |
+| `OWUI-ntfy-MorningBrief` | Scheduled task | Imported **disabled**, as it is today |
+| `OWUI-Windows-PowerShell-Tool` | Scheduled task | Imported from XML; its broker token came from bundle folder 01 in Stage 4. It runs `C:\Python313\python.exe`, which Stage 3 installs there |
 
-`manifests\tasks.json` lists, for every task, its script, working folder and what it depends on (for example AutoFree or the hardware-monitor CSV). The controller checks those exist before importing, and Stage 10 proves each task actually ran (a log line or heartbeat), not only that it shows `Ready` (C-51).
+A task is imported only when it is missing, and only once the scripts it runs (`runs` in `manifests\tasks.json`) and the programs its XML names are on this PC; otherwise the stage names what is missing. A task already there is left alone, except that one the manifest has disabled is disabled. Tasks that start only at sign-in (the PowerShell tool's broker and LibreHardwareMonitor) are started once now, so Stage 9 finds them running. `OWUI-Stack-Startup` is not, because the stage has just done its work. Stage 10 proves each task actually ran (a log line or heartbeat), not only that it shows `Ready` (C-51).
 
 🚫 **Not recreated:** the retired backup tasks `OWUI-Nightly-Backup`, `OWUI-Weekly-VPS-Push`, `OWUI-ntfy-Backups` and `Ollama Weekly Backup`; and `OWUI-Automation-Chat-Tidy` with its script `kais_chat_tidy.ps1` (failing daily with 401 since at least 1 October; the automations it tidied no longer exist; R-20). Stage 10 sets up the replacement backup routine.
 
@@ -696,12 +719,17 @@ tailscale serve --bg --https 9000 http://127.0.0.1:18088 # Dozzle
 
 | Who | Check | Expected |
 |---|---|---|
-| 🤖 | `start-stack.ps1` exit code | `0`, with every required service green |
-| 🤖 | `docker ps` | All 10 compose services plus the Gmail bridge and dashboard running |
-| 🤖 | OWUI tool catalogue | All 18 tool servers listed |
+| 🤖 | Port 8188 | Reserved (an administered exclusion) |
+| 🤖 | Firewall | The ComfyUI rule in place; no other rule opens 8188 beyond the tailnet |
+| 🤖 | Pagefile | 32768–81920 MB, or set and waiting for the restart in Stage 10 |
+| 🤖 | Startup items | Both in place |
+| 🤖 | `start-stack.ps1` exit code | `0` |
+| 🤖 | Compose services | All 10, plus the Gmail bridge and the dashboard, running and healthy, each on its current configuration |
+| 🤖 | Health URLs | All 12 answer 200 (C-27) |
+| 🤖 | OWUI tool catalogue | Every tool server the seed enables (18) |
 | 🤖 | `tailscale serve status --json` vs `serve.json` | Exactly the seven rules; Funnel off |
-| 🤖 | `Get-ScheduledTask OWUI-*` | Each task present, MorningBrief disabled |
-| 👤 | OWUI opens on the PC's tailnet name from the phone | Yes |
+| 🤖 | Scheduled tasks | Each present, MorningBrief disabled |
+| 👤 | OWUI opens on the PC's tailnet name from the phone | Yes; then run again with `-Accept owui-phone` |
 
 ---
 
@@ -798,9 +826,9 @@ tailscale serve --bg --https 9000 http://127.0.0.1:18088 # Dozzle
 | `windows\stages\06-fetch.ps1` | ✅ Module 7 | 6 |
 | `tools\Export-OwuiSeed.py`, `tools\Import-OwuiSeed.py` | ✅ Modules 3 and 5. Run inside the OWUI container (C-39) | 7, 10 |
 | `windows\stages\07-state.ps1` | ✅ Module 9 | 7 |
-| `start-stack.ps1` | ♻️ (C-27) | 8 |
-| `install-startup-task.ps1`, `install-mcpo-watchdog-task.ps1` | ✅ | 8 |
-| `windows\stages\08-serve.ps1`, `08-automation.ps1` | 🛠️ | 8 |
+| `start-stack.ps1` | ♻️ (C-27; a live change waiting for Liam, which Stage 8 applies itself meanwhile) | 8 |
+| `install-startup-task.ps1`, `install-mcpo-watchdog-task.ps1` | Not used: Stage 8 imports the live XML of both tasks | — |
+| `windows\stages\08-serve.ps1` | ✅ Module 9 | 8 |
 | `windows\stages\09-acceptance.ps1` | 🛠️ | 9 |
 | `windows\stages\10-rehearsal.ps1` | 🛠️ | 10 |
 | `tools\Collect-StackSecrets.ps1` | ✅ Modules 2 and 4. Rewritten to the shared versioned map; SQLite backup API for ntfy (C-03 to C-10) | before recovery, and 10 |
@@ -909,6 +937,8 @@ Two kinds of placeholder never render to a real address. `{{STALE_TS_IP}}` marks
 - 🔑 **The OWUI API key:** on a working system, never regenerate it casually. On a clean deployment it is new by definition, so Stage 7 re-injects it everywhere.
 - 🐍 **Two `python.exe` processes = one ComfyUI.** Don't kill the parent.
 - 🌐 **Keep ComfyUI on `--listen 0.0.0.0`.** The containers reach it that way. Tailnet access goes through Serve.
+- 🧱 **Windows may ask whether Python can use networks** when ComfyUI first starts. Don't allow it: Stage 8's firewall rule already lets in this PC and the tailnet, and an allow-all rule for Python opens ComfyUI to the LAN (C-52). If Windows makes Block rules for Python instead, Stage 8 names them in a warning; turn them off only if the tailnet cannot reach ComfyUI in Stage 9.
+- 🐍 **`C:\Python313` is a fixed path.** The PowerShell tool's task and scripts name it, so Stage 3 installs Python 3.13 there, not in the per-user default.
 - 🧮 **Machine scope only for `OLLAMA_*`.** A User-scope copy silently wins over the Machine one.
 - 🗃️ **Never delete SQLite `-wal` files** to "clean up" a database. Committed data can live there. Capture with the backup API instead.
 - 🧱 **SQLite on a Windows bind mount locks badly.** Every database lives in a named volume.
@@ -919,4 +949,4 @@ Two kinds of placeholder never render to a real address. `{{STALE_TS_IP}}` marks
 
 ---
 
-*Draft v0.4. Where this guide and the live machine disagree, the live machine is right.*
+*Draft v0.6. Where this guide and the live machine disagree, the live machine is right.*

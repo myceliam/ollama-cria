@@ -37,6 +37,12 @@ function Reset-Fake {
         Free           = [long]4TB
         BitLocker      = 'On'
         OnStart        = $null
+        Account        = @{ Sid = 'S-1-5-21-1000-2000-3000-1001'; Id = 'PC\liam'; Profile = 'C:\Users\liam'; Startup = $null; Console = 'PC\liam' }
+        Tasks          = @{}
+        Registered     = @{}
+        Shortcuts      = @{}
+        Firewall       = [Collections.Generic.List[object]]::new()
+        Pagefile       = @{ Automatic = $true; Files = @() }
     }
 }
 
@@ -73,12 +79,45 @@ function New-FakeMachine {
         Virtualization = { $global:CriaFake.Virtualization }
         StopProcess    = { param($Name) $global:CriaCalls.Add("stop $Name"); 1 }
         StartProcess   = { param($Path) $global:CriaCalls.Add("start $Path"); if ($global:CriaFake.OnStart) { & $global:CriaFake.OnStart $Path } }
-        HttpJson       = { param($Uri) & $global:CriaFake.Http $Uri }
+        HttpJson       = { param($Uri, $Headers = @{}) & $global:CriaFake.Http $Uri $Headers }
         HttpStatus     = { param($Uri, $Headers = @{}) $global:CriaCalls.Add("status $Uri"); & $global:CriaFake.Status $Uri $Headers }
         FreeBytes      = { param($Path) $global:CriaFake.Free }
         BitLocker      = { param($Path) $global:CriaFake.BitLocker }
         IsElevated     = { $true }
         Wait           = { param($Seconds) }
+        Account        = { $global:CriaFake.Account }
+        TaskState      = { param($Name) $global:CriaFake.Tasks[$Name] }
+        RegisterTask   = {
+            param($Name, $Xml)
+            $global:CriaCalls.Add("register $Name")
+            if ($global:CriaFake.Tasks.ContainsKey($Name)) { throw [InvalidOperationException]::new("the task $Name is already there") }
+            $global:CriaFake.Registered[$Name] = $Xml
+            $global:CriaFake.Tasks[$Name] = $(if ($Xml -match '<Enabled>false</Enabled>') { 'Disabled' } else { 'Ready' })
+        }
+        DisableTask    = { param($Name) $global:CriaCalls.Add("disable $Name"); $global:CriaFake.Tasks[$Name] = 'Disabled' }
+        StartTask      = { param($Name) $global:CriaCalls.Add("run-task $Name"); $global:CriaFake.Tasks[$Name] = 'Running' }
+        ReadShortcut   = { param($Path) $global:CriaFake.Shortcuts[$Path] }
+        WriteShortcut  = {
+            param($Path, $Target, $Arguments, $WorkingDirectory)
+            $global:CriaCalls.Add("shortcut $([IO.Path]::GetFileName($Path))")
+            $global:CriaFake.Shortcuts[$Path] = @{ Target = $Target; Arguments = $Arguments; WorkingDirectory = $WorkingDirectory }
+            [IO.File]::WriteAllText($Path, 'shortcut')
+        }
+        FirewallRules  = { param($Port) $global:CriaFake.Firewall.ToArray() }
+        AddFirewallRule = {
+            param($DisplayName, $Port, $RemoteAddress)
+            $global:CriaCalls.Add("firewall $DisplayName")
+            $global:CriaFake.Firewall.Add([pscustomobject]@{
+                    DisplayName = $DisplayName; Enabled = $true; Direction = 'Inbound'; Action = 'Allow'; Protocol = 'TCP'
+                    LocalPort = [string[]]@("$Port"); RemoteAddress = [string[]]@($RemoteAddress); Program = 'Any'
+                })
+        }
+        Pagefile       = { $global:CriaFake.Pagefile }
+        SetPagefile    = {
+            param($Name, $InitialSize, $MaximumSize)
+            $global:CriaCalls.Add("pagefile $Name $InitialSize $MaximumSize")
+            $global:CriaFake.Pagefile = @{ Automatic = $false; Files = @(@{ Name = $Name; InitialSize = $InitialSize; MaximumSize = $MaximumSize }) }
+        }
     }
 }
 
