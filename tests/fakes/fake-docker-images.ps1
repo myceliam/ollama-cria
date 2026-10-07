@@ -33,14 +33,15 @@ if ($args.Count -ge 4 -and $args[0] -eq 'inspect' -and $args[1] -eq '--format' -
     }
     exit 0
 }
-if ($args.Count -eq 7 -and ($args[0..5] -join ' ') -ceq 'image ls -a --no-trunc --digests --format' -and $args[6] -ceq '{{.ID}}|{{.Repository}}|{{.Digest}}') {
+if ($args.Count -eq 7 -and ($args[0..5] -join ' ') -ceq 'image ls -a --no-trunc --digests --format' -and $args[6] -ceq '{{.ID}}|{{.Repository}}|{{.Tag}}|{{.Digest}}') {
     foreach ($c in $containers.Values) {
-        if ($c[0] -like '*:gone') { continue }   # its image was rebuilt under the same tag
-        $repo = $c[0] -replace ':[^:/]*$', ''
-        if (-not $c[4]) { "$($c[1])|$repo|<none>"; continue }
-        foreach ($d in $c[4]) { "$($c[1])|$($d -replace '@.*$', '')|$($d -replace '^.*@', '')" }
+        $repo, $tag = $c[0] -split ':(?=[^:/]*$)'
+        # 'gone': the container's image was rebuilt, and the tag moved to the new one.
+        if ($tag -eq 'gone') { "$(Get-FakeId '0')|$repo|$tag|<none>"; continue }
+        if (-not $c[4]) { "$($c[1])|$repo|$tag|<none>"; continue }
+        foreach ($d in $c[4]) { "$($c[1])|$($d -replace '@.*$', '')|$tag|$($d -replace '^.*@', '')" }
     }
-    "$(Get-FakeId 'f')|<none>|<none>"
+    "$(Get-FakeId 'f')|<none>|<none>|<none>"
     exit 0
 }
 exit 98

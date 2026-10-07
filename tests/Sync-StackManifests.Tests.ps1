@@ -293,7 +293,7 @@ Describe 'Sync-StackManifests.ps1: container images' {
         @(($d.vps | Where-Object container -EQ 'vps-web-gateway').repoDigests).Count | Should -Be 0
         ($d.vps | Where-Object container -EQ 'vps-web-relay').imageStored | Should -BeFalse
         $r.Warnings | Should -Contain 'images: VPS container vps-web-gateway runs a local image with no digest'
-        $r.Warnings | Should -Contain 'images: VPS container vps-web-relay runs an image no longer stored under its ID (the tag vps-web-relay:gone names a newer build now), so a rebuild will not match what runs today'
+        $r.Warnings | Should -Contain 'images: VPS container vps-web-relay runs an image no longer stored under its ID (vps-web-relay:gone names a newer build now), so a rebuild will not match what runs today'
     }
 
     It 'stops when docker fails on either machine' {

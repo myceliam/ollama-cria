@@ -610,11 +610,13 @@ function Get-ContainerImage([string]$Label, [scriptblock]$Docker) {
     # 'image ls' rather than 'image inspect': an image a container still
     # runs can be gone from the store under its ID (its tag rebuilt since),
     # and inspect fails on those.
-    $images = & $Docker @('image', 'ls', '-a', '--no-trunc', '--digests', '--format', '{{.ID}}|{{.Repository}}|{{.Digest}}')
+    $images = & $Docker @('image', 'ls', '-a', '--no-trunc', '--digests', '--format', '{{.ID}}|{{.Repository}}|{{.Tag}}|{{.Digest}}')
     if ($null -eq $images) { return $null }
     $digestsOf = @{}
+    $tags = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     foreach ($line in $images) {
-        $id, $repo, $digest = ([string]$line).Split('|')
+        $id, $repo, $tag, $digest = ([string]$line).Split('|')
+        if ($repo -ne '<none>' -and $tag -ne '<none>') { [void]$tags.Add("${repo}:$tag") }
         if (-not $digestsOf.ContainsKey($id)) { $digestsOf[$id] = [Collections.Generic.SortedSet[string]]::new([StringComparer]::Ordinal) }
         if ($repo -and $repo -ne '<none>' -and $digest -match '^sha256:[0-9a-f]{64}$') { [void]$digestsOf[$id].Add("$repo@$digest") }
     }
@@ -624,7 +626,11 @@ function Get-ContainerImage([string]$Label, [scriptblock]$Docker) {
         $ref, $id, $state, $project = $byName[$name]
         $stored = $digestsOf.ContainsKey($id)
         $repoDigests = [string[]]@(if ($stored) { $digestsOf[$id] })
-        if (-not $stored) { $warnings.Add("images: $Label container $name runs an image no longer stored under its ID (the tag $ref names a newer build now), so a rebuild will not match what runs today") }
+        if (-not $stored) {
+            $full = if ($ref -match ':[^:/]+$' -or $ref -match '@') { $ref } else { "${ref}:latest" }
+            $now = if ($tags.Contains($full)) { "$ref names a newer build now" } else { "no image is tagged $ref now" }
+            $warnings.Add("images: $Label container $name runs an image no longer stored under its ID ($now), so a rebuild will not match what runs today")
+        }
         elseif (-not $repoDigests) { $warnings.Add("images: $Label container $name runs a local image with no digest") }
         $out.Add([ordered]@{ container = $name; project = $project; state = $state; image = $ref; imageId = $id; imageStored = $stored; repoDigests = $repoDigests })
     }
