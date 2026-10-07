@@ -867,6 +867,8 @@ ollama-cria/
 | open-terminal | PC | 18019 | `{{PC_TS_IP}}` | VPS |
 | Serve rules | PC | 443, 444, 2000, 8443, 9000; TCP 11434, 8188 | Tailnet | Phone, tablet, VPS |
 
+Two kinds of placeholder never render to a real address. `{{STALE_TS_IP}}` marks a tailnet address that no node had at capture time, and `{{VPS_PUBLIC_IP}}` marks the VPS's own public address, which stays out of the repo. Both render as documentation addresses (`192.0.2.x`, `2001:db8::x`) that go nowhere. Today `{{VPS_PUBLIC_IP}}` appears only in comments (`guard.sh`, the Groq relay site, `owuihelp`). `tools/Sync-StackFiles.ps1` names every such line when it captures one, so a line that needs the real address can be fixed by hand.
+
 ## Appendix F · Traps
 
 - 🗄️ **OWUI's `config` table overrides compose environment variables.** Check settings in Admin, not in `.env`.

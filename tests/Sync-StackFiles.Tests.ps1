@@ -47,13 +47,14 @@ BeforeAll {
         return $c
     }
 
-    function Invoke-Sync($Case, [switch]$Execute, [string]$TailscaleState = '') {
+    function Invoke-Sync($Case, [switch]$Execute, [string]$TailscaleState = '', [string]$VpsAddresses = '') {
         $env:CRIA_FAKE_TAILSCALE = $TailscaleState
+        $env:CRIA_FAKE_VPS_ADDRESSES = $VpsAddresses
         try {
             & $script:Tool -ManifestPath $Case.Manifest -RepoPath $Case.Repo -Execute:$Execute -PassThru `
                 -TailscaleCommand $script:Tailscale -SshCommand $script:Ssh
         }
-        finally { $env:CRIA_FAKE_TAILSCALE = $null }
+        finally { $env:CRIA_FAKE_TAILSCALE = $null; $env:CRIA_FAKE_VPS_ADDRESSES = $null }
     }
 
     function Get-RepoText($Case, [string]$Rel) { [IO.File]::ReadAllText((Join-Path $Case.Repo $Rel)) }
@@ -131,6 +132,27 @@ Describe 'Sync-StackFiles.ps1 on the PC side' {
         Get-RepoText $c 'stack/relay.py' | Should -Be "# note`nVPS = '{{STALE_TS_IP}}'`nV6 = '[{{STALE_TS_IP6}}]:80'`n"
         $r.Warnings | Should -Contain 'stack/relay.py:2: a tailnet address no node has now; stored as a stale placeholder, which renders as an address that goes nowhere'
         $r.Warnings | Should -Contain 'stack/relay.py:3: a tailnet address no node has now; stored as a stale placeholder, which renders as an address that goes nowhere'
+    }
+
+    It 'stores the VPS''s public addresses as placeholders, and says where' {
+        # Documentation addresses stand in for the VPS's; the fake VPS also
+        # reports a docker bridge and its tailnet address, which are not public.
+        $bridge = @('172', '17', '0', '1') -join '.'
+        $c = New-Case -PcFiles @{ 'notes.sh' = "# egress is 203.0.113.7`nip=203.0.113.70`nv6=[2001:db8::7]:80`nbr=$bridge`n" }
+        $r = Invoke-Sync $c -Execute -VpsAddresses '203.0.113.7,2001:db8::7'
+        $r.IsValid | Should -BeTrue
+        Get-RepoText $c 'stack/notes.sh' | Should -Be "# egress is {{VPS_PUBLIC_IP}}`nip=203.0.113.70`nv6=[{{VPS_PUBLIC_IP6}}]:80`nbr=$bridge`n"
+        $r.Rows[0].Placeholders | Should -Be @('VPS_PUBLIC_IP', 'VPS_PUBLIC_IP6')
+        $why = "the VPS's public address; stored as a placeholder that renders as a documentation address, so fix this line by hand at restore time if it needs the real one"
+        $r.Warnings | Should -Be @("stack/notes.sh:1: $why", "stack/notes.sh:3: $why")
+        (Get-Content (Join-Path $c.Repo 'manifests/endpoints.json') -Raw | ConvertFrom-Json).files[0].placeholders | Should -Be @('VPS_PUBLIC_IP', 'VPS_PUBLIC_IP6')
+    }
+
+    It 'stops when the VPS''s addresses cannot be read' {
+        $c = New-Case -PcFiles @{ 'a.yml' = "a: 1`n" }
+        $r = Invoke-Sync $c -Execute -VpsAddresses 'fail'
+        $r.Problems | Should -Be @('vps: its addresses could not be read (ssh exit 255), so its public one cannot be kept out of the repo')
+        Test-Path (Join-Path $c.Repo 'stack') | Should -BeFalse
     }
 
     It 'does not template part of a longer address' {
@@ -247,6 +269,24 @@ Describe 'StackCapture.psm1' {
 
     It 'renders a stale placeholder as a documentation address' {
         ConvertFrom-StackTemplate -Text '{{STALE_TS_IP}} [{{STALE_TS_IP6}}]' -Endpoint $script:Endpoint | Should -Be '192.0.2.1 [2001:db8::1]'
+    }
+
+    It 'keeps only public addresses, in their short form' {
+        $list = @('10.1.2.3', (@('172', '17', '0', '1') -join '.'), $script:VpsIp, '127.0.0.1', '169.254.1.1', '192.168.1.1', '224.0.0.1',
+            '203.0.113.7', ' 2001:DB8:0:0::7 ', ('fd7a:115c:a1e0' + '::8'), 'fe80::1', '::1', 'not-an-address', '')
+        $found = Select-PublicAddress -Address $list
+        $found | Should -Be @('2001:db8::7', '203.0.113.7')
+        (Select-PublicAddress -Address @()).Count | Should -Be 0
+    }
+
+    It 'templates the VPS''s public addresses, whole ones only, and renders them as documentation addresses' {
+        $t = ConvertTo-StackTemplate -Text "# via 203.0.113.7 not 203.0.113.70`nlisten [2001:DB8::7]:80`n" -Endpoint $script:Endpoint -PublicAddress '203.0.113.7', '2001:db8::7'
+        $t.Text | Should -Be "# via {{VPS_PUBLIC_IP}} not 203.0.113.70`nlisten [{{VPS_PUBLIC_IP6}}]:80`n"
+        $t.Placeholders | Should -Be @('VPS_PUBLIC_IP', 'VPS_PUBLIC_IP6')
+        $t.PublicLines | Should -Be @(1, 2)
+        $t.StaleLines | Should -BeNullOrEmpty
+        ConvertFrom-StackTemplate -Text $t.Text -Endpoint $script:Endpoint | Should -Be "# via 192.0.2.2 not 203.0.113.70`nlisten [2001:db8::2]:80`n"
+        { ConvertTo-StackTemplate -Text 'x {{VPS_PUBLIC_IP}}' -Endpoint $script:Endpoint } | Should -Throw '*already holds {{VPS_PUBLIC_IP}}*'
     }
 
     It 'renders only endpoint placeholders and fails on one with no value' {

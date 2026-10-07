@@ -34,6 +34,11 @@
         becomes {{STALE_TS_IP}} and is reported by file and line, since the
         file points at nothing there today. A file that already holds such a
         placeholder is refused, since it would be filled in at restore time.
+      - No public address of the VPS either. The tool asks the VPS for its
+        global addresses ('ip -o addr show scope global'), keeps the public
+        ones, and stores each as {{VPS_PUBLIC_IP}} or {{VPS_PUBLIC_IP6}},
+        named by file and line. They render as documentation addresses, so a
+        line that needs the real one is fixed by hand at restore time.
       - No secrets. The templated files are written to a private temporary
         folder and scanned with tools/Test-NoSecrets.ps1, the same scan CI
         runs. Any finding (a secret-shaped string, a tailnet address that
@@ -277,7 +282,18 @@ function Read-VpsSource($Src, $Fetched) {
 
 # ---------- Templating ----------
 
-function ConvertTo-RepoByte($Item, $Endpoint) {
+function Read-VpsPublicAddress {
+    # The VPS's public addresses, or $null after recording a problem.
+    $out = @(& $SshCommand @sshOptions $SshHost 'ip -o addr show scope global' 2>$null)
+    if ($LASTEXITCODE -ne 0) {
+        $problems.Add("vps: its addresses could not be read (ssh exit $LASTEXITCODE), so its public one cannot be kept out of the repo")
+        return $null
+    }
+    $found = @($out | ForEach-Object { if ([string]$_ -match '\binet6?\s+([0-9A-Fa-f.:]+)/') { $Matches[1] } })
+    return , (Select-PublicAddress -Address $found)
+}
+
+function ConvertTo-RepoByte($Item, $Endpoint, $Public) {
     # The file as it goes in the repo: endpoints templated, line endings as
     # .gitattributes wants them, a UTF-8 byte order mark kept if it had one.
     # Returns $null after recording a problem.
@@ -291,8 +307,11 @@ function ConvertTo-RepoByte($Item, $Endpoint) {
     try { $text = [Text.UTF8Encoding]::new($false, $true).GetString($bytes, $start, $bytes.Length - $start) }
     catch { $problems.Add("$($Item.Dest): not UTF-8 text"); return $null }
     if ($text.Contains([char]0)) { $problems.Add("$($Item.Dest): binary (holds NUL bytes)"); return $null }
-    try { $t = ConvertTo-StackTemplate -Text $text -Endpoint $Endpoint }
+    try { $t = ConvertTo-StackTemplate -Text $text -Endpoint $Endpoint -PublicAddress $Public }
     catch { $problems.Add("$($Item.Dest): $($_.Exception.Message)"); return $null }
+    foreach ($n in $t.PublicLines) {
+        $warnings.Add("$($Item.Dest):${n}: the VPS's public address; stored as a placeholder that renders as a documentation address, so fix this line by hand at restore time if it needs the real one")
+    }
     foreach ($n in $t.StaleLines) {
         $warnings.Add("$($Item.Dest):${n}: a tailnet address no node has now; stored as a stale placeholder, which renders as an address that goes nowhere")
     }
@@ -316,6 +335,7 @@ function Invoke-Sync {
     $script:RepoPath = (Resolve-Path -LiteralPath $RepoPath).ProviderPath
     try { $endpoint = Get-TailnetEndpoint -SshHost $SshHost -TailscaleCommand $TailscaleCommand }
     catch { $problems.Add("tailnet: $($_.Exception.Message)"); return }
+    $public = Read-VpsPublicAddress
 
     $fetched = [Collections.Generic.List[object]]::new()
     foreach ($src in $sources) {
@@ -324,7 +344,7 @@ function Invoke-Sync {
     if ($problems.Count -gt 0) { return }
 
     foreach ($item in $fetched) {
-        $body = ConvertTo-RepoByte $item $endpoint
+        $body = ConvertTo-RepoByte $item $endpoint $public
         if ($null -ne $body) { $item | Add-Member -NotePropertyName RepoBytes -NotePropertyValue $body }
     }
     if ($problems.Count -gt 0) { return }

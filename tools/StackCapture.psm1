@@ -24,6 +24,13 @@
                                                      (RFC 5737, RFC 3849) that
                                                      goes nowhere, as the old
                                                      one already does
+      {{VPS_PUBLIC_IP}}, {{VPS_PUBLIC_IP6}}          the VPS's own public
+                                                     address, kept out of the
+                                                     repo; it renders as a
+                                                     documentation address
+                                                     too, so a line that needs
+                                                     the real one is fixed by
+                                                     hand (the sync names it)
 
     Get-TailnetEndpoint reads them from 'tailscale status --json'; the same
     names come out on the rebuilt machines as long as the nodes keep their
@@ -39,6 +46,8 @@
                               it has no value for
       Find-TailnetAddress     the addresses in Tailscale's ranges a text holds
       Get-StackPlaceholder    the endpoint placeholders a text holds
+      Select-PublicAddress    the public addresses in a list (what the VPS
+                              reports, less its private and tailnet ones)
       Export-EndpointManifest writes manifests/endpoints.json: every templated
                               file in the folders that are deployed or read by
                               a stage, and the placeholders it holds
@@ -55,7 +64,7 @@ $ErrorActionPreference = 'Stop'
 
 # Endpoint placeholders only. Other {{...}} text (Go templates such as
 # {{.Names}}, Jinja) is never touched.
-$script:EndpointName = '^(?:[A-Z][A-Z0-9_]*_TS_(?:IP|IP6|NAME)|TS_DOMAIN)$'
+$script:EndpointName = '^(?:[A-Z][A-Z0-9_]*_TS_(?:IP|IP6|NAME)|TS_DOMAIN|VPS_PUBLIC_IP6?)$'
 $script:Placeholder = '\{\{([A-Z][A-Z0-9_]*)\}\}'
 
 # Any address left in Tailscale's ranges once every node's own is swapped.
@@ -63,7 +72,15 @@ $script:Placeholder = '\{\{([A-Z][A-Z0-9_]*)\}\}'
 # same in every tailnet, so they stay (tools/Test-NoSecrets.ps1 passes them).
 $script:StaleIp = [regex]::new('\b(?!100\.100\.100\.100\b)(?!100\.64\.0\.0/)100\.(?:6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}\b')
 $script:StaleIp6 = [regex]::new('\b(?!fd7a:115c:a1e0::53\b)(?!fd7a:115c:a1e0::/)fd7a:115c:a1e0:[0-9a-f:]*[0-9a-f]', [Text.RegularExpressions.RegexOptions]::IgnoreCase)
-$script:StaleValue = @{ STALE_TS_IP = '192.0.2.1'; STALE_TS_IP6 = '2001:db8::1' }
+
+# Placeholders that never render to a real address: documentation addresses
+# (RFC 5737, RFC 3849) that go nowhere.
+$script:FixedValue = @{
+    STALE_TS_IP    = '192.0.2.1'
+    STALE_TS_IP6   = '2001:db8::1'
+    VPS_PUBLIC_IP  = '192.0.2.2'
+    VPS_PUBLIC_IP6 = '2001:db8::2'
+}
 
 # Where templated files can live: folders copied to a machine at restore
 # time, and the manifests the stages read. The OWUI seed is rendered by its
@@ -170,15 +187,50 @@ function Get-StackPlaceholder {
     return , [string[]]@($names)
 }
 
+function Select-PublicAddress {
+    <#
+    .SYNOPSIS
+        The public addresses in -Address, in their usual short form: IPv4
+        outside the private, shared (Tailscale's), loopback, link-local and
+        multicast ranges, and IPv6 global unicast (2000::/3). Anything that
+        is not an address is dropped.
+    #>
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param(
+        [AllowEmptyCollection()]
+        [string[]]$Address = @()
+    )
+    $found = [Collections.Generic.SortedSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($a in $Address) {
+        $ip = $null
+        if (-not [Net.IPAddress]::TryParse(([string]$a).Trim(), [ref]$ip)) { continue }
+        $b = $ip.GetAddressBytes()
+        if ($ip.AddressFamily -eq [Net.Sockets.AddressFamily]::InterNetwork) {
+            $private = $b[0] -in 0, 10, 127 -or $b[0] -ge 224 -or
+                ($b[0] -eq 100 -and $b[1] -ge 64 -and $b[1] -le 127) -or
+                ($b[0] -eq 169 -and $b[1] -eq 254) -or
+                ($b[0] -eq 172 -and $b[1] -ge 16 -and $b[1] -le 31) -or
+                ($b[0] -eq 192 -and $b[1] -eq 168)
+            if (-not $private) { [void]$found.Add($ip.ToString()) }
+        }
+        elseif ($ip.AddressFamily -eq [Net.Sockets.AddressFamily]::InterNetworkV6 -and ($b[0] -band 0xE0) -eq 0x20) {
+            [void]$found.Add($ip.ToString())
+        }
+    }
+    return , [string[]]@($found)
+}
+
 function ConvertTo-StackTemplate {
     <#
     .SYNOPSIS
-        Swaps every endpoint value in -Text for its {{NAME}}, then any other
-        address in Tailscale's ranges for {{STALE_TS_IP}} or
+        Swaps every endpoint value in -Text for its {{NAME}}, each of
+        -PublicAddress for {{VPS_PUBLIC_IP}} or {{VPS_PUBLIC_IP6}}, then any
+        other address in Tailscale's ranges for {{STALE_TS_IP}} or
         {{STALE_TS_IP6}}. Returns the new text, the placeholders it now
-        holds and the line numbers of the stale addresses. Throws, naming
-        the placeholder, when the text already holds one, because it would
-        be filled in at restore time.
+        holds and the line numbers of the public and the stale addresses.
+        Throws, naming the placeholder, when the text already holds one,
+        because it would be filled in at restore time.
     #>
     [CmdletBinding()]
     [OutputType([pscustomobject])]
@@ -188,7 +240,11 @@ function ConvertTo-StackTemplate {
         [string]$Text,
 
         [Parameter(Mandatory)]
-        [Collections.IDictionary]$Endpoint
+        [Collections.IDictionary]$Endpoint,
+
+        # The VPS's public addresses (Select-PublicAddress).
+        [AllowEmptyCollection()]
+        [string[]]$PublicAddress = @()
     )
     $already = Get-StackPlaceholder -Text $Text
     if ($already.Count -gt 0) {
@@ -201,13 +257,24 @@ function ConvertTo-StackTemplate {
         if (-not $value) { continue }
         $Text = (Get-EndpointRegex $value).Replace($Text, "{{$key}}")
     }
+    $publicLines = [Collections.Generic.SortedSet[int]]::new()
+    foreach ($a in @($PublicAddress | Where-Object { $_ } | Sort-Object Length -Descending)) {
+        $re = Get-EndpointRegex $a
+        foreach ($m in $re.Matches($Text)) { [void]$publicLines.Add($Text.Substring(0, $m.Index).Split("`n").Count) }
+        $Text = $re.Replace($Text, $(if ($a.Contains(':')) { '{{VPS_PUBLIC_IP6}}' } else { '{{VPS_PUBLIC_IP}}' }))
+    }
     $staleLines = [Collections.Generic.SortedSet[int]]::new()
     foreach ($m in @($script:StaleIp.Matches($Text)) + @($script:StaleIp6.Matches($Text))) {
         [void]$staleLines.Add($Text.Substring(0, $m.Index).Split("`n").Count)
     }
     $Text = $script:StaleIp.Replace($Text, '{{STALE_TS_IP}}')
     $Text = $script:StaleIp6.Replace($Text, '{{STALE_TS_IP6}}')
-    return [pscustomobject]@{ Text = $Text; Placeholders = (Get-StackPlaceholder -Text $Text); StaleLines = [int[]]@($staleLines) }
+    return [pscustomobject]@{
+        Text         = $Text
+        Placeholders = (Get-StackPlaceholder -Text $Text)
+        PublicLines  = [int[]]@($publicLines)
+        StaleLines   = [int[]]@($staleLines)
+    }
 }
 
 function Find-TailnetAddress {
@@ -248,7 +315,7 @@ function ConvertFrom-StackTemplate {
         [Collections.IDictionary]$Endpoint
     )
     $values = @{}
-    foreach ($k in $script:StaleValue.Keys) { $values[$k] = $script:StaleValue[$k] }
+    foreach ($k in $script:FixedValue.Keys) { $values[$k] = $script:FixedValue[$k] }
     foreach ($k in $Endpoint.Keys) { $values[[string]$k] = [string]$Endpoint[$k] }
     foreach ($name in (Get-StackPlaceholder -Text $Text)) {
         if (-not $values.ContainsKey($name) -or -not $values[$name]) {
@@ -426,4 +493,4 @@ function Export-EndpointManifest {
 }
 
 Export-ModuleMember -Function Get-TailnetEndpoint, ConvertTo-StackTemplate, ConvertFrom-StackTemplate, Get-StackPlaceholder, Find-TailnetAddress, Export-EndpointManifest,
-    Write-RepoFile, Get-RepoFileStatus, Test-RepoContent
+    Write-RepoFile, Get-RepoFileStatus, Test-RepoContent, Select-PublicAddress
