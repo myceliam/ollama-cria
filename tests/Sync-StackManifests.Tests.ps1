@@ -335,10 +335,12 @@ Describe 'Sync-StackManifests.ps1 on Windows' -Skip:(-not $IsWindows) {
         $r.IsValid | Should -BeTrue
         Test-Schema $repo 'windows-apps' | Should -BeTrue
         $d = Get-Doc $repo 'windows-apps.json'
-        @($d.packages.id) | Should -Be @('Ollama.Ollama', 'Git.Git')
+        @($d.packages.id) | Should -Be @('Ollama.Ollama', 'Python.Python.3.13', 'Git.Git')
         $d.gpu.driver | Should -Be '999.01'
         ($d.packages | Where-Object id -EQ 'Git.Git').version | Should -Be '2.51.0'
         ($d.packages | Where-Object id -EQ 'Git.Git').exact | Should -BeFalse
+        ($d.packages | Where-Object id -EQ 'Python.Python.3.13').override | Should -Match 'TargetDir=C:\\Python313 '
+        $d.packages[0].PSObject.Properties.Name | Should -Not -Contain 'override'
         $r.Warnings | Should -Contain "windows-apps: Git.Git is newer here than winget's source knows (above 2.51.0); Stage 3 installs the newest it has"
         $r.Warnings | Should -Contain 'windows-apps: Docker.DockerDesktop is not installed through winget here'
     }
