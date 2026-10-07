@@ -22,7 +22,8 @@
       "id": "Python.Python.3.13",
       "version": "3.13.15",
       "exact": false,
-      "why": "The Windows PowerShell tool task runs C:\\Python313\\python.exe"
+      "why": "The Windows PowerShell tool, its task and its scripts run C:\\Python313\\python.exe",
+      "override": "/quiet InstallAllUsers=1 TargetDir=C:\\Python313 PrependPath=1 Include_launcher=1"
     },
     {
       "id": "Git.Git",
