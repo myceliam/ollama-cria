@@ -79,11 +79,17 @@ class ImportTests(unittest.TestCase):
         return e
 
     def export(self, db, seed_dir, secrets_file, ip):
+        # --stdout, as the collector runs it, with the files written here:
+        # the exporter refuses its own file mode on Windows.
         p = subprocess.run([sys.executable, str(base.SCRIPT), '--schema', str(SCHEMA), '--db', str(db),
-                            '--image-digest', 'sha256:' + 'd' * 64, '--endpoint', f'PC_TS_IP={ip}',
-                            '--seed-out', str(seed_dir), '--secrets-out', str(secrets_file)],
+                            '--image-digest', 'sha256:' + 'd' * 64, '--endpoint', f'PC_TS_IP={ip}', '--stdout'],
                            capture_output=True, text=True, env=self.env(), timeout=60)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        doc = json.loads(p.stdout)
+        seed_dir.mkdir()
+        for name, text in doc['seed'].items():
+            (seed_dir / name).write_text(text, encoding='utf-8', newline='\n')
+        secrets_file.write_text(doc['secrets_file'], encoding='utf-8', newline='\n')
 
     def run_import(self, endpoints=None, env=None, seed=None, secrets=None):
         args = [sys.executable, str(IMPORTER), '--schema', str(SCHEMA), '--db', str(self.new),
@@ -165,6 +171,37 @@ class ImportTests(unittest.TestCase):
         p = self.run_import(env={'ENABLE_VALVE_ENCRYPTION': 'false'})
         self.assertEqual(p.returncode, 0, p.stdout)
         self.assertEqual(json.loads(self.rows('tool')['brave_search']['valves'])['BRAVE_API_KEY'], BRAVE)
+
+    def test_values_moved_by_the_newer_rules_come_back_exactly(self):
+        # Review round 3 (AICL-0143): a URL token, a credential-named field,
+        # JSON text holding a key and a generated-looking token all travel as
+        # references, and the import puts back exactly what was there.
+        token = 'Q' * 48
+        url = 'https://hooks.example.invalid/notify?token=' + token
+        prompt = json.dumps({'note': 'call the API', 'auth': {'api_key': 'R' * 40}})
+        opaque = 'aZ7' * 12
+
+        def mutate(db):
+            self.old_mutate(db)
+            db.execute("UPDATE tool SET valves = ? WHERE id = 'local_subagent'",
+                       (json.dumps({'BASE_URL': f'http://{PC_IP}:11434', 'ENDPOINT': url, 'SYSTEM_PROMPT': prompt}),))
+            db.execute("UPDATE model SET meta = ?, params = ? WHERE id = 'qwen-helper'",
+                       (json.dumps({'toolIds': ['brave_search'], 'future_auth_blob': token}),
+                        json.dumps({'temperature': 0.2, 'x_opaque': opaque})))
+        old, seed, secrets = self.dir / 'old-r3.db', self.dir / 'seed-r3', self.dir / 'out' / 'values-r3.json'
+        base.build_db(old, base.load_schema(), mutate)
+        self.export(old, seed, secrets, PC_IP)
+        seed_text = ''.join(f.read_text(encoding='utf-8') for f in seed.iterdir())
+        for value in (token, 'R' * 40, opaque):
+            self.assertNotIn(value, seed_text)
+
+        p = self.run_import(seed=seed, secrets=secrets)
+        self.assertEqual(p.returncode, 0, p.stdout)
+        valves = decrypt(json.loads(self.rows('tool')['local_subagent']['valves']))
+        self.assertEqual(valves, {'BASE_URL': f'http://{NEW_PC_IP}:11434', 'ENDPOINT': url, 'SYSTEM_PROMPT': prompt})
+        model = self.rows('model')['qwen-helper']
+        self.assertEqual(json.loads(model['meta'])['future_auth_blob'], token)
+        self.assertEqual(json.loads(model['params']), {'temperature': 0.2, 'x_opaque': opaque})
 
     def test_exporting_the_imported_install_gives_the_same_seed(self):
         self.assertEqual(self.run_import().returncode, 0)

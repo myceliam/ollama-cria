@@ -190,6 +190,44 @@ Describe 'Test-NoSecrets' {
             Get-Finding $d | Should -BeNullOrEmpty
         }
 
+        It 'finds <Name> (R3-03)' -ForEach @(
+            @{ Name = 'a value after a leading comment'; File = 'settings.jsonc'; Text = "// local settings`n{`"api" + "_key`":`n `"" + ('q7' * 12) + "`",}"; Rule = 'secret-named setting with a literal value' }
+            @{ Name = 'the second copy of a repeated key'; File = 'dup.json'; Text = "{`"keys`": [`"id`"],`n `"keys`": [`n`"" + ('A' * 48) + "`"]}"; Rule = 'opaque value under a key or credential field' }
+            @{ Name = 'a value one object below a password field'; File = 'db.json'; Text = "{`"pass" + "word`":`n {`"value`": `"" + ('h2' * 6) + "`"}}"; Rule = 'password-named setting with a literal value' }
+            @{ Name = 'a passphrase over two lines with spaces'; File = 'key.json'; Text = "{`"ssh`": {`"pass" + "phrase`":`n `"correct horse\nbattery staple`"}}"; Rule = 'password-named setting with a literal value' }
+            @{ Name = 'a value 300 levels deep'; File = 'deep.json'; Text = ('[' * 300) + "{`"api" + "_key`":`n`"" + ('q7' * 12) + "`"}" + (']' * 300); Rule = 'secret-named setting with a literal value' }
+        ) {
+            $d = New-ScanFolder
+            Save-Text $d $File "$Text`n" | Out-Null
+            @(Get-Finding $d | Where-Object Rule -EQ $Rule) | Should -HaveCount 1
+        }
+
+        It 'finds a split value in a JSON file over 8 MB (R3-03)' {
+            $d = New-ScanFolder
+            $pad = 'x' * (9MB)
+            Save-Text $d 'big.json' ("{`"pad`": `"$pad`",`n `"keys`": [`n`"" + ('A' * 48) + "`"]}`n") | Out-Null
+            @(Get-Finding $d | Where-Object Rule -EQ 'opaque value under a key or credential field') | Should -HaveCount 1
+        }
+
+        It 'reports a .json file it cannot parse, and nothing for other files (R3-03)' {
+            $d = New-ScanFolder
+            Save-Text $d 'broken.json' ("{`"keys`": [`n`"id`"`n" ) | Out-Null
+            Save-Text $d 'notes.ini' ("[section]`nname = value`n") | Out-Null
+            $hits = @(Get-Finding $d)
+            $hits | Should -HaveCount 1
+            $hits[0].File | Should -Be 'broken.json'
+            $hits[0].Rule | Should -Be 'JSON file could not be parsed, so its fields were not checked'
+        }
+
+        It 'passes references, descriptions and schema class words under password fields (R3-03)' {
+            $d = New-ScanFolder
+            $pw = 'pass' + 'word'
+            Save-Text $d 'refs.json' ("{`"$pw`": `"{{DB_PASSWORD}}`", `"db`": {`"$pw`":`n `"`${DB_PASS}`"}, `"x_$pw`": {`"`$bundle`": `"config/x`"}}`n") | Out-Null
+            Save-Text $d 'schema.json' ("{`"properties`": {`"$pw`": {`"type`": `"string`",`n `"description`": `"The database $pw, from the bundle`"}}}`n") | Out-Null
+            Save-Text $d 'classes.json' ("{`"config`": {`"auth_$pw`":`n `"secret`", `"$pw" + "_hint`": `"safe`"}}`n") | Out-Null
+            Get-Finding $d | Should -BeNullOrEmpty
+        }
+
         It 'reports a split credential once, without printing it' {
             $d = New-ScanFolder
             $value = 'C' * 40
@@ -311,7 +349,8 @@ Describe 'Test-NoSecrets' {
         ) {
             $d = New-ScanFolder
             Save-Text $d $Name 'fake' | Out-Null
-            (Get-Finding $d).Rule | Should -Match '^forbidden file:'
+            # 'fake' is not JSON either, so 00-RESTORE-MAP.json also has a parse finding.
+            @(Get-Finding $d | Where-Object Rule -Match '^forbidden file:') | Should -Not -BeNullOrEmpty
         }
 
         It 'allows an .example file' {

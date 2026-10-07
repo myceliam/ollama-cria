@@ -17,12 +17,18 @@
         passphrases, opaque values under a key or keys field). A line holding
         JSON \uXXXX escapes is scanned again with them decoded, so
         'sk-...' is found too;
-      - every file that parses as JSON once more as a whole, so a value on
-        a different line from its field name is still judged by that field:
-        an opaque value anywhere under a key, keys, auth, credential or
-        bearer property, and a literal value under a secret-named property.
-        A long public digest under a "key" field is reported too; give such
-        fields a clearer name rather than weakening the rule;
+      - every JSON file once more as a whole, so a value on a different line
+        from its field name is still judged by every field above it: an
+        opaque value anywhere under a key, keys, auth, credential or bearer
+        property; a literal value anywhere under a secret-named property; and
+        any text at all, spaces and line breaks included, anywhere under a
+        password or passphrase property (only references such as {{NAME}}
+        or ${NAME} and descriptions pass). The parser skips comments, allows
+        trailing commas, sees every copy of a repeated key, and has no depth
+        or size limit a real file reaches. A .json or .jsonc file that still
+        cannot be parsed is itself a finding, since its fields were not
+        checked. A long public digest under a "key" field is reported too;
+        give such fields a clearer name rather than weakening the rule;
       - private addresses: tailnet IPv4 and IPv6 addresses and MagicDNS names,
         which belong in templates as {{PC_TS_IP}} and {{VPS_TS_IP}}.
         Tailscale's own service address (100.100.100.100, fd7a:115c:a1e0::53)
@@ -209,26 +215,54 @@ else {
 
 # Structured JSON: the line rules above see one line at a time, so a value on
 # the line after its field name ('"keys": [' then the value) slips past them
-# (R2-03). Each JSON file is also parsed and every string is judged by the
-# field it sits under, however the file is laid out.
+# (R2-03). Each JSON file is also parsed and every string is judged by every
+# field above it, however the file is laid out (R3-03). System.Text.Json
+# skips comments, allows trailing commas and keeps every copy of a repeated
+# key; the walk uses its own stack, so depth costs no recursion.
 $jsonOpaqueName = '^(?i)(keys?|auth|credentials?|bearer)$'
 $jsonTellingName = '(?i)(SECRET|TOKEN|PASSWORD|PASSWD|PASSPHRASE|API_?KEY|PRIVATE_?KEY|PRESHARED_?KEY)'
 $jsonLocatorName = '(?i)_(PATH|FILE|DIR|ENV|VAR|VARIABLE|NAME|PRESENT|CONFIGURED|SET|ENABLED|HEADER)$'
-function Get-JsonCredential($Node, [string]$Field, [bool]$Under) {
-    # $Field is the nearest property name; $Under is true below a key,
-    # keys, auth, credential or bearer property at any depth.
-    if ($Node -is [Collections.IDictionary]) {
-        foreach ($k in $Node.Keys) { Get-JsonCredential $Node[$k] ([string]$k) ($Under -or ([string]$k -match $jsonOpaqueName)) }
-    }
-    elseif ($Node -is [Collections.IList]) {
-        foreach ($item in $Node) { Get-JsonCredential $item $Field $Under }
-    }
-    elseif ($Node -is [string]) {
-        if ($Under -and $Node -match '^[A-Za-z0-9+/=_-]{32,}$') {
-            [pscustomobject]@{ Value = $Node; Rule = 'opaque value under a key or credential field' }
-        }
-        elseif ($Field -match $jsonTellingName -and $Field -notmatch $jsonLocatorName -and $Node -match '^[A-Za-z0-9+/=_.-]{16,}$' -and $Node -notmatch "^(?i)$placeholderWord") {
-            [pscustomobject]@{ Value = $Node; Rule = 'secret-named setting with a literal value' }
+$jsonPassName = '(?i)(PASSWORD|PASSWD|PASSPHRASE|(^|[_.-])PWD$)'
+# Text that describes a field rather than filling it, and values that only
+# point at a secret kept elsewhere: {{NAME}}, ${NAME}, $NAME, %NAME%, <name>,
+# a bundle reference, and the class words the OWUI seed schema uses.
+$jsonDocField = '^(?i)(description|title|\$comment|comment|help|label|placeholder|pattern|type|format|\$ref|\$schema|\$id|\$bundle|rule|examples?)$'
+$jsonReference = '^(\{\{[A-Za-z0-9_:./ -]{1,80}\}\}|\$\{?[A-Za-z_][A-Za-z0-9_]*\}?|%[A-Za-z_][A-Za-z0-9_]*%|<[^<>\r\n]{1,64}>|secret|safe|excluded|special|json|owner|valves|string)$'
+$jsonOptions = [Text.Json.JsonDocumentOptions]::new()
+$jsonOptions.CommentHandling = [Text.Json.JsonCommentHandling]::Skip
+$jsonOptions.AllowTrailingCommas = $true
+$jsonOptions.MaxDepth = 4096
+function Get-JsonCredential([Text.Json.JsonElement]$Root) {
+    # Each frame: the element, the nearest property name, and whether any
+    # property above it is an opaque, telling or password name.
+    $stack = [Collections.Generic.Stack[object]]::new()
+    $stack.Push(@($Root, '', $false, $false, $false))
+    while ($stack.Count -gt 0) {
+        $node, $field, $under, $telling, $pass = $stack.Pop()
+        switch ($node.ValueKind) {
+            'Object' {
+                foreach ($p in $node.EnumerateObject()) {
+                    $k = $p.Name
+                    # A name for where a secret lives (api_key_file, token_env) is not one.
+                    $locator = $k -match $jsonLocatorName
+                    $stack.Push(@($p.Value, $k, ($under -or $k -match $jsonOpaqueName),
+                            ($telling -or ($k -match $jsonTellingName -and -not $locator)), ($pass -or ($k -match $jsonPassName -and -not $locator))))
+                }
+            }
+            'Array' { foreach ($item in $node.EnumerateArray()) { $stack.Push(@($item, $field, $under, $telling, $pass)) } }
+            'String' {
+                $s = $node.GetString()
+                if ($s -eq '' -or $field -match $jsonDocField) { continue }
+                if ($under -and $s -cmatch '\A[A-Za-z0-9+/=_-]{32,}\z') {
+                    [pscustomobject]@{ Value = $s; Rule = 'opaque value under a key or credential field' }
+                }
+                elseif ($pass -and $s -notmatch $jsonReference -and $s -notmatch "^(?i)$placeholderWord") {
+                    [pscustomobject]@{ Value = $s; Rule = 'password-named setting with a literal value' }
+                }
+                elseif ($telling -and $s -cmatch '\A[A-Za-z0-9+/=_.-]{16,}\z' -and $s -notmatch "^(?i)$placeholderWord") {
+                    [pscustomobject]@{ Value = $s; Rule = 'secret-named setting with a literal value' }
+                }
+            }
         }
     }
 }
@@ -281,18 +315,31 @@ foreach ($rel in $relativeFiles) {
         }
     }
 
+    # A .json or .jsonc file must parse; anything else is tried when it
+    # starts like JSON (an INI file starts with '[' too, so failing is fine).
+    $isJson = $name -match '(?i)\.jsonc?$'
     $trimmed = $scan.Text.TrimStart([char]0xFEFF, ' ', "`t", "`r", "`n")
-    if (-not $scan.Binary -and $scan.Text.Length -le 8MB -and ($trimmed.StartsWith('{') -or $trimmed.StartsWith('['))) {
+    if ($isJson -or (-not $scan.Binary -and $trimmed -match '^(\{|\[|//|/\*)')) {
         $doc = $null
-        try { $doc = ConvertFrom-Json -InputObject $scan.Text -AsHashtable -Depth 200 -NoEnumerate -ErrorAction Stop } catch { $doc = $null }
-        if ($null -ne $doc) {
-            foreach ($hit in @(Get-JsonCredential $doc '' $false)) {
-                # Report the first line that holds the value; never the value.
-                $line = 0
-                for ($i = 0; $i -lt $lines.Count; $i++) { if ($lines[$i].Contains($hit.Value)) { $line = $i + 1; break } }
-                $seen = @($findings | Where-Object { $_.File -eq $rel -and $_.Line -eq $line -and $_.Rule -eq $hit.Rule })
-                if (-not $seen) { $findings.Add([pscustomobject]@{ File = $rel; Line = $line; Rule = $hit.Rule }) }
+        if (-not $scan.Binary) {
+            try { $doc = [Text.Json.JsonDocument]::Parse($scan.Text.TrimStart([char]0xFEFF), $jsonOptions) } catch { $doc = $null }
+        }
+        if ($null -eq $doc) {
+            if ($isJson) { $findings.Add([pscustomobject]@{ File = $rel; Line = 0; Rule = 'JSON file could not be parsed, so its fields were not checked' }) }
+        }
+        else {
+            try {
+                foreach ($hit in @(Get-JsonCredential $doc.RootElement)) {
+                    # Report the first line that holds the value (or its first
+                    # line, for text across lines); never the value.
+                    $needle = @($hit.Value -split "\r?\n|\r" | Where-Object { $_.Trim() } | Select-Object -First 1)[0]
+                    $line = 0
+                    if ($needle) { for ($i = 0; $i -lt $lines.Count; $i++) { if ($lines[$i].Contains($needle)) { $line = $i + 1; break } } }
+                    $seen = @($findings | Where-Object { $_.File -eq $rel -and $_.Line -eq $line -and $_.Rule -eq $hit.Rule })
+                    if (-not $seen) { $findings.Add([pscustomobject]@{ File = $rel; Line = $line; Rule = $hit.Rule }) }
+                }
             }
+            finally { $doc.Dispose() }
         }
     }
 }
