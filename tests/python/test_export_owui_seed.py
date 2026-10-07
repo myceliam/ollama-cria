@@ -19,6 +19,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
@@ -34,6 +35,7 @@ TOOLSERVER = 'tool-server-bearer-' + 'T' * 24
 SUBAGENT_KEY = 'sub-agent-key-' + 'S' * 24
 PC_IP = '.'.join(['100', '64', '0', '7'])
 ADMIN = 'admin-0001'
+FILE_MODE = os.name != 'nt'  # the exporter refuses --seed-out/--secrets-out on Windows (R3-06)
 
 sys.path.insert(0, str(FAKE))
 os.environ['FAKE_OWUI_KEY'] = KEY
@@ -176,12 +178,24 @@ class ExportTests(unittest.TestCase):
                 '--image-digest', 'sha256:' + 'd' * 64]
         if endpoints:
             args += ['--endpoint', f'PC_TS_IP={PC_IP}']
-        args += ['--stdout'] if stdout else ['--seed-out', str(seed_dir), '--secrets-out', str(secrets_file)]
+        emulate = not stdout and not FILE_MODE
+        args += ['--stdout'] if stdout or emulate else ['--seed-out', str(seed_dir), '--secrets-out', str(secrets_file)]
         args += extra or []
         e = dict(os.environ, PYTHONPATH=str(FAKE), FAKE_OWUI_KEY=KEY)
         e.pop('DATABASE_URL', None)
         e.update(env or {})
         p = subprocess.run(args, capture_output=True, text=True, env=e, timeout=60)
+        if emulate:
+            # On Windows the files come from the --stdout document, written
+            # here the way the collector writes them, and the log that file
+            # mode prints on stdout is on stderr.
+            if p.returncode == 0:
+                doc = json.loads(p.stdout)
+                seed_dir.mkdir()
+                for name, text in doc['seed'].items():
+                    (seed_dir / name).write_text(text, encoding='utf-8', newline='\n')
+                secrets_file.write_text(doc['secrets_file'], encoding='utf-8', newline='\n')
+            return Run(p.returncode, p.stderr, '', seed_dir, secrets_file)
         return Run(p.returncode, p.stdout, p.stderr, seed_dir, secrets_file)
 
     def assert_stopped(self, run, *phrases):
@@ -309,6 +323,7 @@ class ExportTests(unittest.TestCase):
         self.assertFalse(run.seed_dir.exists())
         self.assertIn('OK      seed exported', run.stderr)
 
+    @unittest.skipUnless(FILE_MODE, 'file mode is refused on Windows')
     def test_stdout_mode_gives_the_same_files_as_file_mode(self):
         files = self.run_export()
         self.assertEqual(files.code, 0, files.text)
@@ -566,6 +581,7 @@ class ExportTests(unittest.TestCase):
         run = self.run_export(env={'DATABASE_URL': 'postgresql://db/owui'})
         self.assert_stopped(run, 'only SQLite is supported')
 
+    @unittest.skipUnless(FILE_MODE, 'file mode is refused on Windows')
     def test_refuses_a_secrets_file_inside_the_seed_folder(self):
         build_db(self.db, load_schema())
         e = dict(os.environ, PYTHONPATH=str(FAKE), FAKE_OWUI_KEY=KEY)
@@ -577,6 +593,7 @@ class ExportTests(unittest.TestCase):
         self.assertIn('--secrets-out must not be inside --seed-out', p.stdout)
         self.assertFalse((self.dir / 'seed' / 'secrets.json').exists())
 
+    @unittest.skipUnless(FILE_MODE, 'file mode is refused on Windows')
     def test_refuses_an_existing_secrets_file(self):
         out = self.dir / 'out'
         out.mkdir()
@@ -592,6 +609,205 @@ class ExportTests(unittest.TestCase):
         self.assertEqual(self.run_export().code, 0)
         self.assertEqual(hashlib.sha256(self.db.read_bytes()).hexdigest(), before)
 
+    # ---- review round 3 (AICL-0143): values that hide, names that leak ----
+
+    def refs(self, run):
+        return json.loads(run.secrets_file.read_text(encoding='utf-8'))['refs']
+
+    def assert_hidden(self, run, *values):
+        for value in values:
+            self.assertNotIn(value, run.text)
+            if run.seed_dir.exists():
+                self.assertNotIn(value, run.seed_text())
+
+    @staticmethod
+    def label(value):
+        return '#' + hashlib.sha256(value.encode()).hexdigest()[:12]
+
+    def test_a_token_in_a_valve_url_query_becomes_a_reference(self):
+        token = 'Q' * 48
+        url = 'https://hooks.example.invalid/notify?token=' + token
+        run = self.run_export(mutate=lambda db: db.execute(
+            "UPDATE tool SET valves = ? WHERE id = 'local_subagent'", (json.dumps({'ENDPOINT': url, 'TIMEOUT': 30}),)))
+        self.assertEqual(run.code, 0, run.text)
+        valves = {t['id']: t for t in run.seed('tool')}['local_subagent']['valves']
+        self.assertEqual(valves['ENDPOINT'], {'$bundle': 'tool/local_subagent/valves/ENDPOINT'})
+        self.assertEqual(valves['TIMEOUT'], 30)
+        self.assertEqual(self.refs(run)['tool/local_subagent/valves/ENDPOINT'], url)
+        self.assert_hidden(run, token)
+
+    def test_a_field_named_for_a_credential_becomes_a_reference(self):
+        blob = 'Q' * 48
+        run = self.run_export(mutate=lambda db: db.execute(
+            "UPDATE model SET meta = ? WHERE id = 'qwen-helper'", (json.dumps({'toolIds': ['brave_search'], 'future_auth_blob': blob}),)))
+        self.assertEqual(run.code, 0, run.text)
+        meta = run.seed('model')[0]['meta']
+        self.assertEqual(meta['future_auth_blob'], {'$bundle': 'model/qwen-helper/meta/future_auth_blob'})
+        self.assertEqual(meta['toolIds'], ['brave_search'])
+        self.assert_hidden(run, blob)
+
+    def test_json_text_holding_a_credential_becomes_a_reference(self):
+        key = 'R' * 40
+        prompt = json.dumps({'note': 'call the API', 'auth': {'api_key': key}})
+        run = self.run_export(mutate=lambda db: db.execute(
+            "UPDATE tool SET valves = ? WHERE id = 'local_subagent'", (json.dumps({'SYSTEM_PROMPT': prompt}),)))
+        self.assertEqual(run.code, 0, run.text)
+        self.assertEqual(self.refs(run)['tool/local_subagent/valves/SYSTEM_PROMPT'], prompt)
+        self.assert_hidden(run, key)
+
+    def test_one_generated_looking_token_becomes_a_reference(self):
+        token = 'aZ7' * 12
+        run = self.run_export(mutate=lambda db: db.execute(
+            "UPDATE model SET params = ? WHERE id = 'qwen-helper'", (json.dumps({'temperature': 0.2, 'x_opaque': token}),)))
+        self.assertEqual(run.code, 0, run.text)
+        self.assertEqual(run.seed('model')[0]['params']['x_opaque'], {'$bundle': 'model/qwen-helper/params/x_opaque'})
+        self.assert_hidden(run, token)
+
+    def test_stops_on_an_encoded_copy_of_a_collected_secret(self):
+        import base64
+        for blob in (base64.b64encode(BRAVE.encode()).decode(),
+                     base64.b64encode(b'{"k": "' + BRAVE.encode() + b'"}').decode(),
+                     BRAVE.encode().hex()):
+            with self.subTest(blob=blob[:8]):
+                for leftover in self.dir.glob('webui.db*'):
+                    leftover.unlink()
+                run = self.run_export(mutate=lambda db: db.execute(
+                    "UPDATE model SET params = ? WHERE id = 'qwen-helper'", (json.dumps({'temperature': 0.2, 'note': blob}),)))
+                self.assert_stopped(run, 'seed /model/qwen-helper/params/note: contains an encoded form')
+                self.assert_hidden(run, blob)
+
+    def test_stops_on_a_credential_url_in_a_plain_column(self):
+        token = 'Q' * 48
+        content = 'class Tools:\n    URL = "https://api.example.invalid/v1?%s=%s"\n' % ('api_key', token)
+        run = self.run_export(mutate=lambda db: db.execute(
+            "UPDATE tool SET content = ? WHERE id = 'local_subagent'", (content,)))
+        self.assert_stopped(run, 'seed /tool/local_subagent/content: a credential in a URL query left after classification')
+        self.assert_hidden(run, token)
+
+    def test_a_placeholder_in_a_url_query_is_not_a_credential(self):
+        content = 'class Tools:\n    URL = "https://api.example.invalid/v1?api_key={key}&token=YOUR_TOKEN"\n'
+        run = self.run_export(mutate=lambda db: db.execute(
+            "UPDATE tool SET content = ? WHERE id = 'local_subagent'", (content,)))
+        self.assertEqual(run.code, 0, run.text)
+
+    def test_a_secret_shaped_key_name_is_never_printed(self):
+        sk = 'sk-' + 'R' * 40
+        run = self.run_export(mutate=lambda db: db.execute(
+            "UPDATE model SET meta = ? WHERE id = 'qwen-helper'", (json.dumps({'toolIds': [], sk: 'v'}),)))
+        self.assert_stopped(run, f'seed /model/qwen-helper/meta/{self.label(sk)}: API key (sk-) left after classification')
+        self.assert_hidden(run, sk)
+
+    def test_a_dropped_user_setting_is_named_by_label_when_it_looks_secret(self):
+        sk = 'sk-' + 'R' * 40
+
+        def mutate(db):
+            settings = json.loads(db.execute('SELECT settings FROM "user"').fetchone()[0])
+            settings['ui'][sk] = True
+            db.execute('UPDATE "user" SET settings = ?', (json.dumps(settings),))
+        run = self.run_export(mutate=mutate)
+        self.assertEqual(run.code, 0, run.text)
+        self.assertIn(f'ui.{self.label(sk)}', run.text)
+        self.assertIn('ui.userLocation', run.text)
+        self.assert_hidden(run, sk)
+
+    def test_an_unclassified_config_key_is_named_by_label_when_it_looks_secret(self):
+        sk = 'sk-' + 'R' * 40
+        run = self.run_export(mutate=lambda db: db.execute('INSERT INTO config VALUES (?, ?, ?)', (sk, '1', 1)))
+        self.assert_stopped(run, f'config key {self.label(sk)} is not classified')
+        self.assert_hidden(run, sk)
+
+    def test_an_unexpected_revision_is_named_by_label_when_it_looks_secret(self):
+        sk = 'sk-' + 'R' * 40
+        run = self.run_export(mutate=lambda db: db.execute('UPDATE alembic_version SET version_num = ?', (sk,)))
+        self.assert_stopped(run, f'Alembic revision is {self.label(sk)}')
+        self.assert_hidden(run, sk)
+
+    def test_an_unclassified_table_with_a_generated_name_is_named_by_label(self):
+        name = 'aZ7' * 10
+        run = self.run_export(mutate=lambda db: db.execute(f'CREATE TABLE "{name}" (id)'))
+        self.assert_stopped(run, f'table {self.label(name)} is not classified')
+        self.assert_hidden(run, name)
+
+    def test_argument_errors_never_echo_a_value(self):
+        sk = 'sk-' + 'R' * 40
+        for argv in (['--stdout', '--schema', str(self.schema_path), '--endpoint', sk],
+                     ['--stdout', '--schema', str(self.schema_path), '--endpoint', 'PC_TS_IP=' + sk[:3]],
+                     ['--stdout', '--schema', str(self.schema_path), '--bogus', sk],
+                     ['--stdout', '--schema', str(self.schema_path), f'--bogus={sk}'],
+                     ['--stdout', '--schema']):
+            with self.subTest(argv=len(argv)):
+                with contextlib.redirect_stderr(io.StringIO()) as err, contextlib.redirect_stdout(io.StringIO()) as out:
+                    with self.assertRaises(SystemExit) as ctx:
+                        exporter.main(argv)
+                self.assertEqual(ctx.exception.code, 2)
+                self.assertIn('PROBLEM arguments:', err.getvalue())
+                self.assertIn('STOPPED nothing was written', err.getvalue())
+                self.assertNotIn(sk, err.getvalue() + out.getvalue())
+                self.assertNotIn(sk[:3] + '\n', err.getvalue())
+
+    def test_a_database_error_names_only_its_type(self):
+        self.db.write_bytes(b'not a database ' + BRAVE.encode())
+        run = self.run_export(stdout=True)
+        self.assertEqual(run.code, 1, run.text)
+        self.assertIn('PROBLEM database: DatabaseError\n', run.stderr)
+        self.assert_hidden(run, BRAVE)
+
+    def test_file_mode_is_refused_on_windows(self):
+        with mock.patch.object(exporter, 'ON_WINDOWS', True), \
+                contextlib.redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit) as ctx:
+            exporter.main(['--schema', str(self.schema_path), '--db', str(self.db),
+                           '--seed-out', str(self.dir / 'seed'), '--secrets-out', str(self.dir / 'secrets.json')])
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertIn('refused on Windows', err.getvalue())
+        self.assertFalse((self.dir / 'seed').exists())
+        self.assertFalse((self.dir / 'secrets.json').exists())
+
+    @unittest.skipUnless(FILE_MODE, 'file mode is refused on Windows')
+    def test_a_missing_secrets_folder_leaves_nothing_behind(self):
+        build_db(self.db, load_schema())
+        e = dict(os.environ, PYTHONPATH=str(FAKE), FAKE_OWUI_KEY=KEY)
+        p = subprocess.run([sys.executable, str(SCRIPT), '--schema', str(self.schema_path), '--db', str(self.db),
+                            '--endpoint', f'PC_TS_IP={PC_IP}', '--seed-out', str(self.dir / 'seed'),
+                            '--secrets-out', str(self.dir / 'missing' / 'secrets.json')],
+                           capture_output=True, text=True, env=e, timeout=60)
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn('the folder that should hold --secrets-out does not exist', p.stdout)
+        self.assertIn('STOPPED nothing was written', p.stdout)
+        self.assertNotIn('Traceback', p.stdout + p.stderr)
+        self.assertEqual(sorted(x.name for x in self.dir.iterdir() if not x.name.startswith('webui.db')), ['schema.json'])
+
+    @unittest.skipUnless(FILE_MODE, 'file mode is refused on Windows')
+    def test_a_good_run_leaves_no_staging_folder(self):
+        run = self.run_export()
+        self.assertEqual(run.code, 0, run.text)
+        self.assertEqual([x.name for x in self.dir.iterdir() if x.name.startswith('.seed-staging-')], [])
+        self.assertTrue((run.seed_dir / 'tool.json').is_file())
+
+    @unittest.skipUnless(FILE_MODE, 'file mode is refused on Windows')
+    def test_a_failure_while_publishing_removes_what_it_made(self):
+        seed = {'tool': [], 'provenance': {}}
+        out = self.dir / 'out'
+        out.mkdir()
+        with mock.patch.object(exporter.os, 'rename', side_effect=OSError('injected')):
+            with self.assertRaises(exporter.Stop) as ctx:
+                exporter.write_files(seed, {'a': 'b'}, str(self.dir / 'seed'), str(out / 'secrets.json'))
+        self.assertIn('could not write the output files (OSError)', str(ctx.exception))
+        self.assertFalse(ctx.exception.left)
+        self.assertNotIn('injected', str(ctx.exception))
+        self.assertEqual(sorted(x.name for x in self.dir.iterdir()), ['out', 'schema.json'])
+        self.assertEqual(list(out.iterdir()), [])
+
+    @unittest.skipUnless(FILE_MODE, 'file mode is refused on Windows')
+    def test_says_what_is_left_when_it_cannot_clean_up(self):
+        out = self.dir / 'out'
+        out.mkdir()
+        with mock.patch.object(exporter.os, 'rename', side_effect=OSError('injected')), \
+                mock.patch.object(exporter.os, 'unlink', side_effect=OSError('injected')):
+            with self.assertRaises(exporter.Stop) as ctx:
+                exporter.write_files({'tool': []}, {'a': 'b'}, str(self.dir / 'seed'), str(out / 'secrets.json'))
+        self.assertTrue(ctx.exception.left)
+        self.assertIn('could not remove --secrets-out', str(ctx.exception))
+
 
 class NameRuleTests(unittest.TestCase):
     def test_secret_names(self):
@@ -602,6 +818,47 @@ class NameRuleTests(unittest.TestCase):
     def test_ordinary_names(self):
         for name in ('monkeys', 'turkey', 'keyboard', 'max_tokens_hint', 'model', 'url', 'base_url', 'keep_alive', 'hotkey'):
             self.assertFalse(exporter.secret_name(name), name)
+
+    def test_credential_urls(self):
+        token = 'Q' * 48
+
+        def url(*pairs):
+            return 'https://x.example.invalid/a?' + '&'.join(f'{k}={v}' for k, v in pairs)
+        for text in (url(('token', token)), url(('b', '1'), ('sig', token)), url(('api_key', token)),
+                     'postgres://user:' + 'p' * 12 + '@db.example.invalid/x'):
+            self.assertTrue(exporter.credential_url(text), text[:30])
+        for text in (url(('q', token)), url(('api_key', '{api_key}')), url(('token', 'YOUR_API_TOKEN')),
+                     url(('token', '${TOKEN}')), url(('max_tokens', '4096'))):
+            self.assertFalse(exporter.credential_url(text), text[:30])
+
+    def test_opaque_tokens(self):
+        self.assertTrue(exporter.opaque('aZ7' * 10))
+        for text in ('Q' * 48, 'f' * 64, '123e4567-e89b-12d3-a456-426614174000', 'sdxl_lightning_8step_lora.safetensors',
+                     'a perfectly ordinary sentence of text', 'short1A',
+                     # model names: words and short codes, not tokens
+                     'DeepSeek-R1-Distill-Qwen-14B', 'Qwen2.5-Coder-32B-Instruct-GGUF', 'Meta-Llama-3.1-8B-Instruct',
+                     'Phi3-Mini-128k-Instruct-Q4_K_M'):
+            self.assertFalse(exporter.opaque(text), text[:30])
+        import secrets as random_tokens
+        caught = sum(exporter.opaque(random_tokens.token_urlsafe(32)) for _ in range(200))
+        self.assertGreaterEqual(caught, 190, 'most generated tokens are caught')
+
+    def test_more_secret_names(self):
+        for name in ('future_auth_blob', 'session_cookie', 'bearer', 'apiKeys', 'x-api-key'):
+            self.assertTrue(exporter.secret_name(name), name)
+        for name in ('auth_type', 'api_key_header', 'token_count', 'max_tokens', 'cookie_name', 'password_required'):
+            self.assertFalse(exporter.secret_name(name), name)
+
+    def test_names_in_messages(self):
+        export = exporter.Export(load_schema(), {}, None)
+        for name in ('brave_search', 'ui.userLocation', 'config', '123e4567-e89b-12d3-a456-426614174000'):
+            self.assertEqual(export.name(name), name)
+        for name in ('sk-' + 'R' * 40, 'aZ7' * 10, 'x' * 30, 'has space', 'a/b'):
+            self.assertRegex(export.name(name), r'^#[0-9a-f]{12}$', name[:10])
+        export.add_secret('tool/t/valves/K', 'shortval9')
+        self.assertRegex(export.name('pre_shortval9'), r'^#[0-9a-f]{12}$')
+        self.assertEqual(export.where('tool/brave_search/valves/' + 'sk-' + 'R' * 40),
+                         'tool/brave_search/valves/#' + hashlib.sha256(('sk-' + 'R' * 40).encode()).hexdigest()[:12])
 
     def test_schema_classifies_the_known_secret_config_keys(self):
         config = load_schema()['config']

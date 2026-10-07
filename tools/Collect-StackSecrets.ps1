@@ -68,11 +68,13 @@
         writable layer or a log. A tmpfs is memory, and memory can be paged
         out: on Windows every drive that can hold the Docker VM's paged
         memory (the page files, the system drive and the WSL swap file) must
-        have BitLocker on, like the staging drive; on Linux, active swap is a
-        warning. The helper ends itself after 300 seconds, so a killed
-        collector cannot leave one running for long, and a helper left from
-        an earlier run stops the next run until it is removed. The collector
-        confirms each helper is gone.
+        have BitLocker on, like the staging drive, and the run stops if the
+        page files cannot be listed. On Linux the boundary is weaker: active
+        swap is only a warning, and whether it is encrypted is not checked.
+        'timeout -s KILL' ends the helper after 300 seconds, even while it
+        waits inside SQLite, so a killed collector cannot leave one running
+        for long, and a helper left from an earlier run stops the next run
+        until it is removed. The collector confirms each helper is gone.
         SQLite files are copied with SQLite's backup API, which includes
         changes still in the -wal file, and integrity-checked (C-03). Each
         volume must exist before the run; if one is re-created during the
@@ -127,7 +129,8 @@
 
 .PARAMETER HelperImage
     The image for the throw-away volume reader. It must already be on this
-    machine and must have python3; the collector never pulls it.
+    machine and must have python3 and coreutils' timeout; the collector
+    never pulls it.
 
 .PARAMETER AllowUnencryptedStaging
     Accept a staging drive, or a drive that can hold paged memory, whose
@@ -257,13 +260,22 @@ done
 # The file follows as base64 lines. The only place it is written is /work, a
 # tmpfs, so it never reaches the container's writable layer (a tmpfs can still
 # be paged to swap). A SQLite copy is switched to rollback-journal mode, so it
-# is one self-contained file. The alarm ends the helper even if the collector
-# was killed; it needs a handler because PID 1 ignores default signals.
+# is one self-contained file.
+# Three deadlines end the helper even if the collector was killed (R3-04):
+# 'timeout -s KILL' kills it from outside after $helperSeconds, which works
+# even while Python waits inside SQLite; the backup checks its own deadline
+# between steps of 64 pages; and SQLite waits at most 10 seconds for a lock.
+# The alarm stays as a fourth. 'docker run --init' puts tini at PID 1, so the
+# signals behave as they do outside a container.
 $helperSeconds = 300
 $volumeCopy = @'
-import base64, hashlib, json, os, signal, sqlite3, stat, sys
+import base64, hashlib, json, os, signal, sqlite3, stat, sys, time
 signal.signal(signal.SIGALRM, lambda *_: os._exit(124))
 signal.alarm(int(sys.argv[3]))
+deadline = time.monotonic() + int(sys.argv[3])
+def progress(status, remaining, total):
+    if time.monotonic() > deadline:
+        os._exit(124)
 kind, rel = sys.argv[1], sys.argv[2]
 src = os.path.normpath(os.path.join('/src', rel))
 def say(**fields):
@@ -276,9 +288,9 @@ st = os.lstat(src)
 if not stat.S_ISREG(st.st_mode):
     say(status='notfile'); sys.exit(0)
 if kind == 'sqlite':
-    source = sqlite3.connect('file:' + src + '?mode=ro', uri=True)
+    source = sqlite3.connect('file:' + src + '?mode=ro', uri=True, timeout=10)
     copy = sqlite3.connect('/work/item')
-    source.backup(copy)
+    source.backup(copy, pages=64, progress=progress, sleep=0.25)
     source.close()
     copy.execute('PRAGMA journal_mode=DELETE')
     ok = copy.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
@@ -701,18 +713,20 @@ function Get-HelperLeft([string]$Name) {
 
 function Copy-VolumeRow($Row, [string]$Destination) {
     # One 'docker run': read-only filesystem, no network, no log driver,
-    # removed on exit, and ended by its own alarm after $helperSeconds. The
+    # removed on exit, and killed by 'timeout' after $helperSeconds. The
     # copy comes back on the helper's output, not through the container's
     # writable layer, and is checked against the size and hash it reports.
     $name = 'cria-collect-' + [guid]::NewGuid().ToString('n').Substring(0, 12)
     $mount = if ($Row.Kind -eq 'sqlite') { "$($Row.Volume):/src" } else { "$($Row.Volume):/src:ro" }
     $program = "import base64; exec(base64.b64decode('" + (ConvertTo-Base64 $volumeCopy) + "').decode())"
-    $out = @(& $DockerCommand run --rm --name $name --label 'cria.collector=helper' --network none --pull never --read-only `
+    $inner = $helperSeconds - 20  # Python's own deadline, inside the outer one
+    $out = @(& $DockerCommand run --rm --init --name $name --label 'cria.collector=helper' --network none --pull never --read-only `
             --tmpfs '/work:rw,mode=0700,size=512m' --log-driver none -v $mount $HelperImage `
-            python3 -c $program $Row.Kind ($Row.Relative -replace '\\', '/') $helperSeconds 2>$null)
+            timeout -s KILL $helperSeconds python3 -c $program $Row.Kind ($Row.Relative -replace '\\', '/') $inner 2>$null)
     $code = $LASTEXITCODE
     $left = Get-HelperLeft $name
     if ($left) { return $left }
+    if ($code -in 124, 137) { return "failed (the helper ran out of time after at most $helperSeconds seconds)" }
     if ($code -ne 0) { return "failed (helper exit $code)" }
 
     $head = $null
@@ -1044,11 +1058,17 @@ function Get-PagingLocation {
     # Windows: where memory, the Docker VM's included, can be written to
     # disk: each page file, the system drive (hibernation and swap files) and
     # the WSL 2 swap file, from .wslconfig or its default place. Returns paths.
+    # Throws when the page files cannot be listed: a place nobody can name
+    # cannot be checked, so the caller refuses instead (R3-05).
     $found = [Collections.Generic.List[string]]::new()
     $found.Add($env:SystemDrive + '\')
-    try { foreach ($p in @(Get-CimInstance -ClassName Win32_PageFileUsage -ErrorAction Stop)) { $found.Add([string]$p.Name) } }
-    catch { $null = $_ }
-    $swap = Join-Path $env:USERPROFILE 'AppData\Local\Temp\swap.vhdx'
+    try { $pageFiles = @(Get-CimInstance -ClassName Win32_PageFileUsage -ErrorAction Stop) }
+    catch { throw 'the page files could not be listed' }
+    foreach ($p in $pageFiles) { $found.Add([string]$p.Name) }
+
+    # .wslconfig is read whole first, the last value of a key winning, so
+    # the order of swap= and swapFile= does not matter.
+    $settings = @{}
     $config = Join-Path $env:USERPROFILE '.wslconfig'
     if (Test-Path -LiteralPath $config -PathType Leaf) {
         $section = ''
@@ -1056,14 +1076,19 @@ function Get-PagingLocation {
             $l = ($line -replace '[#;].*$', '').Trim()
             if ($l -match '^\[(.+)\]$') { $section = $Matches[1].Trim().ToLowerInvariant(); continue }
             if ($section -ne 'wsl2' -or $l -notmatch '^([^=]+)=(.*)$') { continue }
-            $value = $Matches[2].Trim().Trim('"') -replace '\\\\', '\'
-            switch ($Matches[1].Trim().ToLowerInvariant()) {
-                'swapfile' { if ($value) { $swap = $value } }
-                'swap' { if ($value -match '^0+\s*[A-Za-z]*$') { $swap = $null } }
-            }
+            $settings[$Matches[1].Trim().ToLowerInvariant()] = $Matches[2].Trim().Trim('"') -replace '\\\\', '\'
         }
     }
-    if ($swap) { $found.Add($swap) }
+    # WSL's default is %TEMP%\swap.vhdx; older releases used the profile's
+    # Temp folder. Both are named, since only their drives matter here.
+    $swapFiles = if ($settings['swapfile']) { @($settings['swapfile']) } else {
+        @((Join-Path ([IO.Path]::GetTempPath()) 'swap.vhdx'), (Join-Path $env:USERPROFILE 'AppData\Local\Temp\swap.vhdx'))
+    }
+    $swapOff = [string]$settings['swap'] -match '^0+\s*[A-Za-z]*$'
+    foreach ($f in $swapFiles) {
+        # With swap off, a swap file left from before is still on disk.
+        if (-not $swapOff -or (Test-Path -LiteralPath $f)) { $found.Add($f) }
+    }
     $found | Where-Object { $_ } | Select-Object -Unique
 }
 
@@ -1072,7 +1097,13 @@ function Test-PagingBoundary {
     # be paged out. On Windows each drive that can hold paged memory needs
     # BitLocker on, like the staging drive. Elsewhere, active swap is named.
     if ($onWindows) {
-        $drives = @(Get-PagingLocation | ForEach-Object { [IO.Path]::GetPathRoot($_) } | Where-Object { $_ } | Select-Object -Unique)
+        try { $locations = @(Get-PagingLocation) }
+        catch {
+            $note = "docker: where memory can be paged is unknown ($($_.Exception.Message)), so the volume copies cannot be checked against it"
+            if ($AllowUnencryptedStaging) { $warnings.Add("$note (allowed by -AllowUnencryptedStaging)") } else { $problems.Add($note) }
+            return
+        }
+        $drives = @($locations | ForEach-Object { [IO.Path]::GetPathRoot($_) } | Where-Object { $_ } | Select-Object -Unique)
         foreach ($d in $drives) {
             $state = Get-BitLockerState $d
             if ($state -eq 'On') { continue }
@@ -1094,6 +1125,8 @@ function Get-ChangeableBy([string]$Path, [switch]$IsDriveRoot, [switch]$IsStagin
     $names = [Collections.Generic.List[string]]::new()
     if ($onWindows) {
         $me = Get-CurrentUserSid
+        # Me, SYSTEM, Administrators, CREATOR OWNER, OWNER RIGHTS (the
+        # object's current owner, named on its own below) and TrustedInstaller.
         $trusted = @($me.Value, 'S-1-5-18', 'S-1-5-32-544', 'S-1-3-0', 'S-1-3-4',
             'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464')
         # On any folder: DELETE, FILE_DELETE_CHILD, WRITE_DAC, WRITE_OWNER and

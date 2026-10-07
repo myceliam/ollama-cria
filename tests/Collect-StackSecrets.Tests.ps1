@@ -576,6 +576,7 @@ Describe 'Collect-StackSecrets' {
 
         It 'reads the WSL swap file from .wslconfig, and leaves it out when swap is 0' {
             . ([scriptblock]::Create($script:PagingFunctions))
+            function Get-CimInstance { }  # no page files
             $saved = $env:USERPROFILE
             $env:USERPROFILE = Join-Path $TestDrive ('profile-' + [guid]::NewGuid().ToString('n'))
             try {
@@ -587,6 +588,56 @@ Describe 'Collect-StackSecrets' {
                 @(Get-PagingLocation | Where-Object { $_ -like '*swap.vhdx' }) | Should -BeNullOrEmpty
                 Remove-Item -LiteralPath $config -Force
                 @(Get-PagingLocation) | Should -Contain (Join-Path $env:USERPROFILE 'AppData\Local\Temp\swap.vhdx')
+                @(Get-PagingLocation) | Should -Contain (Join-Path ([IO.Path]::GetTempPath()) 'swap.vhdx')
+            }
+            finally { $env:USERPROFILE = $saved }
+        }
+
+        It 'reads .wslconfig whole, the last value winning, whatever the order of swap and swapFile' {
+            # R3-05: swap=0 before swapFile= must not be undone by it, and a later swap= wins.
+            . ([scriptblock]::Create($script:PagingFunctions))
+            function Get-CimInstance { }
+            $saved = $env:USERPROFILE
+            $env:USERPROFILE = Join-Path $TestDrive ('profile-' + [guid]::NewGuid().ToString('n'))
+            try {
+                New-Item -ItemType Directory -Path $env:USERPROFILE | Out-Null
+                $config = Join-Path $env:USERPROFILE '.wslconfig'
+                Set-Content -LiteralPath $config -Value "[wsl2]`nswap=0`nswapFile=D:\\vm\\swap.vhdx"
+                @(Get-PagingLocation | Where-Object { $_ -like '*swap.vhdx' }) | Should -BeNullOrEmpty
+                Set-Content -LiteralPath $config -Value "[wsl2]`nswap=0`nswapFile=D:\\vm\\swap.vhdx`nswap=4GB"
+                @(Get-PagingLocation) | Should -Contain 'D:\vm\swap.vhdx'
+                # Swap off, but a swap file from before is still on disk: it is named.
+                $old = Join-Path $TestDrive 'old-swap.vhdx'
+                Set-Content -LiteralPath $old -Value 'x'
+                Set-Content -LiteralPath $config -Value "[wsl2]`nswapFile=$($old -replace '\\', '\\')`nswap=0"
+                @(Get-PagingLocation) | Should -Contain $old
+            }
+            finally { $env:USERPROFILE = $saved }
+        }
+
+        It 'refuses when the page files cannot be listed, and only warns when unencrypted staging is allowed' {
+            # R3-05: a failed enumeration is unknown, not "no page files".
+            . ([scriptblock]::Create($script:PagingFunctions))
+            function Get-CimInstance { throw 'Access denied' }
+            function Get-BitLockerState([string]$Path) { 'On' }
+            $onWindows = $true
+            $saved = $env:USERPROFILE
+            $env:USERPROFILE = Join-Path $TestDrive ('profile-' + [guid]::NewGuid().ToString('n'))
+            try {
+                foreach ($allow in $false, $true) {
+                    $AllowUnencryptedStaging = $allow
+                    $problems = [Collections.Generic.List[string]]::new()
+                    $warnings = [Collections.Generic.List[string]]::new()
+                    Test-PagingBoundary
+                    $note = 'docker: where memory can be paged is unknown (the page files could not be listed), so the volume copies cannot be checked against it'
+                    if ($allow) {
+                        $problems | Should -BeNullOrEmpty
+                        $warnings | Should -Be @("$note (allowed by -AllowUnencryptedStaging)")
+                    }
+                    else {
+                        $problems | Should -Be @($note)
+                    }
+                }
             }
             finally { $env:USERPROFILE = $saved }
         }
