@@ -45,6 +45,11 @@
           "why": {
             "type": "string",
             "minLength": 1
+          },
+          "override": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The installer's own arguments, which Stage 3 passes with winget --override in place of winget's: for an app the stack expects in a fixed folder."
           }
         }
       },

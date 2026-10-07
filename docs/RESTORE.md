@@ -365,8 +365,9 @@ pwsh -File .\Invoke-StackRecovery.ps1 -Execute -Accept vps-bootstrap -HostKeyFin
 | Docker Desktop | `Docker.DockerDesktop` |
 | Ollama | `Ollama.Ollama` |
 | Python 3.11 | `Python.Python.3.11` |
+| Python 3.13 | `Python.Python.3.13`, for all users in `C:\Python313` |
 
-Every package in the manifest is installed at its recorded version with `winget install --exact --version` (a row with `"exact": false` takes any version), then Docker Desktop and Ollama are pinned with `winget pin add` so `winget upgrade --all` never moves them (C-30). After each install the controller refreshes `PATH` in its own process. Installing Docker Desktop asks for a restart, because its `docker-users` group only counts from your next sign-in. Then the controller starts Docker Desktop **as you** (through Explorer, never as Admin) and waits until `docker info` answers, not just until the installer exits (C-53).
+Every package in the manifest is installed at its recorded version with `winget install --exact --version` (a row with `"exact": false` takes any version; a row with `"override"` hands its installer arguments to `winget --override`, which is how Python 3.13 lands in `C:\Python313`, the path the PowerShell tool's task and scripts run), then Docker Desktop and Ollama are pinned with `winget pin add` so `winget upgrade --all` never moves them (C-30). After each install the controller refreshes `PATH` in its own process. Installing Docker Desktop asks for a restart, because its `docker-users` group only counts from your next sign-in. Then the controller starts Docker Desktop **as you** (through Explorer, never as Admin) and waits until `docker info` answers, not just until the installer exits (C-53).
 
 **3c · Ollama profile, Machine scope only** (C-12)
 
