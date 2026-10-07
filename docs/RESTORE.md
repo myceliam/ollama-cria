@@ -751,14 +751,16 @@ tailscale serve --bg --https 9000 http://127.0.0.1:18088 # Dozzle
 | File | Holds | Source today |
 |---|---|---|
 | `topology.json` | Roots, hosts, compose projects | This guide |
-| `endpoints.json` | Every templated file and its placeholders | Appendix E |
-| `windows-apps.json` | winget IDs and versions | Step 0, Stage 3 |
-| `ollama-env.json` | Machine-scope profile | Stage 3c table |
-| `ollama-models.json`, `modelfiles\` | Model names, tags, digests; custom Modelfiles | `ollama list` (45 rows) |
-| `comfyui-requirements.lock`, `comfyui-nodes.json` | Python lock and custom-node commits | `D:\owuibackups\…\manifests\comfyui-pip-freeze.txt` plus the live tree |
-| `comfyui-weights.json` | URL, destination, bytes, SHA-256, auth | 🛠️ To build from `E:\ai\comfyui\ComfyUI\models` |
-| `serve.json` | The seven Serve rules | Stage 8c |
-| `tasks.json` | Scheduled tasks, startup items, their scripts and dependencies | Stage 8d |
+| `endpoints.json` | Every templated file and its placeholders | `tools/Sync-StackFiles.ps1` (Appendix E) |
+| `stack-files.json` | Which live files are copied into `stack\`, `extras\`, `vps\` and `windows\startup\` | Hand-kept; `tools/Sync-StackFiles.ps1` copies them |
+| `windows-apps.json` | winget IDs and versions, the GPU driver | `tools/Sync-StackManifests.ps1` |
+| `ollama-env.json` | Machine-scope profile | `tools/Sync-StackManifests.ps1` |
+| `ollama-models.json`, `stack\modelfiles\` | Model names, tags, digests; custom models point at their Modelfile and base | `tools/Sync-StackManifests.ps1` (44 models, 6 custom) |
+| `comfyui-requirements.lock`, `comfyui-nodes.json` | Python lock, package indexes, ComfyUI and custom-node commits | `tools/Sync-StackManifests.ps1` |
+| `comfyui-weights.json` | Destination, bytes, SHA-256, URL, auth; `checked` when the URL was seen to serve that SHA-256 | `tools/Sync-StackManifests.ps1 -Only weights`; URLs set by hand are kept |
+| `serve.json` | The seven Serve rules, no host names | `tools/Sync-StackManifests.ps1` |
+| `tasks.json`, `windows\tasks\*.xml` | Scheduled tasks (XML with `{{USER_SID}}`, `{{USER_ID}}`, `{{USER_PROFILE}}`), startup items, the stack scripts they run, and what is retired or left out | `tools/Sync-StackManifests.ps1` |
+| `images.json` | The image behind every PC and VPS container, its digests, and whether it is still stored | `tools/Sync-StackManifests.ps1` |
 | `acceptance.json` | One test row per capability (C-46) | Stage 9 |
 | `owui-seed\schema.json` | Field allowlist: repo-safe, secret reference or excluded (C-41) | 🛠️ |
 | `owui-seed\*.json` | Functional seed, with OWUI version, image digest and Alembic revision | 🛠️ `Export-OwuiSeed.py` |
