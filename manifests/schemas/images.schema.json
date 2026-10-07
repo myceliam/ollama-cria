@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/myceliam/ollama-cria/blob/main/manifests/schemas/images.schema.json",
+  "title": "ollama-cria container images",
+  "description": "The image behind every container on the PC and the VPS when captured, with its registry digests (RESTORE.md Stages 5b and 7a). Written by tools/Sync-StackManifests.ps1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "pc",
+    "vps"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "formatVersion": {
+      "const": 1
+    },
+    "note": {
+      "type": "string"
+    },
+    "pc": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/container"
+      }
+    },
+    "vps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/container"
+      }
+    }
+  },
+  "$defs": {
+    "container": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "container",
+        "project",
+        "state",
+        "image",
+        "imageId",
+        "repoDigests"
+      ],
+      "properties": {
+        "container": {
+          "type": "string",
+          "minLength": 1
+        },
+        "project": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "minLength": 1
+        },
+        "image": {
+          "type": "string",
+          "minLength": 1
+        },
+        "imageId": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "repoDigests": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[^\\s@]+@sha256:[0-9a-f]{64}$"
+          },
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/myceliam/ollama-cria/blob/main/manifests/schemas/comfyui-weights.schema.json",
+  "title": "ollama-cria ComfyUI weights",
+  "description": "Every file of 1 MB or more under ComfyUI\\models, with where to get it again (RESTORE.md Stage 6b). Written by tools/Sync-StackManifests.ps1; url and required may be set by hand.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "weights"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "formatVersion": {
+      "const": 1
+    },
+    "note": {
+      "type": "string"
+    },
+    "weights": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "dest",
+          "bytes",
+          "sha256",
+          "role",
+          "required",
+          "url",
+          "auth",
+          "checked"
+        ],
+        "properties": {
+          "dest": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_][A-Za-z0-9._ -]*(/[A-Za-z0-9_][A-Za-z0-9._ -]*)*$"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "role": {
+            "type": "string",
+            "minLength": 1
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "url": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string",
+                "pattern": "^https://[^\\s@]+$"
+              }
+            ]
+          },
+          "auth": {
+            "enum": [
+              "none",
+              "huggingface",
+              "civitai"
+            ]
+          },
+          "checked": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  }
+}

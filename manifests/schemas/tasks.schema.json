@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/myceliam/ollama-cria/blob/main/manifests/schemas/tasks.schema.json",
+  "title": "ollama-cria scheduled tasks and startup items",
+  "description": "The stack's scheduled tasks (XML under windows/tasks, user placeholders), its startup items, and what is retired or left out (RESTORE.md Stage 8d). Written by tools/Sync-StackManifests.ps1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "tasks",
+    "startup",
+    "retired",
+    "notCovered",
+    "startupNotCovered"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "formatVersion": {
+      "const": 1
+    },
+    "note": {
+      "type": "string"
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "enabled",
+          "install",
+          "xml",
+          "runs"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "install": {
+            "oneOf": [
+              {
+                "const": "xml"
+              },
+              {
+                "type": "string",
+                "pattern": "^stack/.+\\.ps1$"
+              }
+            ]
+          },
+          "xml": {
+            "type": "string",
+            "pattern": "^windows/tasks/[A-Za-z0-9._-]+\\.xml$"
+          },
+          "runs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_][A-Za-z0-9._ -]*(/[A-Za-z0-9_][A-Za-z0-9._ -]*)*$"
+            },
+            "uniqueItems": true
+          }
+        }
+      }
+    },
+    "startup": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "kind",
+              "file"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "const": "file"
+              },
+              "file": {
+                "type": "string",
+                "pattern": "^windows/startup/.+$"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "kind",
+              "target",
+              "arguments",
+              "workingDirectory"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "const": "shortcut"
+              },
+              "target": {
+                "type": "string",
+                "minLength": 1
+              },
+              "arguments": {
+                "type": "string"
+              },
+              "workingDirectory": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "retired": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "notCovered": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "startupNotCovered": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    }
+  }
+}

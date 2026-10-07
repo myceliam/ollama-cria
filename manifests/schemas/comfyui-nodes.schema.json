@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/myceliam/ollama-cria/blob/main/manifests/schemas/comfyui-nodes.schema.json",
+  "title": "ollama-cria ComfyUI and custom nodes",
+  "description": "ComfyUI's commit, each custom node's repo and commit, the venv's Python and its package indexes (RESTORE.md Stage 3d). Written by tools/Sync-StackManifests.ps1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "comfyui",
+    "python",
+    "pipIndexUrls",
+    "nodes",
+    "manual"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "formatVersion": {
+      "const": 1
+    },
+    "note": {
+      "type": "string"
+    },
+    "comfyui": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repo",
+        "commit"
+      ],
+      "properties": {
+        "repo": {
+          "type": "string",
+          "pattern": "^https://[^\\s@]+$"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      }
+    },
+    "python": {
+      "type": "string",
+      "pattern": "^3\\.[0-9]+\\.[0-9]+$"
+    },
+    "pipIndexUrls": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^https://[^\\s@]+$"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "repo",
+          "commit"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "repo": {
+            "type": "string",
+            "pattern": "^https://[^\\s@]+$"
+          },
+          "commit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          }
+        }
+      }
+    },
+    "manual": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    }
+  }
+}

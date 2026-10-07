@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/myceliam/ollama-cria/blob/main/manifests/schemas/ollama-env.schema.json",
+  "title": "ollama-cria Ollama profile",
+  "description": "The Machine-scope OLLAMA_* variables and HF_HOME (RESTORE.md Stage 3c). Written by tools/Sync-StackManifests.ps1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "scope",
+    "variables"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "formatVersion": {
+      "const": 1
+    },
+    "note": {
+      "type": "string"
+    },
+    "scope": {
+      "const": "Machine"
+    },
+    "variables": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "value"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^(OLLAMA_[A-Z0-9_]+|HF_HOME)$"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
+      "minItems": 1
+    }
+  }
+}

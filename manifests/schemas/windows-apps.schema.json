@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/myceliam/ollama-cria/blob/main/manifests/schemas/windows-apps.schema.json",
+  "title": "ollama-cria Windows apps",
+  "description": "The winget packages the stack needs, at the versions installed when captured, and the GPU driver (RESTORE.md Stage 3). Written by tools/Sync-StackManifests.ps1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "packages",
+    "gpu"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "formatVersion": {
+      "const": 1
+    },
+    "note": {
+      "type": "string"
+    },
+    "packages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "version",
+          "why"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9.+_-]*$"
+          },
+          "version": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "minItems": 1
+    },
+    "gpu": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "driver"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "driver": {
+              "type": "string",
+              "pattern": "^[0-9][0-9.]*$"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

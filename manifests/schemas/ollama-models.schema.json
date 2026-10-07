@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/myceliam/ollama-cria/blob/main/manifests/schemas/ollama-models.schema.json",
+  "title": "ollama-cria Ollama models",
+  "description": "Every model Ollama has, with its digest; custom models name their base and Modelfile (RESTORE.md Stage 6a). Written by tools/Sync-StackManifests.ps1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "ollamaVersion",
+    "models"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "formatVersion": {
+      "const": 1
+    },
+    "note": {
+      "type": "string"
+    },
+    "ollamaVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "models": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/model"
+      },
+      "minItems": 1
+    }
+  },
+  "$defs": {
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "digest",
+        "bytes",
+        "family",
+        "parameterSize",
+        "quantization",
+        "source"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]*:[A-Za-z0-9._-]+$"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "family": {
+          "type": "string"
+        },
+        "parameterSize": {
+          "type": "string"
+        },
+        "quantization": {
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "registry",
+            "modelfile"
+          ]
+        },
+        "base": {
+          "type": "string",
+          "minLength": 1
+        },
+        "modelfile": {
+          "type": "string",
+          "pattern": "^stack/modelfiles/[A-Za-z0-9._-]+\\.Modelfile$"
+        }
+      },
+      "if": {
+        "properties": {
+          "source": {
+            "const": "modelfile"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "base",
+          "modelfile"
+        ]
+      },
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "base"
+              ]
+            },
+            {
+              "required": [
+                "modelfile"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  }
+}

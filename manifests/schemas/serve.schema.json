@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/myceliam/ollama-cria/blob/main/manifests/schemas/serve.schema.json",
+  "title": "ollama-cria Tailscale Serve rules",
+  "description": "The PC's Tailscale Serve rules, without host names; never Funnel (RESTORE.md Stage 8c). Written by tools/Sync-StackManifests.ps1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "rules"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "formatVersion": {
+      "const": 1
+    },
+    "note": {
+      "type": "string"
+    },
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "port",
+          "kind",
+          "target"
+        ],
+        "properties": {
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "kind": {
+            "enum": [
+              "tcp",
+              "https"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "pattern": "^/"
+          },
+          "target": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "if": {
+          "properties": {
+            "kind": {
+              "const": "https"
+            }
+          }
+        },
+        "then": {
+          "required": [
+            "path"
+          ]
+        },
+        "else": {
+          "not": {
+            "required": [
+              "path"
+            ]
+          }
+        }
+      }
+    }
+  }
+}
