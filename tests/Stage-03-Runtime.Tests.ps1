@@ -97,6 +97,8 @@ Describe 'Stage 3 on a new machine' {
         Get-Call 'wsl --install --no-distribution' | Should -HaveCount 1
         Get-Call 'winget install --id Ollama.Ollama *' | Should -Match '--version 0\.35\.1'
         Get-Call 'winget install --id Python.Python.3.13 *' | Should -Not -Match '--version'
+        Get-Call 'winget install --id Python.Python.3.13 *' | Should -Match '--override /quiet InstallAllUsers=1 TargetDir=C:\\Python313 '
+        Get-Call 'winget install --id Ollama.Ollama *' | Should -Not -Match '--override'
         Get-Call 'winget install --id Microsoft.PowerShell *' | Should -BeNullOrEmpty
         Get-Call 'winget install*' | Should -HaveCount ($script:Apps.packages.Count - 1)
         Get-Call 'winget pin add --id Docker.DockerDesktop*' | Should -HaveCount 1

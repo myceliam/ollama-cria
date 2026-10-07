@@ -23,7 +23,9 @@
           CUDA.
       3b  Every package in windows-apps.json that winget does not list is
           installed with winget at its recorded version ('exact': false means
-          any version). PATH is reloaded after each install (C-53). Ollama
+          any version), with the installer arguments in 'override' where
+          the manifest gives them (Python 3.13 into C:\Python313). PATH is
+          reloaded after each install (C-53). Ollama
           and Docker Desktop are pinned so 'winget upgrade --all' leaves them
           (C-30). PowerShell is not reinstalled from inside itself.
       3c  Every variable in ollama-env.json is set at Machine scope, every
@@ -145,6 +147,9 @@ function Install-App {
         if (-not $act) { $result.Steps.Add("would install $label with winget"); continue }
         $arguments = @('install', '--id', $id, '--exact', '--source', 'winget', '--silent', '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity')
         if ($exact) { $arguments += @('--version', $p['version']) }
+        # The installer's own arguments, for an app the stack expects in a
+        # fixed folder (Python 3.13 in C:\Python313).
+        if ($p['override']) { $arguments += @('--override', $p['override']) }
         & $Context.Say "installing $label"
         $r = & $machine.Exec 'winget' $arguments -Stream
         if ($r.ExitCode -in $rebootCodes) { $script:reboot = $true; $result.Steps.Add("installed $label; it needs a restart") }
