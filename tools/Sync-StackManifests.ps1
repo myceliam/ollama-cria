@@ -141,11 +141,17 @@ $wantedApps = [ordered]@{
     'Docker.DockerDesktop'                    = 'Docker engine for the PC stack (Stage 3b)'
     'Ollama.Ollama'                           = 'Ollama (Stage 3b)'
     'Python.Python.3.11'                      = 'ComfyUI venv (Stage 3d)'
-    'Python.Python.3.13'                      = 'The Windows PowerShell tool task runs C:\Python313\python.exe'
+    'Python.Python.3.13'                      = 'The Windows PowerShell tool, its task and its scripts run C:\Python313\python.exe'
     'Git.Git'                                 = 'Cloning this repo and ComfyUI (Step 0)'
     'Tailscale.Tailscale'                     = 'The tailnet and Serve (Step 0, Stage 8c)'
     'Microsoft.PowerShell'                    = 'PowerShell 7 for every script here (Step 0)'
     'LibreHardwareMonitor.LibreHardwareMonitor' = 'Sensor readings the ntfy PC-health watcher reads'
+}
+
+# Installer arguments Stage 3 passes with winget --override, for an app the
+# stack expects in a fixed folder rather than winget's default.
+$appOverrides = @{
+    'Python.Python.3.13' = '/quiet InstallAllUsers=1 TargetDir=C:\Python313 PrependPath=1 Include_launcher=1'
 }
 
 # The scheduled tasks the stack needs (Stage 8d). An installer script, when
@@ -318,10 +324,11 @@ function Read-WindowsApp {
         # winget writes '> 3.13.15' for a version newer than its source knows.
         if ($found[$id] -match '^>\s*(\S+)$') {
             $warnings.Add("windows-apps: $id is newer here than winget's source knows (above $($Matches[1])); Stage 3 installs the newest it has")
-            $apps.Add([ordered]@{ id = $id; version = $Matches[1]; exact = $false; why = $wantedApps[$id] })
-            continue
+            $app = [ordered]@{ id = $id; version = $Matches[1]; exact = $false; why = $wantedApps[$id] }
         }
-        $apps.Add([ordered]@{ id = $id; version = $found[$id]; why = $wantedApps[$id] })
+        else { $app = [ordered]@{ id = $id; version = $found[$id]; why = $wantedApps[$id] } }
+        if ($appOverrides.ContainsKey($id)) { $app['override'] = $appOverrides[$id] }
+        $apps.Add($app)
     }
     $gpu = $null
     $smi = Invoke-Native 'windows-apps' $NvidiaSmiCommand @('--query-gpu=name,driver_version', '--format=csv,noheader')
