@@ -1023,6 +1023,8 @@ ollama-cria/
 
 Two kinds of placeholder never render to a real address. `{{STALE_TS_IP}}` marks a tailnet address that no node had at capture time, and `{{VPS_PUBLIC_IP}}` marks the VPS's own public address, which stays out of the repo. Both render as documentation addresses (`192.0.2.x`, `2001:db8::x`) that go nowhere. Today `{{VPS_PUBLIC_IP}}` appears only in comments (`guard.sh`, the Groq relay site, `owuihelp`). `tools/Sync-StackFiles.ps1` names every such line when it captures one, so a line that needs the real address can be fixed by hand.
 
+The OWUI seed keeps such an address differently (Liam, 8 October 2026). A tailnet address or MagicDNS name in OWUI's data that matches neither node, such as the old address in `ntfy_push`'s code, moves to bundle folder 03 as `{{BUNDLE:embedded/address/<n>}}`. The capture names where it was in a warning, and Stage 7 puts it back unchanged.
+
 ## Appendix F · Traps
 
 - 🗄️ **OWUI's `config` table overrides compose environment variables.** Check settings in Admin, not in `.env`.

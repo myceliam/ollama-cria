@@ -203,6 +203,25 @@ class ImportTests(unittest.TestCase):
         self.assertEqual(json.loads(model['meta'])['future_auth_blob'], token)
         self.assertEqual(json.loads(model['params']), {'temperature': 0.2, 'x_opaque': opaque})
 
+    def test_an_address_that_matches_no_node_comes_back_unchanged(self):
+        # Liam's choice (8 October 2026): an old tailnet address in a
+        # function's code travels in the bundle and comes back exactly.
+        stray = '.'.join(['100', '90', '1', '2'])
+        code = f'URL = "http://{stray}:80"\nPC = "http://{PC_IP}:8090"\n'
+
+        def mutate(db):
+            self.old_mutate(db)
+            db.execute("UPDATE function SET content = ? WHERE id = 'ntfy_push'", (code,))
+        old, seed, secrets = self.dir / 'old-stray.db', self.dir / 'seed-stray', self.dir / 'out' / 'values-stray.json'
+        base.build_db(old, base.load_schema(), mutate)
+        self.export(old, seed, secrets, PC_IP)
+        self.assertNotIn(stray, ''.join(f.read_text(encoding='utf-8') for f in seed.iterdir()))
+
+        p = self.run_import(seed=seed, secrets=secrets)
+        self.assertEqual(p.returncode, 0, p.stdout)
+        self.assertNotIn(stray, p.stdout + p.stderr)
+        self.assertEqual(self.rows('function')['ntfy_push']['content'], code.replace(PC_IP, NEW_PC_IP))
+
     def test_exporting_the_imported_install_gives_the_same_seed(self):
         self.assertEqual(self.run_import().returncode, 0)
         again, again_secrets = self.dir / 'again', self.dir / 'out' / 'again.json'
