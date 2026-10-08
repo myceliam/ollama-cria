@@ -5,12 +5,12 @@
     "01": {
       "kind": "path",
       "host": "pc",
-      "holds": "Stack .env and the ntfy Docker secrets"
+      "holds": "Stack .env, the ntfy Docker secrets and the local SearXNG settings"
     },
     "02": {
       "kind": "path",
       "host": "pc",
-      "holds": "Google OAuth client, tokens and bridge settings for the gcal and Gmail bridges"
+      "holds": "Google OAuth client, tokens and bridge settings for the gcal and Gmail bridges, and the gcal watchdog script"
     },
     "03": {
       "kind": "consumed",
