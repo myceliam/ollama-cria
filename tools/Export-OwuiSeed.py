@@ -14,6 +14,14 @@ It reads webui.db in one read-only transaction and produces:
   * the secrets: {ref: value} for bundle folder 03, with tailnet addresses
     and the admin id templated the same way. Never commit these.
 
+A tailnet address or MagicDNS name that matches no --endpoint (an old
+device's, or another device that keeps its address when the PC and VPS are
+rebuilt) is not a secret, but AGENTS.md keeps it out of the repo. When at
+least one --endpoint is given, it moves to the secrets file the same way,
+as {{BUNDLE:embedded/address/<n>}}, comes back unchanged on a restore, and
+is named in a warning (where, never the address). With no --endpoint at
+all, nothing could be told apart, so the final scan still stops on it.
+
 The export stops, and writes nothing, when:
 
   * the OWUI version or Alembic revision differs from schema.json (C-40);
@@ -94,6 +102,14 @@ BUNDLE_MARK = '{{BUNDLE:%s}}'
 EMBEDDED = 'embedded/'
 PLACEHOLDER = re.compile(r'\{\{(BUNDLE:[^{}]*|[A-Z][A-Z0-9_]*)\}\}')
 IPV4 = re.compile(r'[0-9]{1,3}(\.[0-9]{1,3}){3}')
+ADDRESS_REF = EMBEDDED + 'address/'
+# A tailnet address or MagicDNS name wherever the final scan's shapes would
+# find one, taken whole (the rest of an IPv6 address, every label of a name),
+# but never Tailscale's own service address, the same in every tailnet.
+TAILNET_ADDRESS = re.compile(
+    r'\b(?!100\.100\.100\.100\b)100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}\b'
+    r'|(?i:\b(?!fd7a:115c:a1e0::53\b)fd7a:115c:a1e0:[0-9a-f:]*)'
+    r'|(?i:\b(?:[a-z0-9-]{1,63}\.){2,}ts\.net\b)')
 DEFAULT_DB = '/app/backend/data/webui.db'
 
 # A name that holds a credential. Only a non-empty string, list or object
@@ -631,6 +647,7 @@ class Export:
             db.rollback()
 
         self.embed_secrets(seed)
+        self.keep_other_addresses(seed)
 
         seed['secret_refs'] = sorted(self.secrets)
         seed['provenance'] = {
@@ -706,6 +723,65 @@ class Export:
         for form, ref in ordered:
             if ref in used:
                 self.secrets[ref] = form
+
+    def keep_other_addresses(self, seed: dict) -> None:
+        """Move each tailnet address or name left after templating (it matches
+        no --endpoint) out of the seed text into the secrets file, as
+        {{BUNDLE:embedded/address/<n>}}, so the importer puts it back exactly
+        as it was. Only when an --endpoint was given: without one, the PC's
+        and the VPS's own addresses would be kept unchanged too."""
+        if not any(name != 'OWNER' for name, _ in self.endpoints):
+            return
+        found: set[str] = set()
+
+        def collect(value):
+            if isinstance(value, str):
+                found.update(m.group(0) for m in TAILNET_ADDRESS.finditer(value))
+            elif isinstance(value, list):
+                for v in value:
+                    collect(v)
+            elif isinstance(value, dict) and set(value) != {SECRET_KEY}:
+                for v in value.values():
+                    collect(v)
+
+        parts = ['config', 'user_settings'] + SEEDED_ORDER
+        for name in parts:
+            collect(seed.get(name))
+        if not found:
+            return
+        refs = {a: f'{ADDRESS_REF}{i}' for i, a in enumerate(sorted(found), 1)}
+        for address, ref in refs.items():
+            self.secrets[ref] = address
+        places: list[str] = []
+
+        def swap(value, path):
+            if isinstance(value, str):
+                new = TAILNET_ADDRESS.sub(lambda m: BUNDLE_MARK % refs[m.group(0)], value)
+                if new != value:
+                    places.append(path)
+                return new
+            if isinstance(value, list):
+                return [swap(v, f'{path}/{i}') for i, v in enumerate(value)]
+            if isinstance(value, dict):
+                if set(value) == {SECRET_KEY}:
+                    return value
+                return {k: swap(v, f'{path}/{k}') for k, v in value.items()}
+            return value
+
+        for name in parts:
+            if name not in seed:
+                continue
+            if name in SEEDED_ORDER and isinstance(seed[name], list):
+                rows = []
+                for i, row in enumerate(seed[name]):
+                    rid = row.get('id') if isinstance(row, dict) else None
+                    rows.append(swap(row, f'/{name}/{rid if isinstance(rid, (str, int)) else i}'))
+                seed[name] = rows
+            else:
+                seed[name] = swap(seed[name], f'/{name}')
+        for path in places:
+            self.warnings.append(f'seed {self.where(path)}: holds a tailnet address or name that matches no --endpoint '
+                                 '(an old or another device); it is kept in the bundle and comes back unchanged on a restore')
 
     def seed_strings(self, seed: dict):
         """Every string in the seed, with rows named by their id."""
