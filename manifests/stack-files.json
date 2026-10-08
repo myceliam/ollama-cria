@@ -8,7 +8,7 @@
       "host": "pc",
       "root": "E:\\ai\\ollama",
       "repoFolder": "stack",
-      "purpose": "The PC stack: compose file, Dockerfiles, bridge and relay source, MCP servers, Modelfiles, the scripts the scheduled tasks and the toolkit run. Stage 1 copies it back to the same place. Not copied: .env, secrets\\, data folders, owui-tools\\ (the OWUI seed carries the live tools and functions), discord-owui-bridge\\ (retired), docs, logs, backups; gcal-owui-bridge\\watchdog.ps1 and searxng\\settings.yml, which hold a secret written into the file (the local SearXNG is only the offline rollback profile).",
+      "purpose": "The PC stack: compose file, Dockerfiles, bridge and relay source, MCP servers, Modelfiles, the scripts the scheduled tasks and the toolkit run. Stage 1 copies it back to the same place. Not copied: .env, secrets\\, data folders, owui-tools\\ (the OWUI seed carries the live tools and functions), discord-owui-bridge\\ (retired), docs, logs, backups; gcal-owui-bridge\\watchdog.ps1 and searxng\\settings.yml, which hold a secret written into the file and travel in the secrets bundle instead (the local SearXNG is only the offline rollback profile).",
       "files": [
         "Dockerfile.mcpo",
         "autofree-watchdog.ps1",
