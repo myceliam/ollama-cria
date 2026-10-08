@@ -9,7 +9,7 @@
 |---|---|
 | **Start here** | [`docs/START-HERE.md`](docs/START-HERE.md): one page for the assistant helping after a disaster. A copy sits in the Bitwarden item with the bundle |
 | **The guide** | [`docs/RESTORE.md`](docs/RESTORE.md) (DRAFT v0.6) |
-| **Status** | 🧪 All 11 stages are built and pass CI. Nothing here has been run on a new machine yet. |
+| **Status** | 🧪 All 11 stages are built and pass CI. The first real capture ran on 8 October 2026: its OWUI seed is in `manifests/owui-seed/seed/` and its secrets bundle is kept in Bitwarden. Nothing here has been run on a new machine yet. |
 | **Secrets** | **None in this repo, ever.** They travel in one bundle kept in Bitwarden. CI scans every file. |
 | **Checks** | Claude builds and reviews its own work before every push; CI runs every test on Windows and Linux; Liam signs off anything that runs against the live machines. (External review rounds ended on 6 October 2026.) |
 
@@ -50,7 +50,7 @@ Built in this order: the **capture side first**, because a restore script can be
 | 2 | `manifests/secrets.json`, `manifests/bundle-folders.json` | The secret inventory (names and logical locations only, never values) and which root each bundle folder restores to | ✅ |
 | 2 | `tools/Collect-StackSecrets.ps1` | Rewritten collector: plans offline by default; with `-Execute` builds a protected bundle, its restore map and the ZIP | ✅ |
 | 3 | `tools/Export-OwuiSeed.py`, `manifests/owui-seed/schema.json` | OWUI functional seed exporter, run inside the OWUI container: one read-only snapshot, an allowlist where anything unknown stops the export, Valves decrypted with OWUI's own codec, secrets moved to references for bundle folder 03 | ✅ |
-| 4 | `tools/Collect-StackSecrets.ps1` (seed row), `manifests/owui-seed/seed/` | The real capture in one run: the collector also exports the OWUI seed through `docker exec -i`, puts its secrets in bundle folder 03, scans the seed and writes it here for committing | 🚧 |
+| 4 | `tools/Collect-StackSecrets.ps1` (seed row), `manifests/owui-seed/seed/` | The real capture in one run: the collector also exports the OWUI seed through `docker exec -i`, puts its secrets in bundle folder 03, scans the seed and writes it here for committing | ✅ |
 | 5 | `tools/Restore-StackSecrets.ps1` | Checks the bundle's SHA-256, unpacks it into a protected folder, checks it against the inventory, and puts each chosen bundle folder back: PC files owner-only, VPS files over ssh with their mode, volume files through a helper container. Never overwrites | ✅ |
 | 5 | `tools/Import-OwuiSeed.py` | OWUI seed importer, run with OWUI stopped: fills secret references and embedded secrets from folder 03, renders the new addresses, points every owner at the new admin, re-encrypts Valves with OWUI's own code, all in one transaction | ✅ |
 | 6 | `manifests/stack-files.json`, `tools/Sync-StackFiles.ps1`, `tools/StackCapture.psm1` | Copies the stack's own files (compose, Dockerfiles, bridges, scripts, the dashboard, the VPS egress, Kokoro, nginx and systemd files) from the live PC and VPS into `stack/`, `extras/`, `vps/` and `windows/startup/`. Tailnet addresses become placeholders, every file is scanned before it lands, and `manifests/endpoints.json` lists what each file needs filled in | ✅ |
