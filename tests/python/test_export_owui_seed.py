@@ -527,23 +527,59 @@ class ExportTests(unittest.TestCase):
         run = self.run_export(endpoints=False)
         self.assert_stopped(run, 'tailnet IP left after classification')
 
-    def test_names_the_row_that_holds_a_stray_tailnet_address(self):
+    def ntfy_content(self, run):
+        return next(f for f in run.seed('function') if f['id'] == 'ntfy_push')['content']
+
+    def address_refs(self, run):
+        refs = json.loads(run.secrets_file.read_text(encoding='utf-8'))['refs']
+        return {k: v for k, v in refs.items() if k.startswith('embedded/address/')}
+
+    def test_keeps_a_stray_tailnet_address_in_the_bundle(self):
         stray = '.'.join(['100', '90', '1', '2'])
         run = self.run_export(mutate=lambda db: db.execute(
-            "UPDATE function SET content = ? WHERE id = 'ntfy_push'", (f'URL = "http://{stray}:80"\n',)))
-        self.assert_stopped(run, 'seed /function/ntfy_push/content: tailnet IP left after classification')
+            "UPDATE function SET content = ? WHERE id = 'ntfy_push'", (f'URL = "http://{stray}:80"\nAGAIN = "{stray}"\n',)))
+        self.assertEqual(run.code, 0, run.text)
+        self.assertEqual(self.ntfy_content(run),
+                         'URL = "http://{{BUNDLE:embedded/address/1}}:80"\nAGAIN = "{{BUNDLE:embedded/address/1}}"\n')
+        self.assertEqual(self.address_refs(run), {'embedded/address/1': stray})
+        self.assertIn('embedded/address/1', run.seed('secret_refs'))
+        self.assertIn('seed /function/ntfy_push/content: holds a tailnet address or name that matches no --endpoint', run.text)
         self.assertNotIn(stray, run.text)
+        self.assertNotIn(stray, run.seed_text())
 
-    def test_never_half_replaces_a_neighbouring_address(self):
+    def test_keeps_a_neighbouring_address_whole_and_never_half_replaces_it(self):
         near = PC_IP + '5'  # the PC's address with one more digit
         run = self.run_export(mutate=lambda db: db.execute(
             "UPDATE function SET content = ? WHERE id = 'ntfy_push'", (f'A = "{PC_IP}:80"\nB = "{near}:80"\n',)))
-        self.assert_stopped(run, 'seed /function/ntfy_push/content: tailnet IP left after classification')
+        self.assertEqual(run.code, 0, run.text)
+        self.assertEqual(self.ntfy_content(run), 'A = "{{PC_TS_IP}}:80"\nB = "{{BUNDLE:embedded/address/1}}:80"\n')
+        self.assertEqual(self.address_refs(run), {'embedded/address/1': near})
         self.assertNotIn(near, run.text)
         domain = 'tn' + '.ts' + '.net'
         export = exporter.Export(load_schema(), {'PC_TS_IP': PC_IP, 'PC_TS_NAME': 'pc.' + domain, 'TS_DOMAIN': domain})
         self.assertEqual(export.template(f'{PC_IP} {near} {PC_IP}.', 'x'), '{{PC_TS_IP}} ' + near + ' {{PC_TS_IP}}.')
         self.assertEqual(export.template(f'pc.{domain} mypc.{domain}', 'x'), '{{PC_TS_NAME}} mypc.{{TS_DOMAIN}}')
+
+    def test_keeps_a_whole_ipv6_address_and_a_whole_magicdns_name(self):
+        name = 'a.pc.' + 'tn' + '.ts' + '.net'
+        six = ':'.join(['fd7a', '115c', 'a1e0', 'ab', '', '1'])
+        run = self.run_export(mutate=lambda db: db.execute(
+            "UPDATE function SET content = ? WHERE id = 'ntfy_push'", (f'H = "http://{name}:3000"\nV6 = "[{six}]:80"\n',)))
+        self.assertEqual(run.code, 0, run.text)
+        self.assertEqual(self.ntfy_content(run),
+                         'H = "http://{{BUNDLE:embedded/address/1}}:3000"\nV6 = "[{{BUNDLE:embedded/address/2}}]:80"\n')
+        self.assertEqual(self.address_refs(run), {'embedded/address/1': name, 'embedded/address/2': six})
+        self.assertNotIn(name, run.text)
+        self.assertNotIn(six, run.text)
+
+    def test_an_address_in_a_key_still_stops_the_export(self):
+        stray = '.'.join(['100', '90', '1', '2'])
+        export = exporter.Export(load_schema(), {'PC_TS_IP': PC_IP})
+        seed = {'config': {stray: 'x'}}
+        export.keep_other_addresses(seed)
+        export.final_scan(seed)
+        self.assertEqual(export.problems, ['seed /config/#' + hashlib.sha256(stray.encode()).hexdigest()[:12]
+                                           + ': tailnet IP left after classification'])
 
     def test_passes_tailscales_own_service_address(self):
         quad = '.'.join(['100'] * 4)
