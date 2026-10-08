@@ -4,14 +4,25 @@
 
 > **Goal:** two brand-new machines end up with the same capabilities you have today: the same models, tools, MCP servers, functions, skills, model presets, settings, routes and automation. Chat history and old uploads are deliberately **not** restored.
 > **Run it top to bottom.** Every stage says what it delivers, where it runs, and the checkpoint that must pass before the next stage starts.
+> **Liam follows along in [`FULL-REBUILD-HUMAN.md`](FULL-REBUILD-HUMAN.md),** which has the same stage numbers and says where he is needed. When only the VPS is lost, use [`VPS-REBUILD-AI.md`](VPS-REBUILD-AI.md) instead (Liam's side: [`VPS-REBUILD-HUMAN.md`](VPS-REBUILD-HUMAN.md)).
 
 | | |
 |---|---|
-| **Version** | DRAFT v0.6, 7 October 2026 (v0.1 kept as `RESTORE-v0.1.md`) |
+| **Version** | DRAFT v0.7, 8 October 2026 (v0.1 kept as `RESTORE-v0.1.md`) |
 | **Author** | Claude |
-| **Ledger** | AICL-0122 (plan) · AICL-0123 to AICL-0125 (round one) · AICL-0126 (v0.2) · AICL-0127, AICL-0131 (Liam's decisions) · AICL-0129, AICL-0130 (round two) · AICL-0132 (v0.3) · AICL-0147 (v0.4, Module 7) · AICL-0148 (v0.5, Module 8) · this revision's row (v0.6, Module 9) |
+| **Ledger** | AICL-0122 (plan) · AICL-0123 to AICL-0125 (round one) · AICL-0126 (v0.2) · AICL-0127, AICL-0131 (Liam's decisions) · AICL-0129, AICL-0130 (round two) · AICL-0132 (v0.3) · AICL-0147 (v0.4, Module 7) · AICL-0148 (v0.5, Module 8) · AICL-0149 (v0.6, Module 9) · AICL-0155 (v0.7, the paired guides) |
 | **Verification** | Claude reviews its own work adversarially; CI runs every test on Windows and Linux (external review rounds ended on 6 October 2026) · ☐ Liam (sign-off) |
-| **Status** | Built, not yet run. The capture tools, the restorer, the controller and Stages 1 to 11 exist and pass their tests (✅ in Appendix A); none has run on a new machine yet. Next: the first real capture (the seed committed, the bundle in Bitwarden), then a rehearsal on a throwaway target. |
+| **Status** | Built, not yet run. The capture tools, the restorer, the controller and Stages 1 to 11 exist and pass their tests (✅ in Appendix A); none has run on a new machine yet. The first real capture is done (8 October 2026). No rehearsal is planned: the guides wait for a real disaster, and each step says what should happen, how to tell it worked, and what to check when it doesn't. [`VM-TEST.md`](VM-TEST.md) is an optional, separate test on two virtual machines. |
+
+### 🔄 What changed in v0.7 (the paired guides)
+
+| Change | Why |
+|---|---|
+| Every rebuild has two guides with the same step numbers: this one (run by the controller) with [`FULL-REBUILD-HUMAN.md`](FULL-REBUILD-HUMAN.md), and [`VPS-REBUILD-AI.md`](VPS-REBUILD-AI.md) with [`VPS-REBUILD-HUMAN.md`](VPS-REBUILD-HUMAN.md). The assistant ticks a copy of Liam's guide as each step passes | Liam, 8 October 2026: he follows along and sees where he is needed |
+| A lost VPS alone is rebuilt with `VPS-REBUILD-AI.md`, guided by an assistant from the surviving PC, with the same Mullvad multihop, both kill switches and the boot order. Liam types new keys into the VPS himself; the assistant only checks their shape | Liam chose a guided process over a one-command mode; the keys need his hands anyway |
+| The interruption test in Stage 10 is optional | It tests the controller, whose own tests already prove the wipe and rerun (`tests/Invoke-StackRecovery.Tests.ps1`) |
+| No rehearsal is planned; [`VM-TEST.md`](VM-TEST.md) is a separate, optional test, and nothing here depends on it | Liam has no spare PC or VPS |
+| `tests/VpsRebuild-Runbook.Tests.ps1` parses every block of the guides, keeps the paired steps in line, and runs the VPS runbook's V0 to V10 against a fake PC and VPS | A runbook is code too |
 
 ### 🔄 What changed in v0.6 (the PC stages are built)
 
@@ -840,9 +851,9 @@ The reminder lists the routine: pull `main` into `E:\recovery` and run the colle
 
 The collector's run folder and the round-trip folder are recorded as plaintext, so Stage 11 removes them.
 
-**Interruption test** 👤🤖 (C-45)
+**Interruption test** 👤🤖 (C-45), **optional**
 
-Run `-Execute -Stage 9` and press **Ctrl+C** once it says `running`. Run the same command again: it must say Stage 9 was interrupted and finish with checkpoint 9 passed. Then run Stage 10 again. Any stage from 1 to 9 counts; Stage 9 is the quickest and changes nothing. `state.json` counts the interruption, and this stage compares the count with the one it recorded on its first visit. That only what a stage owns is wiped is proved by the controller's tests (`tests\Invoke-StackRecovery.Tests.ps1`), not again here.
+A real rebuild can skip it: it tests the controller, and the controller's own tests already prove the wipe and rerun. Without it, the checkpoint row reads `not run` and passes; a stage interrupted and not finished since still fails it. To run it: `-Execute -Stage 9`, and press **Ctrl+C** once it says `running`. Run the same command again: it must say Stage 9 was interrupted and finish with checkpoint 9 passed. Then run Stage 10 again. Any stage from 1 to 9 counts; Stage 9 is the quickest and changes nothing. `state.json` counts the interruption, and this stage compares the count with the one it recorded on its first visit. That only what a stage owns is wiped is proved by the controller's tests (`tests\Invoke-StackRecovery.Tests.ps1`), not again here.
 
 **10f · The second run** 🤖, last
 
@@ -861,7 +872,7 @@ Once everything above has passed and been answered, every checkpoint from 1 to 9
 | 🤖👤 | Monthly reminder | Registered, sent, and on the phone (`-Accept reminder`) |
 | 🤖 | First backup | Bundle collected, seed exported |
 | 👤 | Bitwarden round trip | Hashes match |
-| 👤 | Interrupted run, then run again | Finishes |
+| 👤 | Interrupted run, then run again (optional) | Finishes, or not run |
 | 🤖 | Second run | Checkpoints 1 to 9 pass |
 
 `-Accept vps-tests,reminder,lan-closed` answers all three at once. The checkpoint reads what the visits recorded and calls nothing.

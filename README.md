@@ -8,8 +8,10 @@
 | | |
 |---|---|
 | **Start here** | [`docs/START-HERE.md`](docs/START-HERE.md): one page for the assistant helping after a disaster. A copy sits in the Bitwarden item with the bundle |
-| **The guide** | [`docs/RESTORE.md`](docs/RESTORE.md) (DRAFT v0.6) |
-| **Status** | 🧪 All 11 stages are built and pass CI. The first real capture ran on 8 October 2026: its OWUI seed is in `manifests/owui-seed/seed/` and its secrets bundle is kept in Bitwarden. Nothing here has been run on a new machine yet. |
+| **The guide** | [`docs/RESTORE.md`](docs/RESTORE.md) (DRAFT v0.7), run by the controller; Liam follows along in [`docs/FULL-REBUILD-HUMAN.md`](docs/FULL-REBUILD-HUMAN.md) |
+| **Only the VPS lost** | [`docs/VPS-REBUILD-AI.md`](docs/VPS-REBUILD-AI.md), the assistant's runbook, guided from the surviving PC; Liam's side is [`docs/VPS-REBUILD-HUMAN.md`](docs/VPS-REBUILD-HUMAN.md) |
+| **Optional test** | [`docs/VM-TEST.md`](docs/VM-TEST.md): the rebuild on two virtual machines. Nothing depends on it |
+| **Status** | 🧪 All 11 stages are built and pass CI. The first real capture ran on 8 October 2026: its OWUI seed is in `manifests/owui-seed/seed/` and its secrets bundle is kept in Bitwarden. Nothing here has been run on a new machine yet, and no rehearsal is planned: each guide says what should happen at every step, how to tell it worked, and what to check when it doesn't. |
 | **Secrets** | **None in this repo, ever.** They travel in one bundle kept in Bitwarden. CI scans every file. |
 | **Checks** | Claude builds and reviews its own work before every push; CI runs every test on Windows and Linux; Liam signs off anything that runs against the live machines. (External review rounds ended on 6 October 2026.) |
 
@@ -30,7 +32,7 @@ flowchart TD
   S6 --> S7
   S7 --> S8[8 Services, Serve, tasks]
   S8 --> S9[9 Functional tests]
-  S9 --> S10[10 Reboot + rerun rehearsal]
+  S9 --> S10[10 Reboot, outside tests, first backup]
   S10 --> S11[11 Log and clean up]
 ```
 
@@ -59,6 +61,7 @@ Built in this order: the **capture side first**, because a restore script can be
 | 7 | `windows/stages/01-release.ps1`, `03-runtime.ps1`, `04-render.ps1`, `06-fetch.ps1`, `tools/Remove-RecoveryPlaintext.ps1` | The Windows stages: release and bundle, runtime (WSL, winget apps and pins, the Ollama profile, Docker), rendering the stack for the new tailnet and placing the secrets, ComfyUI with its venv and nodes, models and weights; and the Stage 11 plaintext clean-up | ✅ |
 | 8 | `windows/stages/02-vps.ps1`, `05-vps.ps1`, `linux/stages/02-*.sh`, `05-*.sh`, `linux/files/`, `tools/RecoveryVps.psm1` | The VPS stages: the console bootstrap, the host key check and `known_hosts` swap, the base system as on the live VPS; then the files placed through a ledger, the guard proved before any image, images pulled by digest or built (searxng-mcp from a new Dockerfile, R-13), both compose projects and the relay site | ✅ |
 | 9 | `windows/stages/07-*` to `11-*`, `linux/stages/09-*`, `10-*`, `windows/reminder/`, `manifests/acceptance.json` | Images, volumes and the OWUI seed; services, Serve and tasks; the functional tests; the rehearsal (restarts, probes from outside the tailnet, the guard and kill-switch tests on the VPS, the monthly reminder, the first backup, the second run); the plaintext clean-up and the rebuild record | ✅ |
+| 10 | `docs/FULL-REBUILD-HUMAN.md`, `docs/VPS-REBUILD-AI.md`, `docs/VPS-REBUILD-HUMAN.md`, `docs/VM-TEST.md` | The paired guides: Liam's walkthrough of the full rebuild; the VPS-only rebuild as a runbook for the assistant and a walkthrough for Liam, with the same steps; the optional VM test. The assistant ticks a copy of Liam's walkthrough as each step passes | ✅ |
 
 Status key: ✅ built, tests green on Windows and Linux · 🚧 in progress · ⏳ not started.
 
@@ -75,7 +78,7 @@ Invoke-Pester ./tests -Output Detailed
 python -m unittest discover -s tests/python -v                 # the seed exporter and importer, and the kill-switch test (Python 3.11, standard library only)
 ```
 
-CI runs all three on Windows and Linux for every push and pull request. The collector's VPS tests use stand-ins for `ssh` and `scp` (`tests/fakes/`) and run on Linux only; its volume tests need a Linux Docker engine, so they run on the Linux runner and are skipped elsewhere. The seed exporter's tests use a stand-in for OWUI's Valve codec (`tests/python/fake_owui/`) and a fake OWUI 0.11.4 database built at run time. The collector's seed tests run the real exporter through stand-ins for `docker` and `tailscale`, so they need Python on the path. The restorer's tests restore bundles the real collector made; its VPS tests run the real remote script through the `ssh` stand-in on Linux, and its volume tests use the Linux Docker engine. The importer's tests export a fake old install, import it into a fake fresh one, and export that again to prove the round trip. The two Module 6 tools run against stand-ins for `tailscale`, `docker`, `ssh`, `python`, `winget` and `nvidia-smi`, and Pester mocks for the Ollama, Hugging Face and Civitai APIs; their task and app tests run on Windows only. The controller's tests run it against stand-in stage scripts (`tests/fakes/fake-stage.ps1`) in a throwaway git repo; each stage's tests run it against a fake machine (`tests/helpers/StageContext.ps1`) whose commands, environment and Ollama API answer from a table, so nothing is installed, downloaded or started. The VPS scripts in `linux/stages/` run for real on Linux under bash, against stand-ins for `apt-get`, `systemctl`, `docker`, `ufw`, `nft` and the rest (`tests/fakes/fake-linux-tools.sh`) inside a throwaway root; CI also runs ShellCheck on them.
+CI runs all three on Windows and Linux for every push and pull request. The collector's VPS tests use stand-ins for `ssh` and `scp` (`tests/fakes/`) and run on Linux only; its volume tests need a Linux Docker engine, so they run on the Linux runner and are skipped elsewhere. The seed exporter's tests use a stand-in for OWUI's Valve codec (`tests/python/fake_owui/`) and a fake OWUI 0.11.4 database built at run time. The collector's seed tests run the real exporter through stand-ins for `docker` and `tailscale`, so they need Python on the path. The restorer's tests restore bundles the real collector made; its VPS tests run the real remote script through the `ssh` stand-in on Linux, and its volume tests use the Linux Docker engine. The importer's tests export a fake old install, import it into a fake fresh one, and export that again to prove the round trip. The two Module 6 tools run against stand-ins for `tailscale`, `docker`, `ssh`, `python`, `winget` and `nvidia-smi`, and Pester mocks for the Ollama, Hugging Face and Civitai APIs; their task and app tests run on Windows only. The controller's tests run it against stand-in stage scripts (`tests/fakes/fake-stage.ps1`) in a throwaway git repo; each stage's tests run it against a fake machine (`tests/helpers/StageContext.ps1`) whose commands, environment and Ollama API answer from a table, so nothing is installed, downloaded or started. The VPS scripts in `linux/stages/` run for real on Linux under bash, against stand-ins for `apt-get`, `systemctl`, `docker`, `ufw`, `nft` and the rest (`tests/fakes/fake-linux-tools.sh`) inside a throwaway root; CI also runs ShellCheck on them. The guides' code is tested too (`tests/VpsRebuild-Runbook.Tests.ps1`): every PowerShell block parses, the paired guides keep the same steps, and on Linux the VPS runbook's steps V0 to V10 run end to end against stand-ins for `ssh`, `sudo`, `ssh-keyscan` and `tailscale` and the same fake VPS.
 
 ---
 

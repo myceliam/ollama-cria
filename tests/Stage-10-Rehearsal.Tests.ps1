@@ -236,7 +236,8 @@ Describe 'Stage 10: the PC restart' {
         @($c.Data['PcRestart']['Heartbeats'].Values | Where-Object { $_ -ne 'ok' }) | Should -BeNullOrEmpty
         $v.Check.Status | Should -Be 'needs-user'
         @($v.Check.Asks | Where-Object Id | ForEach-Object Id) | Sort-Object | Should -Be @('lan-closed', 'reminder', 'vps-tests')
-        @($v.Check.Asks | Where-Object { -not $_.Id }).Count | Should -Be 2
+        @($v.Check.Asks | Where-Object { -not $_.Id }).Count | Should -Be 1
+        @($v.Check.Asks | Where-Object { $_.Text -like 'Interruption*' }) | Should -BeNullOrEmpty
         @($v.Check.Checks | Where-Object { -not $_.Ok }) | Should -BeNullOrEmpty
         (Get-Call 'vps vps 10-vps.sh reboot*').Count | Should -Be 0
     }
@@ -541,6 +542,27 @@ Describe 'Stage 10: the interruption and the second run' {
         $c2 = Copy-Context $c 'Check'
         $c2.Data = ConvertTo-Json -InputObject $c.Data -Depth 20 | ConvertFrom-Json -AsHashtable
         (Invoke-Stage '10-rehearsal.ps1' $c2).Status | Should -Be 'passed'
+    }
+
+    It 'passes without the interruption test, which is optional' {
+        $c = New-Stage10 -Data (Get-PassedData) -Accepted 'vps-tests', 'reminder', 'lan-closed'
+        $v = Invoke-Visit $c
+        $v.Run.Problems | Should -BeNullOrEmpty
+        $global:CriaStageCalls | Should -Be @(1..9 | ForEach-Object { "${_}:Check" })
+        $v.Check.Status | Should -Be 'passed'
+        $row = @($v.Check.Checks | Where-Object { $_.What -like 'interrupted*' })[0]
+        $row.Actual | Should -Be 'not run'
+        $row.Ok | Should -BeTrue
+        $v.Check.Steps -join ' ' | Should -Match 'optional, not run: the interruption test'
+    }
+
+    It 'waits for an interrupted stage to finish before the second run' {
+        $c = New-Stage10 -Data (Get-PassedData) -Accepted 'vps-tests', 'reminder', 'lan-closed'
+        $c.State['stages']['9']['interruptions'] = 1
+        $c.State['stages']['9']['status'] = 'failed'
+        $v = Invoke-Visit $c
+        $global:CriaStageCalls.Count | Should -Be 0
+        $v.Check.Status | Should -Be 'failed'
     }
 
     It 'fails the second run when a checkpoint no longer passes' {

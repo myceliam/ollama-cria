@@ -47,10 +47,12 @@
       10f  The second run, once everything above has passed and been
            answered: every checkpoint from 1 to 9 again, changing nothing.
 
-    The interruption test (C-45) is a person's: interrupt a stage with
-    Ctrl+C while it runs, and run it again. state.json counts the
-    interruption; this stage compares the count with the one it recorded on
-    its first visit.
+    The interruption test (C-45) is optional (Liam, 8 October 2026): the
+    controller's own tests prove the wipe and rerun, so a real rebuild can
+    skip it. To run it, interrupt a stage with Ctrl+C while it runs, and run
+    it again. state.json counts the interruption; this stage compares the
+    count with the one it recorded on its first visit. An interrupted stage
+    that has not finished since still fails the checkpoint.
 
     Other stages' checks and tests run from -Context's StageRoot with that
     stage's own recorded data and answers; they cannot create or remove
@@ -724,8 +726,7 @@ function Test-RoundTrip {
 function Test-ReadyForRerun {
     foreach ($p in 'PcRestart', 'Outside', 'VpsRestart', 'GuardBreak', 'KillSwitch', 'Reminder', 'Backup', 'RoundTrip') { if (-not (Test-Passed $result.Data[$p])) { return $false } }
     foreach ($id in $userIds) { if ($Context.Accepted -notcontains $id) { return $false } }
-    $i = Get-Interrupted
-    return $i.Done.Count -gt 0 -and -not $i.Open.Count
+    return -not (Get-Interrupted).Open.Count
 }
 
 function Invoke-Rerun {
@@ -825,13 +826,14 @@ function Invoke-Checkpoint {
         }
     }
 
-    # Interruption
+    # Interruption (optional)
     $int = Get-Interrupted
-    if ($int.Open.Count) { & $row 'interrupted run, then run again: finished (C-45)' 'finished' "Stage $($int.Open -join ', ') interrupted and not done since" $false }
-    elseif ($int.Done.Count) { & $row 'interrupted run, then run again: finished (C-45)' 'finished' "Stage $($int.Done -join ', ') interrupted, then done" $true }
+    $what = 'interrupted run, then run again: finished (C-45, optional)'
+    if ($int.Open.Count) { & $row $what 'finished, or not run' "Stage $($int.Open -join ', ') interrupted and not done since" $false }
+    elseif ($int.Done.Count) { & $row $what 'finished, or not run' "Stage $($int.Done -join ', ') interrupted, then done" $true }
     else {
-        $asks.Add(@{ Id = $null; Text = ("Interruption test (C-45): run Invoke-StackRecovery.ps1 -Execute -Stage 9 and press Ctrl+C once it says 'running'. Run the same " +
-                "command again: it must say Stage 9 was interrupted and finish with checkpoint 9 passed. Then run this stage again.") })
+        & $row $what 'finished, or not run' 'not run' $true
+        $result.Steps.Add("optional, not run: the interruption test (C-45). To run it, run Invoke-StackRecovery.ps1 -Execute -Stage 9, press Ctrl+C once it says 'running', run the same command again until checkpoint 9 passes, then run this stage again")
     }
 
     # 10f

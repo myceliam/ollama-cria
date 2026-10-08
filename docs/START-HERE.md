@@ -1,7 +1,7 @@
 # 🆘 Start here: rebuilding after a disaster
 
 **For:** the AI assistant (Claude, ChatGPT or Antigravity) helping Liam get his AI stack back.
-**Read next:** [`AGENTS.md`](../AGENTS.md), then [`RESTORE.md`](RESTORE.md), the full guide this page points into.
+**Read next:** [`AGENTS.md`](../AGENTS.md), then [`RESTORE.md`](RESTORE.md), the full guide this page points into. If only the VPS is lost, go straight to [`VPS-REBUILD-AI.md`](VPS-REBUILD-AI.md).
 **Last checked:** 8 October 2026.
 
 This page gets you oriented in ten minutes: what survived, where it is, how to get SSH and the tailnet working again, and which path to take for the rest.
@@ -15,6 +15,7 @@ This page gets you oriented in ten minutes: what survived, where it is, how to g
 3. **Secret files stay in `E:\recovery-secrets\`** (only Liam's account can open it) until each one is put in its place.
 4. **Nothing from the bundle goes into this repo.** CI scans every file.
 5. **Talk to Liam in short, numbered steps,** one question at a time, and say what each step is for.
+6. **Keep Liam's walkthrough ticked.** He follows the rebuild in a guide with the same step numbers as yours: [`FULL-REBUILD-HUMAN.md`](FULL-REBUILD-HUMAN.md) for a lost PC, [`VPS-REBUILD-HUMAN.md`](VPS-REBUILD-HUMAN.md) for a lost VPS. Keep a copy as `PROGRESS.md` and tick each step as it passes (5A shows how; the VPS runbook does it in V0). Tell him in one line which step passed and what comes next.
 
 ---
 
@@ -58,9 +59,9 @@ If both are in Bitwarden, use the full bundle, and keep the safety copy as a spa
 
 | Lost | Do |
 |---|---|
-| Only the PC | 4.1 and 4.2. The VPS still trusts the PC's SSH key, so `ssh vps` works once the key is back |
-| Only the VPS | 4.3, from the surviving PC |
-| Both | 4.1, 4.2, then 4.3 |
+| Only the PC | 4.1 and 4.2. The VPS still trusts the PC's SSH key, so `ssh vps` works once the key is back. On Path A the controller then rebuilds the VPS too (5A). Liam follows [`FULL-REBUILD-HUMAN.md`](FULL-REBUILD-HUMAN.md) |
+| Only the VPS | [`VPS-REBUILD-AI.md`](VPS-REBUILD-AI.md), from the surviving PC. It keeps the Mullvad multihop, both kill switches and the boot order, and guides Liam through the keys. Liam follows [`VPS-REBUILD-HUMAN.md`](VPS-REBUILD-HUMAN.md) |
+| Both | 4.1, 4.2, then 4.3. Liam follows [`FULL-REBUILD-HUMAN.md`](FULL-REBUILD-HUMAN.md) |
 
 ---
 
@@ -130,10 +131,26 @@ This is `RESTORE.md` Stage 2 (2a to 2c). On Path A the controller does it and te
 
 ```powershell
 git clone https://github.com/myceliam/ollama-cria.git E:\recovery
-pwsh -File E:\recovery\Invoke-StackRecovery.ps1 -Execute -BundleSha256 <the SHA-256 from Bitwarden>
+pwsh -File E:\recovery\Invoke-StackRecovery.ps1 -Execute -BundleSha256 '<the SHA-256 from Bitwarden>'
 ```
 
-The controller runs one stage per `-Execute`, from Stage 1 to Stage 11. It stops with an `ASK` line whenever Liam must do something, and tells you the exact command to answer it. Run it again until it reports Stage 11 done. Everything it does and checks is in `RESTORE.md`.
+The controller runs one stage per `-Execute`, from Stage 1 to Stage 11. It stops with an `ASK` line whenever Liam must do something, and tells you the exact command to answer it. Run it again until it reports Stage 11 done. Everything it does and checks is in `RESTORE.md`. It rebuilds the VPS too, even if it survived (Stage 2), because it only replaces files it placed itself.
+
+Liam follows along in [`FULL-REBUILD-HUMAN.md`](FULL-REBUILD-HUMAN.md): the same stage numbers, what you're doing in plain words, and what he must do. Keep his copy ticked: set it up once, tick `P` and `0` when he confirms them, then tick each stage when its checkpoint passes.
+
+```powershell
+$progress = 'E:\recovery-state\PROGRESS.md'
+if (-not (& 'E:\recovery\tools\Test-RecoveryPath.ps1' -Path $progress -Root 'E:\recovery-state')) { throw "STOP: $progress fails the path check" }
+if (-not (Test-Path $progress)) {
+    New-Item -ItemType Directory -Path (Split-Path $progress) -Force | Out-Null
+    Copy-Item 'E:\recovery\docs\FULL-REBUILD-HUMAN.md' $progress
+}
+function Set-StepDone([string]$Step) {
+    $t = [IO.File]::ReadAllText($progress) -replace "(?m)^\| $Step \| ⬜ \|", "| $Step | ✅ $(Get-Date -Format 'd MMM HH:mm') |"
+    [IO.File]::WriteAllText($progress, $t)
+}
+Set-StepDone P; Set-StepDone 0
+```
 
 ### 5B. With only the key safety copy: by hand 🤖
 
