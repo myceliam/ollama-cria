@@ -1,0 +1,11 @@
+[
+  {
+    "created_at": 1784327719,
+    "id": "85d845d5-8eb1-4606-9059-6f6947178247",
+    "permission": "read",
+    "principal_id": "{{OWNER}}",
+    "principal_type": "user",
+    "resource_id": "generate_image",
+    "resource_type": "tool"
+  }
+]

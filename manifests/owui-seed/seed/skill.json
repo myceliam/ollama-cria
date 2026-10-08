@@ -1,0 +1,358 @@
+[
+  {
+    "content": "# !ask\n\n**What it does:** Answer a question from a saved document (latest by default).\n\n**Syntax:** `!ask \"question\" [doc=\"id\"]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_reader`.`ask_document` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
+    "created_at": 1790370898,
+    "description": "(READ) !ask \"question\" [doc=\"id\"]  —  Answer a question from a saved document (latest by default). Runs brave_reader.ask_document deterministically.",
+    "id": "brave-ask",
+    "is_active": 1,
+    "meta": {
+      "i18n": null,
+      "tags": [
+        "brave",
+        "command"
+      ]
+    },
+    "name": "brave-ask",
+    "updated_at": 1790374230,
+    "user_id": "{{OWNER}}"
+  },
+  {
+    "content": "# !brief\n\n**What it does:** Public-interest brief on a company, organisation or genuinely public figure.\n\n**Syntax:** `!brief \"company or public figure\" [angle=\"...\"] [+sources]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_research`.`public_interest_brief` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
+    "created_at": 1790370898,
+    "description": "(RESEARCH) !brief \"company or public figure\" [angle=\"...\"] [+sources]  —  Public-interest brief on a company, organisation or genuinely public figure. Runs brave_research.public_interest_brief deterministically.",
+    "id": "brave-brief",
+    "is_active": 1,
+    "meta": {
+      "i18n": null,
+      "tags": [
+        "brave",
+        "command"
+      ]
+    },
+    "name": "brave-brief",
+    "updated_at": 1790374230,
+    "user_id": "{{OWNER}}"
+  },
+  {
+    "content": "# !claim\n\n**What it does:** Evidence that supports, contradicts or qualifies a claim.\n\n**Syntax:** `!claim \"the exact claim\" [context=\"who/when\"] [+sources]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_research`.`check_claim` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
+    "created_at": 1790370898,
+    "description": "(RESEARCH) !claim \"the exact claim\" [context=\"who/when\"] [+sources]  —  Evidence that supports, contradicts or qualifies a claim. Runs brave_research.check_claim deterministically.",
+    "id": "brave-claim",
+    "is_active": 1,
+    "meta": {
+      "i18n": null,
+      "tags": [
+        "brave",
+        "command"
+      ]
+    },
+    "name": "brave-claim",
+    "updated_at": 1790374230,
+    "user_id": "{{OWNER}}"
+  },
+  {
+    "content": "# !compare\n\n**What it does:** Balanced side-by-side comparison of two or more subjects.\n\n**Syntax:** `!compare \"A\" \"B\" [...] [by=\"criteria\"] [+deep] [+sources]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_research`.`compare` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
+    "created_at": 1790370898,
+    "description": "(RESEARCH) !compare \"A\" \"B\" [...] [by=\"criteria\"] [+deep] [+sources]  —  Balanced side-by-side comparison of two or more subjects. Runs brave_research.compare deterministically.",
+    "id": "brave-compare",
+    "is_active": 1,
+    "meta": {
+      "i18n": null,
+      "tags": [
+        "brave",
+        "command"
+      ]
+    },
+    "name": "brave-compare",
+    "updated_at": 1790374230,
+    "user_id": "{{OWNER}}"
+  },
+  {
+    "content": "# !discuss\n\n**What it does:** Forum and discussion threads: leads and opinions, not verified fact.\n\n**Syntax:** `!discuss \"topic\" [count=10] [+week|+month|+year]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_search`.`discussions` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
+    "created_at": 1790370898,
+    "description": "(SEARCH) !discuss \"topic\" [count=10] [+week|+month|+year]  —  Forum and discussion threads: leads and opinions, not verified fact. Runs brave_search.discussions deterministically.",
+    "id": "brave-discuss",
+    "is_active": 1,
+    "meta": {
+      "i18n": null,
+      "tags": [
+        "brave",
+        "command"
+      ]
+    },
+    "name": "brave-discuss",
+    "updated_at": 1790374229,
+    "user_id": "{{OWNER}}"
+  },
+  {
+    "content": "# !help\n\n**What it does:** Show this command reference.\n\n**Syntax:** `!help`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `none`.`-` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
+    "created_at": 1790370898,
+    "description": "(HELP) !help  —  Show this command reference. Shows the full command reference.",
+    "id": "brave-help",
+    "is_active": 1,
+    "meta": {
+      "i18n": null,
+      "tags": [
+        "brave",
+        "command"
+      ]
+    },
+    "name": "brave-help",
+    "updated_at": 1790374230,
+    "user_id": "{{OWNER}}"
+  },
+  {
+    "content": "# !library\n\n**What it does:** List the documents saved in this chat.\n\n**Syntax:** `!library`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_reader`.`list_library` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
+    "created_at": 1790370898,
+    "description": "(READ) !library  —  List the documents saved in this chat. Runs brave_reader.list_library deterministically.",
+    "id": "brave-library",
+    "is_active": 1,
+    "meta": {
+      "i18n": null,
+      "tags": [
+        "brave",
+        "command"
+      ]
+    },
+    "name": "brave-library",
+    "updated_at": 1790374230,
+    "user_id": "{{OWNER}}"
+  },
+  {
+    "content": "# !news\n\n**What it does:** Brave news results (defaults to the past week).\n\n**Syntax:** `!news \"topic\" [count=10] [+day|+week|+month|+year]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_search`.`news` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
+    "created_at": 1790370898,
+    "description": "(SEARCH) !news \"topic\" [count=10] [+day|+week|+month|+year]  —  Brave news results (defaults to the past week). Runs brave_search.news deterministically.",
+    "id": "brave-news",
+    "is_active": 1,
+    "meta": {
+      "i18n": null,
+      "tags": [
+        "brave",
+        "command"
+      ]
+    },
+    "name": "brave-news",
+    "updated_at": 1790374229,
+    "user_id": "{{OWNER}}"
+  },
+  {
+    "content": "# !overview\n\n**What it does:** General overview of a saved document.\n\n**Syntax:** `!overview [\"focus\"] [doc=\"id\"]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_reader`.`overview_document` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
+    "created_at": 1790370898,
+    "description": "(READ) !overview [\"focus\"] [doc=\"id\"]  —  General overview of a saved document. Runs brave_reader.overview_document deterministically.",
+    "id": "brave-overview",
+    "is_active": 1,
+    "meta": {
+      "i18n": null,
+      "tags": [
+        "brave",
+        "command"
+      ]
+    },
+    "name": "brave-overview",
+    "updated_at": 1790374230,
+    "user_id": "{{OWNER}}"
+  },
+  {
+    "content": "# !portfolio\n\n**What it does:** In-depth evidence dossier: background, mechanism, evidence, risks, status, disputes.\n\n**Syntax:** `!portfolio \"subject\" [focus=\"...\"] [+sources] [+nodiagrams]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_research`.`research_portfolio` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
+    "created_at": 1790370898,
+    "description": "(RESEARCH) !portfolio \"subject\" [focus=\"...\"] [+sources] [+nodiagrams]  —  In-depth evidence dossier: background, mechanism, evidence, risks, status, disputes. Runs brave_research.research_portfolio deterministically.",
+    "id": "brave-portfolio",
+    "is_active": 1,
+    "meta": {
+      "i18n": null,
+      "tags": [
+        "brave",
+        "command"
+      ]
+    },
+    "name": "brave-portfolio",
+    "updated_at": 1790374230,
+    "user_id": "{{OWNER}}"
+  },
+  {
+    "content": "# !profile\n\n**What it does:** A public person's professional relationship to an organisation (public LinkedIn + corroboration).\n\n**Syntax:** `!profile \"public person\" [org=\"organisation\"] [focus=\"...\"] [+sources]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_research`.`professional_profile` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
+    "created_at": 1790370898,
+    "description": "(RESEARCH) !profile \"public person\" [org=\"organisation\"] [focus=\"...\"] [+sources]  —  A public person's professional relationship to an organisation (public LinkedIn + corroboration). Runs brave_research.professional_profile deterministically.",
+    "id": "brave-profile",
+    "is_active": 1,
+    "meta": {
+      "i18n": null,
+      "tags": [
+        "brave",
+        "command"
+      ]
+    },
+    "name": "brave-profile",
+    "updated_at": 1790374230,
+    "user_id": "{{OWNER}}"
+  },
+  {
+    "content": "# !quote\n\n**What it does:** Exact wording with line numbers from a saved document.\n\n**Syntax:** `!quote \"exact phrase\" [doc=\"id\"] [lines=2]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_reader`.`quote_document` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
+    "created_at": 1790370898,
+    "description": "(READ) !quote \"exact phrase\" [doc=\"id\"] [lines=2]  —  Exact wording with line numbers from a saved document. Runs brave_reader.quote_document deterministically.",
+    "id": "brave-quote",
+    "is_active": 1,
+    "meta": {
+      "i18n": null,
+      "tags": [
+        "brave",
+        "command"
+      ]
+    },
+    "name": "brave-quote",
+    "updated_at": 1790374230,
+    "user_id": "{{OWNER}}"
+  },
+  {
+    "content": "# !read\n\n**What it does:** Read one public page in full via self-hosted Jina.\n\n**Syntax:** `!read \"https://...\" [+browser|+curl]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_reader`.`read_url` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
+    "created_at": 1790370898,
+    "description": "(READ) !read \"https://...\" [+browser|+curl]  —  Read one public page in full via self-hosted Jina. Runs brave_reader.read_url deterministically.",
+    "id": "brave-read",
+    "is_active": 1,
+    "meta": {
+      "i18n": null,
+      "tags": [
+        "brave",
+        "command"
+      ]
+    },
+    "name": "brave-read",
+    "updated_at": 1790374230,
+    "user_id": "{{OWNER}}"
+  },
+  {
+    "content": "# !save\n\n**What it does:** Save a full page into this chat's Reader Library for later questions.\n\n**Syntax:** `!save \"https://...\" [+browser]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_reader`.`save_url` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
+    "created_at": 1790370898,
+    "description": "(READ) !save \"https://...\" [+browser]  —  Save a full page into this chat's Reader Library for later questions. Runs brave_reader.save_url deterministically.",
+    "id": "brave-save",
+    "is_active": 1,
+    "meta": {
+      "i18n": null,
+      "tags": [
+        "brave",
+        "command"
+      ]
+    },
+    "name": "brave-save",
+    "updated_at": 1790374230,
+    "user_id": "{{OWNER}}"
+  },
+  {
+    "content": "# !search\n\n**What it does:** One targeted Brave web search for a fact or quick discovery.\n\n**Syntax:** `!search \"query\" [count=8] [+week|+month|+year] [+snippets]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_search`.`web` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
+    "created_at": 1790370898,
+    "description": "(SEARCH) !search \"query\" [count=8] [+week|+month|+year] [+snippets]  —  One targeted Brave web search for a fact or quick discovery. Runs brave_search.web deterministically.",
+    "id": "brave-search",
+    "is_active": 1,
+    "meta": {
+      "i18n": null,
+      "tags": [
+        "brave",
+        "command"
+      ]
+    },
+    "name": "brave-search",
+    "updated_at": 1790374229,
+    "user_id": "{{OWNER}}"
+  },
+  {
+    "content": "# !summarise\n\n**What it does:** Plain-English summary built from gathered evidence.\n\n**Syntax:** `!summarise \"subject\" [focus=\"...\"] [+quick|+deep] [+sources]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_research`.`summarise` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
+    "created_at": 1790370898,
+    "description": "(RESEARCH) !summarise \"subject\" [focus=\"...\"] [+quick|+deep] [+sources]  —  Plain-English summary built from gathered evidence. Runs brave_research.summarise deterministically.",
+    "id": "brave-summarise",
+    "is_active": 1,
+    "meta": {
+      "i18n": null,
+      "tags": [
+        "brave",
+        "command"
+      ]
+    },
+    "name": "brave-summarise",
+    "updated_at": 1790374229,
+    "user_id": "{{OWNER}}"
+  },
+  {
+    "content": "# !sweep\n\n**What it does:** Find-all / compiled lists: 2-6 planned searches in one bounded, de-duplicated sweep.\n\n**Syntax:** `!sweep \"what I want compiled\" \"query 1\" \"query 2\" [... up to 6] [include=\"...\"] [exclude=\"...\"] [+sources]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_search`.`source_sweep` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
+    "created_at": 1790370898,
+    "description": "(SEARCH) !sweep \"what I want compiled\" \"query 1\" \"query 2\" [... up to 6] [include=\"...\"] [exclude=\"...\"] [+sources]  —  Find-all / compiled lists: 2-6 planned searches in one bounded, de-duplicated sweep. Runs brave_search.source_sweep deterministically.",
+    "id": "brave-sweep",
+    "is_active": 1,
+    "meta": {
+      "i18n": null,
+      "tags": [
+        "brave",
+        "command"
+      ]
+    },
+    "name": "brave-sweep",
+    "updated_at": 1790374229,
+    "user_id": "{{OWNER}}"
+  },
+  {
+    "content": "# !topic\n\n**What it does:** Source-grounded research answer to a general question.\n\n**Syntax:** `!topic \"question\" [+quick|+deep] [+sources]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_research`.`topic` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
+    "created_at": 1790370898,
+    "description": "(RESEARCH) !topic \"question\" [+quick|+deep] [+sources]  —  Source-grounded research answer to a general question. Runs brave_research.topic deterministically.",
+    "id": "brave-topic",
+    "is_active": 1,
+    "meta": {
+      "i18n": null,
+      "tags": [
+        "brave",
+        "command"
+      ]
+    },
+    "name": "brave-topic",
+    "updated_at": 1790374229,
+    "user_id": "{{OWNER}}"
+  },
+  {
+    "content": "# !videos\n\n**What it does:** Brave video results: links and metadata only, nothing downloaded.\n\n**Syntax:** `!videos \"topic\" [count=10]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_search`.`videos` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
+    "created_at": 1790370898,
+    "description": "(SEARCH) !videos \"topic\" [count=10]  —  Brave video results: links and metadata only, nothing downloaded. Runs brave_search.videos deterministically.",
+    "id": "brave-videos",
+    "is_active": 1,
+    "meta": {
+      "i18n": null,
+      "tags": [
+        "brave",
+        "command"
+      ]
+    },
+    "name": "brave-videos",
+    "updated_at": 1790374229,
+    "user_id": "{{OWNER}}"
+  },
+  {
+    "content": "# !wiki\n\n**What it does:** Pick an English Wikipedia article from a popup and save it to this chat.\n\n**Syntax:** `!wiki \"topic\"`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_reader`.`choose_wikipedia` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
+    "created_at": 1790370898,
+    "description": "(READ) !wiki \"topic\"  —  Pick an English Wikipedia article from a popup and save it to this chat. Runs brave_reader.choose_wikipedia deterministically.",
+    "id": "brave-wiki",
+    "is_active": 1,
+    "meta": {
+      "i18n": null,
+      "tags": [
+        "brave",
+        "command"
+      ]
+    },
+    "name": "brave-wiki",
+    "updated_at": 1790374230,
+    "user_id": "{{OWNER}}"
+  },
+  {
+    "content": "# /mermaid — draw a diagram\n\nDraw a Mermaid diagram of what the user describes after the command (or, if nothing is written, of the most recent topic in this conversation).\n\n## Pick the right type\n| Use | Mermaid type |\n|---|---|\n| Process, pipeline, decision, architecture | `flowchart TD` (or `LR` for wide pipelines) |\n| Who calls whom, request/response | `sequenceDiagram` |\n| Events over time | `timeline` |\n| Concept map / brainstorm | `mindmap` |\n| States and transitions | `stateDiagram-v2` |\n| Data model | `erDiagram` |\n\n## Rules that keep it rendering in Open WebUI\n1. One fenced block: ```mermaid ... ``` and nothing else inside it.\n2. Short stable node IDs (`gw`, `vps`, `db`), human text only in labels.\n3. **Every flowchart label in double quotes**: `gw[\"Gateway (VPS)\"]`, `d{\"Healthy?\"}`. Never unquoted labels with brackets, colons, slashes or commas.\n4. Edge labels quoted too: `a -->|\"over Tailscale\"| b`.\n5. Use `flowchart`, not the legacy `graph`. No `%%{init}%%` themes, no HTML tags, no emoji inside node IDs.\n6. Keep it readable: at most ~20 nodes; group with `subgraph id[\"Title\"] ... end` when there are clear zones.\n7. After the block, give a 2–4 line plain-English explanation of what the diagram shows.\n\nIf the request is ambiguous, draw the most useful interpretation rather than asking.",
+    "created_at": 1790374230,
+    "description": "(DIAGRAM) /mermaid <what to draw> — Draws a parser-safe Mermaid diagram (flowchart, sequence, timeline, mindmap, state, ER) of what you describe or of the conversation so far.",
+    "id": "mermaid",
+    "is_active": 1,
+    "meta": {
+      "i18n": null,
+      "tags": [
+        "diagram"
+      ]
+    },
+    "name": "mermaid",
+    "updated_at": 1790374230,
+    "user_id": "{{OWNER}}"
+  }
+]

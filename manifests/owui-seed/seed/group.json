@@ -1,0 +1,92 @@
+[
+  {
+    "created_at": 1784328762,
+    "data": {
+      "config": {
+        "share": "members"
+      }
+    },
+    "description": "",
+    "id": "904215ed-0ae4-4893-baed-e54783d9ab06",
+    "meta": null,
+    "name": "Mwmbees",
+    "permissions": {
+      "access_grants": {
+        "allow_users": true
+      },
+      "chat": {
+        "call": true,
+        "continue_response": true,
+        "controls": true,
+        "delete": true,
+        "delete_message": true,
+        "edit": true,
+        "export": true,
+        "file_upload": true,
+        "import": true,
+        "multiple_models": true,
+        "params": true,
+        "rate_response": true,
+        "regenerate_response": true,
+        "share": true,
+        "stt": true,
+        "system_prompt": true,
+        "temporary": true,
+        "temporary_enforced": false,
+        "tts": true,
+        "valves": true,
+        "web_upload": true
+      },
+      "features": {
+        "api_keys": false,
+        "automations": false,
+        "calendar": false,
+        "channels": false,
+        "code_interpreter": false,
+        "direct_tool_servers": false,
+        "folders": false,
+        "image_generation": false,
+        "memories": false,
+        "notes": false,
+        "web_search": false,
+        "webhooks": false
+      },
+      "settings": {
+        "interface": false
+      },
+      "sharing": {
+        "knowledge": false,
+        "models": false,
+        "notes": false,
+        "prompts": false,
+        "public_calendars": false,
+        "public_chats": false,
+        "public_knowledge": false,
+        "public_models": false,
+        "public_notes": false,
+        "public_prompts": false,
+        "public_skills": false,
+        "public_tools": false,
+        "skills": false,
+        "tools": false
+      },
+      "workspace": {
+        "knowledge": false,
+        "models": false,
+        "models_export": false,
+        "models_import": false,
+        "prompts": false,
+        "prompts_export": false,
+        "prompts_import": false,
+        "skills": false,
+        "skills_export": false,
+        "skills_import": false,
+        "tools": false,
+        "tools_export": false,
+        "tools_import": false
+      }
+    },
+    "updated_at": 1785360678,
+    "user_id": "{{OWNER}}"
+  }
+]

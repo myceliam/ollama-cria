@@ -1,0 +1,85 @@
+{
+  "keybindings": {
+    "allowToolCall": "Cmd+Alt+Enter",
+    "closeModal": "Escape",
+    "copyLastCodeBlock": "Cmd+Shift+;",
+    "copyLastResponse": "Cmd+Shift+C",
+    "deleteChat": "Cmd+Shift+Backspace",
+    "denyToolCall": "Cmd+Alt+Backspace",
+    "focusInput": "Shift+Escape",
+    "generateMessagePair": "Cmd+Shift+Enter",
+    "navigateChatDown": "",
+    "navigateChatUp": "",
+    "newChat": "Cmd+Shift+O",
+    "newTemporaryChat": "Cmd+Shift+'",
+    "openModelSelector": "Cmd+M",
+    "openSettings": "Cmd+.",
+    "regenerateResponse": "Cmd+R",
+    "search": "Cmd+K",
+    "showShortcuts": "Cmd+/",
+    "toggleControls": "",
+    "toggleDictation": "Cmd+Shift+L",
+    "toggleSidebar": "Cmd+Shift+S"
+  },
+  "tools": {
+    "valves": {
+      "sub_agent": {
+        "SYSTEM_PROMPT": "You are a sub-agent operating autonomously to complete a delegated task.\n\nCRITICAL RULES:\n1. You MUST complete the task fully without asking the user for confirmation or clarification.\n2. Continue working autonomously until the task is 100% complete.\n3. Use available tools proactively to gather information and perform actions.\n4. If you encounter obstacles, try alternative approaches before giving up.\n5. You have a limited number of tool call iterations. Complete the task before reaching the limit.\n\nRESPONSE REQUIREMENTS:\n- Provide a comprehensive final answer to the main agent.\n- Include evidence and reasoning that supports your conclusions.\n- If the task cannot be completed, explain what was attempted, why it failed, and provide actionable next steps the main agent should take."
+      }
+    }
+  },
+  "ui": {
+    "audio": {
+      "stt": {},
+      "tts": {
+        "defaultVoice": "af_heart",
+        "engineConfig": {},
+        "playbackRate": 1,
+        "voice": "af_heart"
+      }
+    },
+    "autoFollowUps": false,
+    "chatBubble": true,
+    "defaultUploadContext": "full",
+    "expandDetails": false,
+    "hapticFeedback": true,
+    "iframeSandboxAllowForms": true,
+    "iframeSandboxAllowSameOrigin": true,
+    "imageCompressionSize": {
+      "height": "",
+      "width": ""
+    },
+    "insertPromptAsRichText": true,
+    "landingPageMode": "chat",
+    "memory": true,
+    "models": [
+      "granite4.2:8b"
+    ],
+    "notificationEnabled": true,
+    "notifications": {
+      "webhook_url": ""
+    },
+    "params": {
+      "function_calling": "native",
+      "tool_approval_mode": "full"
+    },
+    "pinnedMenuItems": [
+      "notes",
+      "workspace"
+    ],
+    "pinnedModels": [
+      "huihui_ai/qwen3.5-abliterated:9b",
+      "huihui_ai/qwen3-abliterated:14b",
+      "cline-pass/qwen3.8-max",
+      "q_flatstack",
+      "granite4.2:8b",
+      "granite4.2:3b"
+    ],
+    "promptAutocomplete": true,
+    "responseAutoPlayback": false,
+    "scrollOnResponseGeneration": false,
+    "showFormattingToolbar": true,
+    "system": "Use clear Markdown when it improves readability. Use fenced code blocks with a language tag, and use emojis sparingly.\n\nUse Mermaid only when a diagram materially improves the answer. Put it in a fenced `mermaid` block and use valid Mermaid syntax: ASCII arrows such as `-->`, lowercase directives such as `style`, simple node IDs, and quoted labels when they contain punctuation. Never use Unicode arrows or put explanatory prose inside the diagram block. If valid Mermaid syntax is uncertain, use plain Markdown instead.\n\nUse citations only when needed. Add an inline [n] citation only to a material factual claim that relies on an external source actually retrieved for the response. Do not cite creative writing, opinions, reasoning, common knowledge, or user-provided text. Never invent unsupported citations. If citations are used, end with a matching Sources list in the form `[n] Title - URL`; otherwise omit both citations and the Sources section.",
+    "widescreenMode": true
+  }
+}
