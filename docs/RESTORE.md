@@ -369,8 +369,8 @@ The bundle was downloaded, checked and unpacked in Stage 1. `Restore-StackSecret
 
 | Bundle folder | Contents | Goes to |
 |---|---|---|
-| 01 | Stack `.env`, Docker secrets in `E:\ai\ollama\secrets\` | 🖥️ |
-| 02 | Google OAuth client and tokens (gcal and Gmail bridges) | 🖥️ |
+| 01 | Stack `.env`, Docker secrets in `E:\ai\ollama\secrets\`, the local SearXNG `settings.yml` | 🖥️ |
+| 02 | Google OAuth client and tokens (gcal and Gmail bridges), the gcal bridge `watchdog.ps1` | 🖥️ |
 | 03 | OWUI secret values the seed refers to: provider API keys, tool-server bearer tokens, the Groq STT key, Valve secrets, `WEBUI_SECRET_KEY` | 🖥️ (used in Stage 7) |
 | 04 | SSH private key, public key and config | 🖥️ (placed in Stage 1) |
 | 05 | VPS web egress `.env` (WireGuard keys, Brave key, SearXNG secret) | ☁️ |
