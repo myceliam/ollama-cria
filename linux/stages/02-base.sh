@@ -76,6 +76,18 @@ mine=$(tailscale ip -4 2>/dev/null | head -n 1 || true)
 # yes or no: does the input hold a line grep matches with these arguments?
 has() { if grep -q "$@"; then echo yes; else echo no; fi; }
 
+# Does networkd keep routing rules it did not create? Reads its effective
+# configuration (networkd.conf and every drop-in, in systemd's order), so a
+# later drop-in that turns it back on counts.
+networkd_keeps_rules() {
+  systemd-analyze ${root:+--root="$root"} cat-config systemd/networkd.conf 2>/dev/null | awk '
+    /^[[:space:]]*\[/ { section = $0; gsub(/[[:space:]]/, "", section); next }
+    section == "[Network]" && /^[[:space:]]*ManageForeignRoutingPolicyRules[[:space:]]*=/ {
+      v = $0; sub(/^[^=]*=[[:space:]]*/, "", v); sub(/[[:space:]]+$/, "", v); value = tolower(v)
+    }
+    END { exit !(value == "no" || value == "false" || value == "off" || value == "0") }'
+}
+
 installed() { [ "$(dpkg-query -W -f '${Status}' "$1" 2>/dev/null || true)" = 'install ok installed' ]; }
 version_of() { dpkg-query -W -f '${Version}' "$1" 2>/dev/null || true; }
 
@@ -139,7 +151,7 @@ if [ "$mode" = check ]; then
   fact compose "$(docker compose version --short 2>/dev/null || echo none)"
   for p in "${ubuntu_packages[@]}"; do installed "$p" || fact missing "$p"; done
   fact nonlocal-bind "$(sysctl -n net.ipv4.ip_nonlocal_bind 2>/dev/null || echo unknown)"
-  if grep -qx 'ManageForeignRoutingPolicyRules=no' "$root$networkd_dropin" 2>/dev/null; then fact networkd-keeps-rules yes; else fact networkd-keeps-rules no; fi
+  if networkd_keeps_rules; then fact networkd-keeps-rules yes; else fact networkd-keeps-rules no; fi
   if grep -qx '      dhcp6: false' "$root$netplan_dropin" 2>/dev/null && grep -qx '      link-local: \[\]' "$root$netplan_dropin"; then fact ipv6-public-off yes; else fact ipv6-public-off no; fi
   s=$(ufw status verbose 2>/dev/null || true)
   if grep -q '^Status: active' <<<"$s"; then fact ufw active; else fact ufw inactive; fi

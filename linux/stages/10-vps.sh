@@ -67,7 +67,7 @@ active() { if systemctl is-active --quiet "$1" 2>/dev/null; then echo yes; else 
 guard_loaded() {
   nft list table inet owui_web >/dev/null 2>&1 &&
     [ "$(ip -4 rule show | grep -c '^5260:' || true)" -ge 1 ] &&
-    [ "$(ip -6 rule show | grep -c '^5265:.*prohibit' || true)" -ge 1 ]
+    [ "$(ip -6 rule show | grep -cE '^5265:[[:space:]]+from all prohibit$' || true)" -ge 1 ]
 }
 docker_needs_guard() {
   local s
