@@ -10,7 +10,7 @@ BeforeAll {
     $script:Stages = Join-Path $PSScriptRoot '../linux/stages'
     $script:FakeTools = Join-Path $PSScriptRoot 'fakes/fake-linux-tools.sh'
     $script:TsIp = @('100', '64', '0', '8') -join '.'
-    $script:Tools = 'id', 'tailscale', 'dpkg-query', 'apt-get', 'curl', 'gpg', 'systemctl', 'sysctl', 'ufw', 'sshd', 'docker', 'ss', 'chown', 'nft', 'ip', 'nginx',
+    $script:Tools = 'id', 'tailscale', 'dpkg-query', 'apt-get', 'curl', 'gpg', 'systemctl', 'sysctl', 'ufw', 'sshd', 'docker', 'ss', 'chown', 'nft', 'ip', 'nginx', 'netplan',
     'systemd-run', 'timeout'
 
     function New-Box {
@@ -101,6 +101,9 @@ Describe '02-base.sh run' -Skip:$IsWindows {
         Get-BoxFile $b '/etc/apt/sources.list.d/docker.sources' | Should -Match 'Signed-By: /etc/apt/keyrings/docker.asc'
         Get-BoxFile $b '/etc/sysctl.d/99-nginx-tailnet-bind.conf' | Should -Be "net.ipv4.ip_nonlocal_bind = 1`n"
         Get-BoxFile $b '/etc/systemd/networkd.conf.d/10-ollama-cria.conf' | Should -Match '(?m)^\[Network\]\nManageForeignRoutingPolicyRules=no$'
+        $netplan = Get-BoxFile $b '/etc/netplan/60-ollama-cria.yaml'
+        $netplan | Should -Match '(?m)^      dhcp6: false$'
+        $netplan | Should -Match '(?m)^      link-local: \[\]$'
         $sshd = Get-BoxFile $b '/etc/ssh/sshd_config.d/00-liam-hardening.conf'
         $sshd | Should -Match "(?m)^ListenAddress $([regex]::Escape($script:TsIp))$"
         $sshd | Should -Match '(?m)^PasswordAuthentication no$'
@@ -185,6 +188,7 @@ Describe '02-base.sh check' -Skip:$IsWindows {
         $facts['ssh-password-off'] | Should -Be 'yes'
         $facts['nonlocal-bind'] | Should -Be '1'
         $facts['networkd-keeps-rules'] | Should -Be 'yes'
+        $facts['ipv6-public-off'] | Should -Be 'yes'
         $facts.ContainsKey('missing') | Should -BeFalse
         Get-Fake $b 'calls' | Where-Object { $_ -match '^(apt-get|ufw (allow|default|--force)|systemctl (enable|start|restart)|curl) ' } | Should -BeNullOrEmpty
     }

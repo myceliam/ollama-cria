@@ -72,6 +72,9 @@ case "$tool" in
   nginx)
     exit "$(cat "$f/nginx-t" 2>/dev/null || echo 0)"
     ;;
+  netplan)
+    [ ! -f "$f/netplan-fails" ]
+    ;;
   gpg)
     if grep -q GOOD-KEY "${*: -1}"; then
       echo 'fpr:::::::::9DC858229FC7DD38854AE2D88D81803C0EBFCD88:'

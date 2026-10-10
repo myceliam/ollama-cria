@@ -339,6 +339,7 @@ pwsh -File .\Invoke-StackRecovery.ps1 -Execute -Accept vps-bootstrap -HostKeyFin
 | Updates | Unattended upgrades on |
 | Boot order | `net.ipv4.ip_nonlocal_bind = 1`, so nginx, Docker and sshd can bind the tailnet address before `tailscale0` has it |
 | Routing rules | `systemd-networkd` keeps routing rules it did not create (`ManageForeignRoutingPolicyRules=no` in `/etc/systemd/networkd.conf.d/10-ollama-cria.conf`). By default it deletes them whenever it restarts: an automatic update on 4 October 2026 did, and wiped the guard's rules, its IPv6 block included |
+| IPv6 | None on the public interface (`/etc/netplan/60-ollama-cria.yaml`: `dhcp6` off, no router advertisements, no link-local addresses), switched off at once with `sysctl` too. Tailscale keeps its IPv6 on `tailscale0` |
 | Firewall | `ufw`: deny incoming and routed, allow outgoing; allow everything on `tailscale0`, and `41641/udp` for Tailscale's direct connections |
 | SSH | Keys only, no root, listening on the tailnet address only. Done last, after checking that the VPS's own tailnet address is the one the PC sees, and kept only if `sshd -t` passes |
 

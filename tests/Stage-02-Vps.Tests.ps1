@@ -42,7 +42,7 @@ BeforeAll {
             Rsa       = New-KeyBlob 'ssh-rsa'
             LoginCode = 0
             Facts     = [ordered]@{
-                'tailscale-ip' = 'match'; docker = '29.8.2'; compose = '5.6.0'; 'nonlocal-bind' = '1'; 'networkd-keeps-rules' = 'yes'; ufw = 'active'; 'ufw-defaults' = 'yes'
+                'tailscale-ip' = 'match'; docker = '29.8.2'; compose = '5.6.0'; 'nonlocal-bind' = '1'; 'networkd-keeps-rules' = 'yes'; 'ipv6-public-off' = 'yes'; ufw = 'active'; 'ufw-defaults' = 'yes'
                 'ufw-tailscale0' = 'yes'; 'ufw-41641' = 'yes'; 'ufw-other-allow' = '0'; 'ssh-listen' = 'tailnet-only'; 'ssh-password-off' = 'yes'; 'ssh-root-off' = 'yes'
             }
         }
@@ -150,7 +150,7 @@ Describe 'Stage 2: trust and base' {
         $k = Invoke-Stage '02-vps.ps1' $check
         @($k.Checks | Where-Object { -not $_.Ok } | ForEach-Object { "$($_.What): $($_.Actual)" }) | Should -BeNullOrEmpty
         $k.Status | Should -Be 'passed'
-        $k.Checks.Count | Should -Be 17
+        $k.Checks.Count | Should -Be 18
     }
 
     It 'creates known_hosts when there is none' {

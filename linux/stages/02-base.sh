@@ -23,7 +23,10 @@
 #     (ManageForeignRoutingPolicyRules=no). By default it deletes them
 #     whenever it restarts, and on 4 October 2026 an automatic update
 #     restarted it and wiped the guard's rules, its IPv6 block (5265)
-#     included. Added 10 October 2026; not on the live VPS until Liam says.
+#     included. Added 10 October 2026.
+#   - No IPv6 on the public interface (netplan: dhcp6 off, no router
+#     advertisements, no link-local addresses). Tailscale keeps its own
+#     IPv6 on tailscale0. Liam's call, 10 October 2026.
 #   - ufw: deny incoming and routed, allow outgoing; allow everything on
 #     tailscale0, and 41641/udp for Tailscale's direct connections. The
 #     live Cloudflare rules belong to the separate website, not the stack.
@@ -104,6 +107,19 @@ networkd_conf="# ollama-cria Stage 2: keep the guard's routing rules when networ
 [Network]
 ManageForeignRoutingPolicyRules=no"
 
+netplan_dropin=/etc/netplan/60-ollama-cria.yaml
+netplan_conf='# ollama-cria Stage 2: no IPv6 on the public interface (Liam, 10 October 2026).
+# Tailscale keeps its own IPv6 on tailscale0.
+network:
+  version: 2
+  ethernets:
+    all-en:
+      match:
+        name: "en*"
+      dhcp6: false
+      accept-ra: false
+      link-local: []'
+
 sshd_conf="# ollama-cria Stage 2, as on the live VPS: keys only, no root, tailnet only.
 PubkeyAuthentication yes
 PasswordAuthentication no
@@ -124,6 +140,7 @@ if [ "$mode" = check ]; then
   for p in "${ubuntu_packages[@]}"; do installed "$p" || fact missing "$p"; done
   fact nonlocal-bind "$(sysctl -n net.ipv4.ip_nonlocal_bind 2>/dev/null || echo unknown)"
   if grep -qx 'ManageForeignRoutingPolicyRules=no' "$root$networkd_dropin" 2>/dev/null; then fact networkd-keeps-rules yes; else fact networkd-keeps-rules no; fi
+  if grep -qx '      dhcp6: false' "$root$netplan_dropin" 2>/dev/null && grep -qx '      link-local: \[\]' "$root$netplan_dropin"; then fact ipv6-public-off yes; else fact ipv6-public-off no; fi
   s=$(ufw status verbose 2>/dev/null || true)
   if grep -q '^Status: active' <<<"$s"; then fact ufw active; else fact ufw inactive; fi
   fact ufw-defaults "$(has '^Default: deny (incoming), allow (outgoing), deny (routed)' <<<"$s")"
@@ -214,6 +231,21 @@ fi
 if put "$networkd_dropin" "$networkd_conf" 0644; then
   step "systemd-networkd keeps the guard's routing rules (10-ollama-cria.conf)"
 fi
+
+# No IPv6 on the public interface. netplan writes it for networkd's next
+# start (no 'netplan apply', which would reconfigure the link under this
+# SSH session); sysctl switches it off on each public interface now.
+if put "$netplan_dropin" "$netplan_conf" 0600; then
+  netplan generate >>"$log" 2>&1 || fail 'netplan rejected 60-ollama-cria.yaml (see the log on the VPS)'
+  step 'no IPv6 on the public interface (60-ollama-cria.yaml)'
+fi
+for d in "$root"/proc/sys/net/ipv6/conf/en*; do
+  [ -f "$d/disable_ipv6" ] || continue
+  if [ "$(cat "$d/disable_ipv6")" != 1 ]; then
+    sysctl -q -w "net.ipv6.conf.${d##*/}.disable_ipv6=1" >/dev/null || fail "could not switch IPv6 off on ${d##*/}"
+    step "IPv6 switched off on ${d##*/}"
+  fi
+done
 
 # Firewall, as on the live VPS. The SSH session that runs this comes in on
 # tailscale0, which is allowed before ufw is switched on.

@@ -299,7 +299,7 @@ ssh -o BatchMode=yes -o StrictHostKeyChecking=yes vps true; "ssh exit code: $LAS
 
 ## V6 · Base system 🤖
 
-`02-base.sh` sets the server up as the live VPS was read on 7 October 2026: Docker and Compose at pinned versions, nftables, nginx, ufw, unattended upgrades, `ip_nonlocal_bind`, and sshd on the tailnet address only. It also tells `systemd-networkd` to keep the guard's routing rules when it restarts, a setting added on 10 October 2026 after the live VPS lost them. It installs packages, so run it in its own window:
+`02-base.sh` sets the server up as the live VPS was read on 7 October 2026: Docker and Compose at pinned versions, nftables, nginx, ufw, unattended upgrades, `ip_nonlocal_bind`, and sshd on the tailnet address only. It also tells `systemd-networkd` to keep the guard's routing rules when it restarts, a setting added on 10 October 2026 after the live VPS lost them, and switches IPv6 off on the public interface. It installs packages, so run it in its own window:
 
 ```powershell
 Start-VpsLong v6 02-base.sh run, liam, $vpsIp
@@ -320,6 +320,7 @@ $r = Invoke-Vps 02-base.sh check, liam, $vpsIp
 | `missing` | no such line |
 | `nonlocal-bind` | `1` |
 | `networkd-keeps-rules` | `yes` |
+| `ipv6-public-off` | `yes` |
 | `ufw`, `ufw-defaults`, `ufw-tailscale0`, `ufw-41641` | `active`, `yes`, `yes`, `yes` |
 | `ufw-other-allow` | `0` |
 | `ssh-listen`, `ssh-password-off`, `ssh-root-off` | `tailnet-only`, `yes`, `yes` |
