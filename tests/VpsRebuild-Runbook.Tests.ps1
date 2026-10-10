@@ -150,7 +150,7 @@ Describe 'The VPS runbook, V0 to V10, against a fake PC and VPS' -Skip:(-not $Is
             $pc = Join-Path $root 'pc'
             $null = New-Item -ItemType Directory -Path (Join-Path $vps 'etc'), (Join-Path $vps 'fake'), (Join-Path $vps 'home/liam'), (Join-Path $vps 'dev/net'),
                 (Join-Path $vps 'etc/nginx/sites-enabled'), $bin, (Join-Path $pc '.ssh'), (Join-Path $pc 'stack'), (Join-Path $pc 'state') -Force
-            foreach ($t in 'id', 'dpkg-query', 'apt-get', 'curl', 'gpg', 'systemctl', 'sysctl', 'ufw', 'sshd', 'docker', 'ss', 'chown', 'nft', 'ip', 'nginx', 'systemd-run', 'timeout') {
+            foreach ($t in 'id', 'dpkg-query', 'apt-get', 'curl', 'gpg', 'systemctl', 'sysctl', 'ufw', 'sshd', 'docker', 'ss', 'chown', 'nft', 'ip', 'nginx', 'netplan', 'systemd-analyze', 'systemd-run', 'timeout') {
                 Write-Tool (Join-Path $bin $t) "#!/usr/bin/env bash`nexec bash '$($script:FakeTools)' $t `"`$@`"`n"
             }
             Write-Tool (Join-Path $bin 'tailscale') @"
