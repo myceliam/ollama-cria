@@ -59,7 +59,7 @@ BeforeAll {
 }
 
 Describe 'The rebuild guides: their code' {
-    It 'parses every PowerShell block in <_>' -ForEach @('START-HERE.md', 'VPS-REBUILD-AI.md', 'VPS-REBUILD-HUMAN.md', 'FULL-REBUILD-HUMAN.md', 'VM-TEST.md') {
+    It 'parses every PowerShell block in <_>' -ForEach @('START-HERE.md', 'VPS-REBUILD-AI.md', 'VPS-REBUILD-HUMAN.md', 'FULL-REBUILD-HUMAN.md', 'MENU-HELP-FOR-AI.md', '../README.md') {
         $path = Join-Path $script:Docs $_
         foreach ($b in @(Get-CodeBlock $path 'powershell')) {
             $tokens = $null; $errors = $null
@@ -98,20 +98,24 @@ Describe 'The paired guides keep the same steps' {
         Get-Step $human "^### (V\d+) $($script:Dot) " | Should -Be $want
     }
 
-    It 'full rebuild: the walkthrough has a row and a section for P, Step 0 and every stage of RESTORE.md' {
+    It 'full rebuild: the walkthrough and the README follow the menu, each stage step at its stage' {
         $stages = Get-Step (Join-Path $script:Docs 'RESTORE.md') "^# STAGE (\d+) $($script:Dot) "
         $stages | Should -Be @(1..11 | ForEach-Object { "$_" })
-        $want = @('P', '0') + $stages
+        Import-Module (Join-Path $script:Repo 'tools/RecoveryMenu.psm1') -Force
+        $menu = @(Get-RecoveryMenuStep)
+        $want = @($menu | ForEach-Object { $_.Id })
+        @($menu | Where-Object { $_.Kind -eq 'stage' } | ForEach-Object { "$($_.Stage)" }) | Should -Be $stages
+        $dash = [string][char]0x2013
         $human = Join-Path $script:Docs 'FULL-REBUILD-HUMAN.md'
-        Get-Step $human "^\| (\w+) \| $($script:Todo) \|" | Should -Be $want
-        Get-Step $human "^### Stage (\w+) $($script:Dot) " | Should -Be $want
-    }
-
-    It 'VM test: its progress table and its sections run T0 to T9' {
-        $want = @(0..9 | ForEach-Object { "T$_" })
-        $path = Join-Path $script:Docs 'VM-TEST.md'
-        Get-Step $path "^\| (T\d+) \| $($script:Todo) \|" | Should -Be $want
-        Get-Step $path "^### (T\d+) $($script:Dot) " | Should -Be $want
+        $readme = Join-Path $script:Repo 'README.md'
+        Get-Step $human "^\| (1a|1b|\d+) \| (?:$dash|\d+) \|" | Should -Be $want
+        Get-Step $readme "^\| (1a|1b|\d+) \| (?:$dash|\d+) \|" | Should -Be $want
+        Get-Step $human "^### Step (\w+) $($script:Dot) " | Should -Be $want
+        $text = [IO.File]::ReadAllText($human)
+        foreach ($s in @($menu | Where-Object { $_.Kind -eq 'stage' })) {
+            $text | Should -Match "(?m)^\| $($s.Id) \| $($s.Stage) \|"
+            $text | Should -Match "(?m)^### Step $($s.Id) $($script:Dot) Stage $($s.Stage) $($script:Dot) "
+        }
     }
 }
 

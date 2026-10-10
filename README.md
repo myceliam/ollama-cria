@@ -2,16 +2,48 @@
 
 **Disaster recovery for Liam's Open WebUI, Ollama and ComfyUI stack.** A *cria* is a baby llama: this repo grows a new copy of the stack from nothing.
 
-> **Starting point:** two brand-new machines (a Windows 11 PC and an Ubuntu 24.04 VPS). Only GitHub, Bitwarden and Liam's accounts survive.
+> **Starting point:** a freshly installed Windows 11 PC, and the VPS (kept, or rebuilt as Ubuntu 24.04). Only GitHub, Bitwarden and Liam's accounts need to survive.
 > **End point:** the same capabilities as today: models, tools, MCP servers, functions, skills, presets, settings, Serve rules and the VPS web egress. Chat history and old uploads are deliberately not restored.
+
+---
+
+## ▶️ Start here: rebuilding the PC
+
+You drive the rebuild with **one menu**. It runs the PowerShell for you, one numbered step at a time, checks everything, asks before every change, and remembers where you are across restarts.
+
+**0. Hardware first, if you're changing drives.** With the PC off, unplugged, and the power button held for a few seconds, fit the new NVMe drives, then install Windows 11. On the ROG STRIX X670E-F, M.2_1 and M.2_2 are wired to the CPU (the fastest pair, best for a stripe); M.2_3 and M.2_4 share the chipset's one link. If you update the BIOS (the **BIOS & Firmware** tab of ASUS's page), do it now, never mid-rebuild. Menu step 1b tests the drives before you choose striped or separate.
+
+**1. The `E:` drive.** It holds the stack, the models and the recovery folders.
+
+| Your `E:` | Do |
+|---|---|
+| New or wiped (for example a new NVMe) | Win+X → **Disk Management**. Initialise the disk (GPT), **New Simple Volume**, letter **E**, NTFS. The menu turns BitLocker on with you in step 1b |
+| Survived the Windows reinstall | It's locked by BitLocker. Double-click it in File Explorer and unlock it with its recovery key (https://aka.ms/myrecoverykey) |
+
+**2. GitHub Desktop** (menu step 1a checks all of this).
+1. In Edge, download **GitHub Desktop** from https://desktop.github.com and install it.
+2. Sign in to GitHub (the login is in Bitwarden).
+3. **File → Clone repository → `myceliam/ollama-cria`**, local path **`E:\recovery`**.
+
+**3. Two double-clicks, in `E:\recovery`.**
+1. **`Install-PowerShell7.cmd`**: installs PowerShell 7 with winget. Once only.
+2. **`Start-Recovery.cmd`**: the menu. Press Enter for the next step. Its step 1b starts with your motherboard's drivers (AMD's chipset driver, then ASUS's), before Windows Update. Double-click it again any time, after any restart: it carries on where you left off.
+
+**Updating this copy later** (only before the rebuild starts, or after it ends, because Stage 1 records the commit): in GitHub Desktop, **Fetch origin**, then **Pull**. Or in PowerShell:
+
+```powershell
+git -C "E:\recovery" pull --ff-only
+```
+
+**Stuck?** Press `a` in the menu and paste the note into Claude, ChatGPT or Antigravity. It points the assistant at [`docs/MENU-HELP-FOR-AI.md`](docs/MENU-HELP-FOR-AI.md), its guide to helping you.
 
 | | |
 |---|---|
-| **Start here** | [`docs/START-HERE.md`](docs/START-HERE.md): one page for the assistant helping after a disaster. A copy sits in the Bitwarden item with the bundle |
-| **The guide** | [`docs/RESTORE.md`](docs/RESTORE.md) (DRAFT v0.7), run by the controller; Liam follows along in [`docs/FULL-REBUILD-HUMAN.md`](docs/FULL-REBUILD-HUMAN.md) |
+| **Your walkthrough** | [`docs/FULL-REBUILD-HUMAN.md`](docs/FULL-REBUILD-HUMAN.md): every menu step, where you're needed, and what to check |
+| **For an assistant helping** | [`docs/MENU-HELP-FOR-AI.md`](docs/MENU-HELP-FOR-AI.md) while the menu runs; [`docs/START-HERE.md`](docs/START-HERE.md) for what survived and where (a copy sits in the Bitwarden item with the bundle) |
+| **The full guide** | [`docs/RESTORE.md`](docs/RESTORE.md) (DRAFT v0.8): what each stage does and checks, run by the controller (`Invoke-StackRecovery.ps1`) that the menu drives |
 | **Only the VPS lost** | [`docs/VPS-REBUILD-AI.md`](docs/VPS-REBUILD-AI.md), the assistant's runbook, guided from the surviving PC; Liam's side is [`docs/VPS-REBUILD-HUMAN.md`](docs/VPS-REBUILD-HUMAN.md) |
-| **Optional test** | [`docs/VM-TEST.md`](docs/VM-TEST.md): the rebuild on two virtual machines. Nothing depends on it |
-| **Status** | 🧪 All 11 stages are built and pass CI. The first real capture ran on 8 October 2026: its OWUI seed is in `manifests/owui-seed/seed/` and its secrets bundle is kept in Bitwarden. Nothing here has been run on a new machine yet, and no rehearsal is planned: each guide says what should happen at every step, how to tell it worked, and what to check when it doesn't. |
+| **Status** | 🧪 All 11 stages and the menu are built and pass CI. The first real capture ran on 8 October 2026: its OWUI seed is in `manifests/owui-seed/seed/` and its secrets bundle is kept in Bitwarden. Nothing here has been run on a new machine yet, and no rehearsal is planned: each guide says what should happen at every step, how to tell it worked, and what to check when it doesn't. |
 | **Secrets** | **None in this repo, ever.** They travel in one bundle kept in Bitwarden. CI scans every file. |
 | **Checks** | Claude builds and reviews its own work before every push; CI runs every test on Windows and Linux; Liam signs off anything that runs against the live machines. (External review rounds ended on 6 October 2026.) |
 
@@ -19,24 +51,25 @@
 
 ## 🗺️ How a rebuild flows
 
-```mermaid
-flowchart TD
-  S0[0 Basics via winget] --> S1[1 Release, manifests, secrets bundle]
-  S1 --> S2[2 VPS base + tailnet]
-  S1 --> S3[3 Windows runtime]
-  S2 --> S4[4 Render endpoints + place secrets]
-  S3 --> S4
-  S4 --> S5[5 VPS guard, egress, Kokoro, STT]
-  S4 --> S6[6 Models and weights]
-  S5 --> S7[7 Images, volumes, OWUI seed]
-  S6 --> S7
-  S7 --> S8[8 Services, Serve, tasks]
-  S8 --> S9[9 Functional tests]
-  S9 --> S10[10 Reboot, outside tests, first backup]
-  S10 --> S11[11 Log and clean up]
-```
+The menu's steps, in order. Steps 4 to 14 each run one stage of [`docs/RESTORE.md`](docs/RESTORE.md), and each stage ends with a 🛑 checkpoint that must pass before the next one starts.
 
-Every stage ends with a 🛑 checkpoint that must pass before the next one starts. The full detail is in [`docs/RESTORE.md`](docs/RESTORE.md).
+| Step | Stage | What happens | Needs |
+|---|---|---|---|
+| 1a | – | GitHub Desktop, sign in, and this repo | – |
+| 1b | – | Motherboard drivers (AMD's chipset driver first, then ASUS's), Windows Update, the `E:` and `D:` drives, BitLocker, Windows settings | – |
+| 2 | – | Apps through winget, the GPU driver, Windows Search off, Tailscale named `pc`, sign-ins | – |
+| 3 | – | The secrets bundle saved from Bitwarden and its SHA-256 checked (not unzipped: Stage 1 does that) | – |
+| 4 | 1 | The repo recorded, the protected folder, the bundle unpacked, SSH keys back | 1a to 3 |
+| 5 | 2 | The VPS, kept or rebuilt: trusted, locked down, on the tailnet | Stage 1 |
+| 6 | 3 | Windows runtime: GPU, WSL, Docker, Python, Ollama | Stage 1 |
+| 7 | 4 | Settings files rendered with the new addresses, keys placed | Stages 2 and 3 |
+| 8 | 5 | The VPS side: guard, VPN, search, Kokoro, dictation relay | Stage 4 |
+| 9 | 6 | ComfyUI, every model and weight | Stages 1 and 3 |
+| 10 | 7 | Docker images, volumes, Open WebUI's settings | Stages 5 and 6 |
+| 11 | 8 | The whole stack starts: Serve and scheduled tasks | Stage 7 |
+| 12 | 9 | Proof every feature works | Stage 8 |
+| 13 | 10 | Restarts, outside tests, the VPS kill switch, the first backup | Stage 9 |
+| 14 | 11 | Plain copies of the keys deleted, the rebuild recorded | Stage 10 |
 
 ---
 
@@ -61,7 +94,8 @@ Built in this order: the **capture side first**, because a restore script can be
 | 7 | `windows/stages/01-release.ps1`, `03-runtime.ps1`, `04-render.ps1`, `06-fetch.ps1`, `tools/Remove-RecoveryPlaintext.ps1` | The Windows stages: release and bundle, runtime (WSL, winget apps and pins, the Ollama profile, Docker), rendering the stack for the new tailnet and placing the secrets, ComfyUI with its venv and nodes, models and weights; and the Stage 11 plaintext clean-up | ✅ |
 | 8 | `windows/stages/02-vps.ps1`, `05-vps.ps1`, `linux/stages/02-*.sh`, `05-*.sh`, `linux/files/`, `tools/RecoveryVps.psm1` | The VPS stages: the console bootstrap, the host key check and `known_hosts` swap, the base system as on the live VPS; then the files placed through a ledger, the guard proved before any image, images pulled by digest or built (searxng-mcp from a new Dockerfile, R-13), both compose projects and the relay site | ✅ |
 | 9 | `windows/stages/07-*` to `11-*`, `linux/stages/09-*`, `10-*`, `windows/reminder/`, `manifests/acceptance.json` | Images, volumes and the OWUI seed; services, Serve and tasks; the functional tests; the rehearsal (restarts, probes from outside the tailnet, the guard and kill-switch tests on the VPS, the monthly reminder, the first backup, the second run); the plaintext clean-up and the rebuild record | ✅ |
-| 10 | `docs/FULL-REBUILD-HUMAN.md`, `docs/VPS-REBUILD-AI.md`, `docs/VPS-REBUILD-HUMAN.md`, `docs/VM-TEST.md` | The paired guides: Liam's walkthrough of the full rebuild; the VPS-only rebuild as a runbook for the assistant and a walkthrough for Liam, with the same steps; the optional VM test. The assistant ticks a copy of Liam's walkthrough as each step passes | ✅ |
+| 10 | `docs/FULL-REBUILD-HUMAN.md`, `docs/VPS-REBUILD-AI.md`, `docs/VPS-REBUILD-HUMAN.md` | The paired guides: Liam's walkthrough of the full rebuild, numbered like the menu; the VPS-only rebuild as a runbook for the assistant and a walkthrough for Liam, with the same steps. The assistant ticks a copy of the VPS walkthrough as each step passes | ✅ |
+| 11 | `Install-PowerShell7.cmd`, `Start-Recovery.cmd`, `Start-Recovery.ps1`, `tools/RecoveryMenu.psm1`, `docs/MENU-HELP-FOR-AI.md` | The recovery menu Liam drives: two double-click launchers, then steps 1a to 3 (GitHub Desktop, Windows Update and drives, winget apps and Tailscale, the bundle) and steps 4 to 14 (the controller's Stages 1 to 11, answering their questions). It checks before and after every task, asks before every change, ticks each step, survives restarts (`menu.json`, a RunOnce entry), goes back or starts over, and copies a note for an assistant; `-Status` shows where Liam is without changing anything | ✅ |
 
 Status key: ✅ built, tests green on Windows and Linux · 🚧 in progress · ⏳ not started.
 

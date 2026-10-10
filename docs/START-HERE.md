@@ -1,8 +1,8 @@
 # 🆘 Start here: rebuilding after a disaster
 
 **For:** the AI assistant (Claude, ChatGPT or Antigravity) helping Liam get his AI stack back.
-**Read next:** [`AGENTS.md`](../AGENTS.md), then [`RESTORE.md`](RESTORE.md), the full guide this page points into. If only the VPS is lost, go straight to [`VPS-REBUILD-AI.md`](VPS-REBUILD-AI.md).
-**Last checked:** 8 October 2026.
+**Read next:** [`AGENTS.md`](../AGENTS.md), then [`RESTORE.md`](RESTORE.md), the full guide this page points into. If Liam is already in the recovery menu (`Start-Recovery.cmd`), read [`MENU-HELP-FOR-AI.md`](MENU-HELP-FOR-AI.md) instead. If only the VPS is lost, go straight to [`VPS-REBUILD-AI.md`](VPS-REBUILD-AI.md).
+**Last checked:** 10 October 2026.
 
 This page gets you oriented in ten minutes: what survived, where it is, how to get SSH and the tailnet working again, and which path to take for the rest.
 
@@ -15,7 +15,7 @@ This page gets you oriented in ten minutes: what survived, where it is, how to g
 3. **Secret files stay in `E:\recovery-secrets\`** (only Liam's account can open it) until each one is put in its place.
 4. **Nothing from the bundle goes into this repo.** CI scans every file.
 5. **Talk to Liam in short, numbered steps,** one question at a time, and say what each step is for.
-6. **Keep Liam's walkthrough ticked.** He follows the rebuild in a guide with the same step numbers as yours: [`FULL-REBUILD-HUMAN.md`](FULL-REBUILD-HUMAN.md) for a lost PC, [`VPS-REBUILD-HUMAN.md`](VPS-REBUILD-HUMAN.md) for a lost VPS. Keep a copy as `PROGRESS.md` and tick each step as it passes (5A shows how; the VPS runbook does it in V0). Tell him in one line which step passed and what comes next.
+6. **Keep Liam's place clear.** For a lost PC he drives the recovery menu, which ticks each step itself, and follows [`FULL-REBUILD-HUMAN.md`](FULL-REBUILD-HUMAN.md) with the same numbers (5A). For a lost VPS he follows [`VPS-REBUILD-HUMAN.md`](VPS-REBUILD-HUMAN.md): keep a copy as `PROGRESS.md` and tick each step as it passes (the VPS runbook does it in V0). Tell him in one line which step passed and what comes next.
 
 ---
 
@@ -59,7 +59,7 @@ If both are in Bitwarden, use the full bundle, and keep the safety copy as a spa
 
 | Lost | Do |
 |---|---|
-| Only the PC | 4.1 and 4.2. The VPS still trusts the PC's SSH key, so `ssh vps` works once the key is back. On Path A the controller then rebuilds the VPS too (5A). Liam follows [`FULL-REBUILD-HUMAN.md`](FULL-REBUILD-HUMAN.md) |
+| Only the PC | 4.1 and 4.2. The VPS still trusts the PC's SSH key, so `ssh vps` works once the key is back. On Path A the menu asks at Stage 2 whether to keep the VPS or rebuild it (5A). Liam follows [`FULL-REBUILD-HUMAN.md`](FULL-REBUILD-HUMAN.md) |
 | Only the VPS | [`VPS-REBUILD-AI.md`](VPS-REBUILD-AI.md), from the surviving PC. It keeps the Mullvad multihop, both kill switches and the boot order, and guides Liam through the keys. Liam follows [`VPS-REBUILD-HUMAN.md`](VPS-REBUILD-HUMAN.md) |
 | Both | 4.1, 4.2, then 4.3. Liam follows [`FULL-REBUILD-HUMAN.md`](FULL-REBUILD-HUMAN.md) |
 
@@ -71,11 +71,13 @@ The SSH config in the bundle (`.ssh\config`) reaches the VPS by its **tailnet na
 
 ### 4.1 The new PC on the tailnet 👤
 
-1. Windows 11, signed in as the account that will own the stack, PowerShell 7, winget, and BitLocker on `E:`. This is `RESTORE.md`, Prerequisites and Step 0; Step 0 also installs a browser, Tailscale, Git, Bitwarden and the assistants.
+1. Windows 11, signed in as the account that will own the stack, PowerShell 7, winget, and BitLocker on `E:`. This is `RESTORE.md`, Prerequisites and Steps 1a to 3: on Path A the recovery menu walks Liam through them (the README's **Start here**) and also installs a browser, Tailscale, Git, Bitwarden and the assistants.
 2. In the Tailscale admin console, **remove the dead PC's node first**. Then sign in to Tailscale on the new PC.
 3. Check that the new node has **exactly the old name**, with no `-1` on the end. If it has one, rename it in the console. The VPS's relay and firewall, the SSH config and Tailscale Serve all use that name.
 
 ### 4.2 The keys onto the PC 🤖
+
+**Path A:** the menu's step 3 does steps 1 to 3 below with Liam, and Stage 1 does the rest: go to 5A.
 
 1. Make the staging folder, owner-only from the start:
    ```powershell
@@ -127,29 +129,21 @@ This is `RESTORE.md` Stage 2 (2a to 2c). On Path A the controller does it and te
 
 ## 5. 🏗️ Rebuild the rest
 
-### 5A. With the full bundle: the automatic rebuild 🤖
+### 5A. With the full bundle: the recovery menu 👤
+
+Liam drives this himself. He does the README's **Start here** (the `E:` drive, GitHub Desktop, the repo cloned to `E:\recovery`), double-clicks `Install-PowerShell7.cmd`, then `Start-Recovery.cmd`. The menu's steps 1a to 3 get the PC ready and check the bundle; steps 4 to 14 run the controller's Stages 1 to 11 (`Invoke-StackRecovery.ps1 -Execute`), answer their `ASK` lines with him, offer restarts and explain failures. It ticks each step itself, so there is no progress file to keep.
+
+Your part is help when he asks: read [`MENU-HELP-FOR-AI.md`](MENU-HELP-FOR-AI.md). To see where he is, changing nothing:
 
 ```powershell
-git clone https://github.com/myceliam/ollama-cria.git E:\recovery
-pwsh -File E:\recovery\Invoke-StackRecovery.ps1 -Execute -BundleSha256 '<the SHA-256 from Bitwarden>'
+pwsh -NoProfile -File E:\recovery\Start-Recovery.ps1 -Status
 ```
 
-The controller runs one stage per `-Execute`, from Stage 1 to Stage 11. It stops with an `ASK` line whenever Liam must do something, and tells you the exact command to answer it. Run it again until it reports Stage 11 done. Everything it does and checks is in `RESTORE.md`. It rebuilds the VPS too, even if it survived (Stage 2), because it only replaces files it placed itself.
-
-Liam follows along in [`FULL-REBUILD-HUMAN.md`](FULL-REBUILD-HUMAN.md): the same stage numbers, what you're doing in plain words, and what he must do. Keep his copy ticked: set it up once, tick `P` and `0` when he confirms them, then tick each stage when its checkpoint passes.
+At Stage 2 the menu asks whether to keep the VPS (it must offer the host key filed in the bundle's `known_hosts`) or rebuild it (Liam types `REBUILD`). Everything the stages do and check is in `RESTORE.md`. If the menu itself can't be used, the controller still runs on its own, one stage per run, answering each `ASK` with `-Accept <id>` (`RESTORE.md`, **The controller**):
 
 ```powershell
-$progress = 'E:\recovery-state\PROGRESS.md'
-if (-not (& 'E:\recovery\tools\Test-RecoveryPath.ps1' -Path $progress -Root 'E:\recovery-state')) { throw "STOP: $progress fails the path check" }
-if (-not (Test-Path $progress)) {
-    New-Item -ItemType Directory -Path (Split-Path $progress) -Force | Out-Null
-    Copy-Item 'E:\recovery\docs\FULL-REBUILD-HUMAN.md' $progress
-}
-function Set-StepDone([string]$Step) {
-    $t = [IO.File]::ReadAllText($progress) -replace "(?m)^\| $Step \| ⬜ \|", "| $Step | ✅ $(Get-Date -Format 'd MMM HH:mm') |"
-    [IO.File]::WriteAllText($progress, $t)
-}
-Set-StepDone P; Set-StepDone 0
+pwsh -File E:\recovery\Invoke-StackRecovery.ps1                                   # the plan; changes nothing
+pwsh -File E:\recovery\Invoke-StackRecovery.ps1 -Execute -BundleSha256 '<the SHA-256 from Bitwarden>'
 ```
 
 ### 5B. With only the key safety copy: by hand 🤖

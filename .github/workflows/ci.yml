@@ -54,7 +54,7 @@ jobs:
           if (-not (Get-Module -ListAvailable PSScriptAnalyzer)) {
             Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
           }
-          $found = foreach ($path in './tools', './windows', './Invoke-StackRecovery.ps1') {
+          $found = foreach ($path in './tools', './windows', './Invoke-StackRecovery.ps1', './Start-Recovery.ps1') {
             Invoke-ScriptAnalyzer -Path $path -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
           }
           $found | Format-Table RuleName, Severity, ScriptName, Line, Message -AutoSize -Wrap | Out-String -Width 220

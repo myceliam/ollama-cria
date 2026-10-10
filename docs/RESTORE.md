@@ -4,15 +4,28 @@
 
 > **Goal:** two brand-new machines end up with the same capabilities you have today: the same models, tools, MCP servers, functions, skills, model presets, settings, routes and automation. Chat history and old uploads are deliberately **not** restored.
 > **Run it top to bottom.** Every stage says what it delivers, where it runs, and the checkpoint that must pass before the next stage starts.
-> **Liam follows along in [`FULL-REBUILD-HUMAN.md`](FULL-REBUILD-HUMAN.md),** which has the same stage numbers and says where he is needed. When only the VPS is lost, use [`VPS-REBUILD-AI.md`](VPS-REBUILD-AI.md) instead (Liam's side: [`VPS-REBUILD-HUMAN.md`](VPS-REBUILD-HUMAN.md)).
+> **Liam drives the rebuild with the recovery menu** (`Start-Recovery.cmd`; the README's **Start here**), which gets the PC ready in its steps 1a to 3 and then runs these stages through the controller: menu step 4 is Stage 1, up to step 14 for Stage 11. His walkthrough, [`FULL-REBUILD-HUMAN.md`](FULL-REBUILD-HUMAN.md), uses the menu's numbers. An assistant helping him reads [`MENU-HELP-FOR-AI.md`](MENU-HELP-FOR-AI.md). When only the VPS is lost, use [`VPS-REBUILD-AI.md`](VPS-REBUILD-AI.md) instead (Liam's side: [`VPS-REBUILD-HUMAN.md`](VPS-REBUILD-HUMAN.md)).
 
 | | |
 |---|---|
-| **Version** | DRAFT v0.7, 8 October 2026 (v0.1 kept as `RESTORE-v0.1.md`) |
+| **Version** | DRAFT v0.8, 10 October 2026 (v0.1 kept as `RESTORE-v0.1.md`) |
 | **Author** | Claude |
 | **Ledger** | AICL-0122 (plan) · AICL-0123 to AICL-0125 (round one) · AICL-0126 (v0.2) · AICL-0127, AICL-0131 (Liam's decisions) · AICL-0129, AICL-0130 (round two) · AICL-0132 (v0.3) · AICL-0147 (v0.4, Module 7) · AICL-0148 (v0.5, Module 8) · AICL-0149 (v0.6, Module 9) · AICL-0155 (v0.7, the paired guides) |
 | **Verification** | Claude reviews its own work adversarially; CI runs every test on Windows and Linux (external review rounds ended on 6 October 2026) · ☐ Liam (sign-off) |
-| **Status** | Built, not yet run. The capture tools, the restorer, the controller and Stages 1 to 11 exist and pass their tests (✅ in Appendix A); none has run on a new machine yet. The first real capture is done (8 October 2026). No rehearsal is planned: the guides wait for a real disaster, and each step says what should happen, how to tell it worked, and what to check when it doesn't. [`VM-TEST.md`](VM-TEST.md) is an optional, separate test on two virtual machines. |
+| **Status** | Built, not yet run. The capture tools, the restorer, the controller and Stages 1 to 11 exist and pass their tests (✅ in Appendix A); none has run on a new machine yet. The first real capture is done (8 October 2026). No rehearsal is planned: the guides wait for a real disaster, and each step says what should happen, how to tell it worked, and what to check when it doesn't. |
+
+### 🔄 What changed in v0.8 (the recovery menu)
+
+| Change | Why |
+|---|---|
+| **Liam drives the rebuild with one interactive menu** (`Start-Recovery.cmd`, `tools/RecoveryMenu.psm1`). It runs the commands, checks before and after each task, asks before every change, ticks each step, carries on after restarts, goes back a step or starts over, and copies a note for an assistant | Liam, 10 October 2026: a manual tool he runs himself, with checks everywhere so no step is skipped; an assistant helps only when he is stuck |
+| Two launchers: `Install-PowerShell7.cmd`, then `Start-Recovery.cmd` | The menu needs PowerShell 7, which a new Windows lacks |
+| Step 0 is replaced by menu steps 1a to 3: GitHub Desktop and the repo, the board's drivers before Windows Update, the chipset from AMD and the rest from ASUS (Liam: Windows' generic ones can be unstable), Windows Update and the drives, the apps through winget (with Libre Hardware Monitor, Ditto, Everything, GitHub Desktop and the Antigravity IDE added), Windows Search off, Tailscale named `pc`, the sign-ins, and the bundle saved and its SHA-256 checked | Liam's list; the checks Stage 1 would otherwise fail on come first |
+| The bundle is **not** unzipped before Stage 1 | Stage 1 checks its SHA-256 and every name inside, then unpacks it into an owner-only folder; Windows' own unzip would leave plain copies where anything can read them |
+| Stage 2 asks first whether to **keep** the VPS (its host key must match the one filed in the bundle's `known_hosts`) or **rebuild** it (typing `REBUILD`) | A VPS that survived need not be wiped; wiping one is never a default |
+| [`MENU-HELP-FOR-AI.md`](MENU-HELP-FOR-AI.md) is the assistant's guide while the menu runs; `Start-Recovery.cmd -Status` shows where Liam is without changing anything | Help without taking over |
+| The flow diagrams are tables | GitHub stopped drawing the Mermaid flowchart, though its syntax is valid |
+| The optional two-VM test (`VM-TEST.md`) is gone | Liam: no modules for external testing |
 
 ### 🔄 What changed in v0.7 (the paired guides)
 
@@ -21,7 +34,7 @@
 | Every rebuild has two guides with the same step numbers: this one (run by the controller) with [`FULL-REBUILD-HUMAN.md`](FULL-REBUILD-HUMAN.md), and [`VPS-REBUILD-AI.md`](VPS-REBUILD-AI.md) with [`VPS-REBUILD-HUMAN.md`](VPS-REBUILD-HUMAN.md). The assistant ticks a copy of Liam's guide as each step passes | Liam, 8 October 2026: he follows along and sees where he is needed |
 | A lost VPS alone is rebuilt with `VPS-REBUILD-AI.md`, guided by an assistant from the surviving PC, with the same Mullvad multihop, both kill switches and the boot order. Liam types new keys into the VPS himself; the assistant only checks their shape | Liam chose a guided process over a one-command mode; the keys need his hands anyway |
 | The interruption test in Stage 10 is optional | It tests the controller, whose own tests already prove the wipe and rerun (`tests/Invoke-StackRecovery.Tests.ps1`) |
-| No rehearsal is planned; [`VM-TEST.md`](VM-TEST.md) is a separate, optional test, and nothing here depends on it | Liam has no spare PC or VPS |
+| No rehearsal is planned; an optional test on two virtual machines was kept separate (removed in v0.8) | Liam has no spare PC or VPS |
 | `tests/VpsRebuild-Runbook.Tests.ps1` parses every block of the guides, keeps the paired steps in line, and runs the VPS runbook's V0 to V10 against a fake PC and VPS | A runbook is code too |
 
 ### 🔄 What changed in v0.6 (the PC stages are built)
@@ -144,6 +157,8 @@
 
 ## ✅ Prerequisites (the only manual set-up)
 
+The menu's steps 1a to 3 check every one of these and walk Liam through what is missing.
+
 | # | You need | How to check |
 |---|---|---|
 | P1 | Windows 11, fully updated, signed in as the user who will own the stack | Settings → Windows Update shows "You're up to date" |
@@ -159,79 +174,50 @@
 
 ---
 
-## Step 0 · Install the basics with winget 👤
+## Steps 1a to 3 · The menu gets the PC ready 👤
 
-> **Delivers:** a browser, Tailscale, Git, Bitwarden and the three assistants, so everything after this can be automated
-> **Where:** 🖥️ PowerShell 7, Admin
-> **Module:** 🛠️ `bootstrap\Install-Baseline.ps1` (the commands below are its whole content)
+> **Delivers:** a PC every stage can run on: the repo, Windows up to date, `E:` with BitLocker, the apps, Tailscale under the old name, the sign-ins, and the bundle in its owner-only folder with its SHA-256 checked
+> **Where:** 🖥️ the recovery menu, as Liam (not Admin)
+> **Module:** ✅ `Install-PowerShell7.cmd`, `Start-Recovery.cmd`, `Start-Recovery.ps1`, `tools\RecoveryMenu.psm1`
 
-Every ID below was checked with `winget search` and `winget show` on 5 October 2026.
+These replace Step 0. Liam does the README's **Start here** (the `E:` drive, GitHub Desktop, the repo cloned to `E:\recovery`), double-clicks `Install-PowerShell7.cmd`, then `Start-Recovery.cmd`. The menu then checks, fixes (asking first) or walks him through each task:
 
-```powershell
-$apps = @(
-  @{ Id = 'Mozilla.Firefox';      Source = 'winget'  }   # or Google.Chrome
-  @{ Id = 'Tailscale.Tailscale';  Source = 'winget'  }
-  @{ Id = 'Git.Git';              Source = 'winget'  }
-  @{ Id = 'Bitwarden.Bitwarden';  Source = 'winget'  }
-  @{ Id = 'Anthropic.Claude';     Source = 'winget'  }
-  @{ Id = '9PLM9XGG6VKS';         Source = 'msstore' }   # ChatGPT, publisher OpenAI
-  @{ Id = 'Google.Antigravity';   Source = 'winget'  }
-)
-foreach ($a in $apps) {
-  winget list --id $a.Id --exact --source $a.Source --accept-source-agreements *> $null
-  if ($LASTEXITCODE -eq 0) { "already installed: $($a.Id)"; continue }      # safe to run twice
-  winget install --id $a.Id --exact --source $a.Source --accept-package-agreements --accept-source-agreements
-  if ($LASTEXITCODE -ne 0) { throw "winget failed for $($a.Id) (exit $LASTEXITCODE)" }
-}
-# Pick up the new commands (git, tailscale) in this window without reopening it
-$env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')
-```
+| Step | Tasks (required ones in **bold**) |
+|---|---|
+| 1a | GitHub Desktop installed and signed in; **a clone of `myceliam/ollama-cria`**, **on `main`**, in `E:\recovery`, **no local changes**; how to update it |
+| 1b | **Windows 11**; before Windows Update, the AMD chipset driver from AMD (newer than the board maker's copy), then LAN, Wi-Fi, Bluetooth and audio from the board maker (ASUS), each page opened in Edge; optionally, drivers kept out of Windows Update (`ExcludeWUDriversInQualityUpdate`); **Windows Update has nothing left**; **no restart pending**; **PowerShell 7.4+**; **winget**; new drives tested (CrystalDiskInfo, CrystalDiskMark) before choosing striped or separate; **each drive the stack uses** (`E:` required; `D:` for the Hugging Face cache); **BitLocker on `E:`**; auto-unlock; 400 GB free; **nothing from before in the stack's folders** (renamed aside, never deleted); virtualisation; file extensions shown; no sleep on mains power |
+| 2 | Apps through winget, asked once: **Git**, **Tailscale**, **Bitwarden**, Firefox, GitHub Desktop, Libre Hardware Monitor, Ditto, Everything, Claude, ChatGPT (`msstore` `9PLM9XGG6VKS`), Antigravity, Antigravity IDE, at the versions in `manifests\windows-apps.json` where it pins one; the NVIDIA driver (by hand); Windows Search indexing off; **Tailscale connected** and **named `pc`** (remove the old node first, C-22); the old address and no key expiry; the VPS online; **signed in to Bitwarden**, then the other apps |
+| 3 | **No old `E:\recovery-secrets` from another account**; **the folder, owner-only from birth**; **BitLocker**; **one `stack-secrets-*.zip` directly in it** (never unzipped); **its SHA-256 equal to Bitwarden's**; **the full bundle** (the restore map at the top, folder `03` inside); no stray copy in Downloads |
 
-If an installer asks for a reboot, reboot and run the script again; finished packages are skipped (C-53).
+Docker Desktop, Ollama and Python are not installed here: Stage 3 installs them at their recorded versions, after WSL. Don't run `tailscale serve` yet; Stage 8 does that.
 
-Then, by hand:
-
-1. In the Tailscale admin console, **remove the old, dead PC node first**, so the new PC can take the same name without a `-1` suffix (C-22). Then sign in to Tailscale. **Don't** run `tailscale serve` yet; Stage 8 does that.
-2. Sign in to Bitwarden, GitHub (in the browser), Claude, ChatGPT and Antigravity.
-3. Give Claude or Antigravity access to `E:\` so it can drive the rest.
-
-🛑 **Checkpoint 0**
-
-| Who | Check | Expected |
-|---|---|---|
-| 👤 | `tailscale status` | This PC is listed and online |
-| 👤 | `git --version` | A version prints |
-| 👤 | Each assistant opens and is signed in | Yes |
-
-> 🧯 **If a Store install fails** (ChatGPT comes from `msstore`), install it from the Microsoft Store app instead. It is the only package in this list that is not on the winget source.
+🛑 **Checkpoint: steps 1a to 3.** Every required task passes in the menu (✅ on steps 1a, 1b, 2 and 3). An optional task skipped needs a reason, which the log keeps. Step 4 (Stage 1) refuses to start while one of them is open, unless Liam types `SKIP` and a reason.
 
 ---
 
 ## 🗺️ The shape of it
 
-```mermaid
-flowchart TD
-  S0[0 Basics via winget] --> S1[1 Recovery release, manifests, secrets bundle]
-  S1 --> S2[2 VPS base + both hosts on the tailnet]
-  S1 --> S3[3 Windows runtime: GPU, Python, WSL, Docker, Ollama]
-  S2 --> S4[4 Render endpoints + place secrets]
-  S3 --> S4
-  S4 --> S5[5 VPS guard, egress, Kokoro, STT relay]
-  S4 --> S6[6 Fetch models and weights]
-  S5 --> S7[7 Images, volumes, service state, OWUI seed]
-  S6 --> S7
-  S7 --> S8[8 Start services, Serve, automation]
-  S8 --> S9[9 Functional tests]
-  S9 --> S10[10 Reboot + rerun rehearsal, new backup]
-  S10 --> S11[11 Log and clean up]
-```
+| Menu step | Stage | Delivers | Needs |
+|---|---|---|---|
+| 1a to 3 | – | The PC ready, the bundle in place | – |
+| 4 | 1 | Recovery release, manifests, secrets bundle | Steps 1a to 3 |
+| 5 | 2 | VPS base, both hosts on the tailnet | Stage 1 |
+| 6 | 3 | Windows runtime: GPU, Python, WSL, Docker, Ollama | Stage 1 |
+| 7 | 4 | Endpoints rendered, secrets placed | Stages 2 and 3 |
+| 8 | 5 | VPS guard, egress, Kokoro, STT relay | Stage 4 |
+| 9 | 6 | Models and weights | Stages 1 and 3 |
+| 10 | 7 | Images, volumes, service state, OWUI seed | Stages 5 and 6 |
+| 11 | 8 | Services, Serve, automation | Stage 7 |
+| 12 | 9 | Functional tests | Stage 8 |
+| 13 | 10 | Reboot and rerun rehearsal, new backup | Stage 9 |
+| 14 | 11 | Log and clean up | Stage 10 |
 
 **Order rules**
 
 - Nothing that writes data starts before Stage 7 has created its volumes and state. That stops an empty OWUI or ntfy from initialising itself in the wrong shape (C-13).
 - Every local image is built before any container is created (C-36).
 - The VPS is built before anything on the PC needs it (C-02).
-- Stages 3 and 6 are long and independent of the VPS, so the controller can run them while Liam handles VPS console steps.
+- Stages 3 and 6 are long and independent of the VPS. The controller can run them while Liam handles VPS console steps; the menu keeps to its order.
 
 ---
 
@@ -317,6 +303,8 @@ Run the same `-Execute` command again after each checkpoint, after a restart, or
 > **Delivers:** a hardened Ubuntu 24.04 VPS with user `liam`, SSH key login, Docker and Tailscale; the new server's host key checked and trusted
 > **Where:** ☁️ provider console first, then 🖥️ → ☁️ over SSH
 > **Modules:** ✅ `windows\stages\02-vps.ps1`, `linux\stages\02-bootstrap.sh`, `linux\stages\02-base.sh`, `tools\RecoveryVps.psm1`
+
+**Keep or rebuild.** The menu asks first. **Keep** (a VPS that survived): it reads the VPS's tailnet name and port from the restored SSH config, runs `ssh-keyscan`, and goes on only if a key the VPS offers matches one filed for it in the bundle's `known_hosts`; it then answers 2b with that fingerprint, and 2a's console steps are skipped. Stage 5 then leaves each file that is already the same, and refuses one that differs and that it did not write. **Rebuild** wipes the server, so the menu asks Liam to type `REBUILD` first.
 
 **2a · In the provider console 👤**
 
@@ -912,7 +900,7 @@ Running it again is safe. Afterwards, Stages 1 to 7 need the bundle again (they 
 
 | Module | Status | Stage |
 |---|---|---|
-| `bootstrap\Install-Baseline.ps1` | 🛠️ | 0 |
+| `Install-PowerShell7.cmd`, `Start-Recovery.cmd`, `Start-Recovery.ps1`, `tools\RecoveryMenu.psm1` | ✅ The recovery menu (replaces the planned `bootstrap\Install-Baseline.ps1`) | 1a to 3, and drives 1 to 11 |
 | `Invoke-StackRecovery.ps1`, `tools\RecoveryState.psm1`, `tools\RecoveryHost.psm1` | ✅ Module 7 | all |
 | `windows\stages\01-release.ps1` | ✅ Module 7 | 1 |
 | `windows\stages\02-vps.ps1`, `linux\stages\02-bootstrap.sh`, `linux\stages\02-base.sh`, `tools\RecoveryVps.psm1` | ✅ Module 8 (replaces ♻️ `linux\step1.sh`) | 2 |
@@ -989,8 +977,8 @@ An item moves to **Resolved** only when ChatGPT, Antigravity and Liam all agree.
 
 ```
 ollama-cria/
+├── Install-PowerShell7.cmd, Start-Recovery.cmd, Start-Recovery.ps1   the menu
 ├── Invoke-StackRecovery.ps1
-├── bootstrap/Install-Baseline.ps1
 ├── windows/
 │   ├── stages/        01-release … 11-cleanup
 │   ├── reminder/      Send-BackupReminder.ps1, its task XML
