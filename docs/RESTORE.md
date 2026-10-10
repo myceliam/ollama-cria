@@ -338,6 +338,8 @@ pwsh -File .\Invoke-StackRecovery.ps1 -Execute -Accept vps-bootstrap -HostKeyFin
 | Packages | Docker Engine and the Compose plugin from Docker's apt repository (deb822, the key checked against Docker's fingerprint), pinned to the live versions; `nftables`, `iproute2`, `nginx`, `jq`, `ufw` and `unattended-upgrades` from Ubuntu's. Never `curl \| sh` (C-15). No `sqlite3`: the live VPS has none |
 | Updates | Unattended upgrades on |
 | Boot order | `net.ipv4.ip_nonlocal_bind = 1`, so nginx, Docker and sshd can bind the tailnet address before `tailscale0` has it |
+| Routing rules | `systemd-networkd` keeps routing rules it did not create (`ManageForeignRoutingPolicyRules=no` in `/etc/systemd/networkd.conf.d/10-ollama-cria.conf`). By default it deletes them whenever it restarts: an automatic update on 4 October 2026 did, and wiped the guard's rules, its IPv6 block included |
+| IPv6 | None on the public interface (`/etc/netplan/60-ollama-cria.yaml`: `dhcp6` off, no router advertisements, no link-local addresses), switched off at once with `sysctl` too. Tailscale keeps its IPv6 on `tailscale0` |
 | Firewall | `ufw`: deny incoming and routed, allow outgoing; allow everything on `tailscale0`, and `41641/udp` for Tailscale's direct connections |
 | SSH | Keys only, no root, listening on the tailnet address only. Done last, after checking that the VPS's own tailnet address is the one the PC sees, and kept only if `sshd -t` passes |
 
@@ -347,7 +349,7 @@ pwsh -File .\Invoke-StackRecovery.ps1 -Execute -Accept vps-bootstrap -HostKeyFin
 |---|---|---|
 | 🤖 | Node `vps` in the tailnet; the alias points at it | Yes |
 | 🤖 | `known_hosts` | Only the key with the fingerprint from the console |
-| 🤖 | `02-base.sh check` over `ssh vps`, as root with no password | Docker and Compose answer; every package installed; `ip_nonlocal_bind` is 1 |
+| 🤖 | `02-base.sh check` over `ssh vps`, as root with no password | Docker and Compose answer; every package installed; `ip_nonlocal_bind` is 1; networkd keeps the guard's routing rules |
 | 🤖 | ufw | Active, with the defaults above; `tailscale0` and `41641/udp` let in, nothing else. (Listening sockets alone prove nothing; Stage 10 tests reachability from outside, C-52.) |
 | 🤖 | sshd | Tailnet address only, no passwords, no root |
 | 🤖 | `tailscale ping vps` from the PC | A reply |
@@ -476,7 +478,7 @@ Every VPS file Stage 4 rendered (`E:\recovery-state\rendered\`) goes to its fold
 **5b · The guard first** (C-20, C-43)
 
 1. Enable the guard's unit and start it. A guard that is already running restarts only when one of its files has just changed, because Docker `Requires=` it and systemd restarts Docker, with every container, whenever the guard restarts.
-2. Prove its rules are loaded: the `inet owui_web` nftables table and routing rule `5260` exist. `active` alone is not enough.
+2. Prove its rules are loaded: the `inet owui_web` nftables table, routing rule `5260` and the IPv6 block, rule `5265 prohibit`, exist. `active` alone is not enough.
 3. Prove Docker needs it: `systemctl show docker` lists the guard in `Requires=` and `After=` (the drop-in, C-43).
 
 No image is pulled and no container is created until all three pass.
@@ -507,7 +509,7 @@ Only `groq-relay` is switched on in `sites-enabled` (listening on `{{VPS_TS_IP}}
 | Who | Check | Expected |
 |---|---|---|
 | 🤖 | Guard unit | Enabled and active |
-| 🤖 | nftables table `inet owui_web` and routing rule 5260 | Present |
+| 🤖 | nftables table `inet owui_web`, routing rule 5260 and IPv6 block 5265 | Present |
 | 🤖 | `systemctl show docker -p Requires -p After` | Both list the guard |
 | 🤖 | Egress project and Kokoro | Every service running; gluetun `healthy` |
 | 🤖 | Exit address from **inside** the gateway's namespace vs the VPS's own | Different (C-21). Only "same" or "differs" is recorded, never the addresses |
