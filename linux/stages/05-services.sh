@@ -55,7 +55,12 @@ case "$mode" in run | check) ;; *) fail 'usage: 05-services.sh run|check <accoun
 case "$changed" in '' | guard-changed) ;; *) fail "unknown option: $changed" ;; esac
 [ "$(id -u)" = 0 ] || fail 'run as root (sudo -n)'
 
-guard_loaded() { nft list table inet owui_web >/dev/null 2>&1 && [ "$(ip -4 rule show | grep -c '^5260:' || true)" -ge 1 ]; }
+# Loaded: the nftables table, rule 5260 and the IPv6 block, rule 5265.
+guard_loaded() {
+  nft list table inet owui_web >/dev/null 2>&1 &&
+    [ "$(ip -4 rule show | grep -c '^5260:' || true)" -ge 1 ] &&
+    [ "$(ip -6 rule show | grep -c '^5265:.*prohibit' || true)" -ge 1 ]
+}
 docker_needs_guard() {
   local s
   s=$(systemctl show docker -p Requires -p After 2>/dev/null || true)
@@ -85,7 +90,7 @@ if [ "$mode" = check ]; then
   if systemctl is-enabled --quiet "$guard" 2>/dev/null; then fact guard-enabled yes; else fact guard-enabled no; fi
   if systemctl is-active --quiet "$guard" 2>/dev/null; then fact guard-active yes; else fact guard-active no; fi
   if nft list table inet owui_web >/dev/null 2>&1; then fact nft-table yes; else fact nft-table no; fi
-  fact ip-rule "$(ip -4 rule show 2>/dev/null | has '^5260:')"
+  if [ "$(ip -4 rule show 2>/dev/null | has '^5260:')" = yes ] && [ "$(ip -6 rule show 2>/dev/null | has '^5265:.*prohibit')" = yes ]; then fact ip-rule yes; else fact ip-rule no; fi
   if docker_needs_guard; then fact docker-needs-guard yes; else fact docker-needs-guard no; fi
   fact egress-running "$(compose_state "$egress")"
   fact gluetun-health "$(docker inspect --format '{{.State.Health.Status}}' vps-web-gluetun 2>/dev/null || echo missing)"
@@ -131,7 +136,7 @@ elif ! guard_loaded; then
   systemctl restart "$guard" >>"$log" 2>&1 || fail "$didnt"
   step "$guard restarted: it was running without its rules; Docker restarted with it"
 fi
-guard_loaded || fail "the guard says it started, but its nftables table or routing rule 5260 is missing; no container was started"
+guard_loaded || fail "the guard says it started, but its nftables table, routing rule 5260 or IPv6 block 5265 is missing; no container was started"
 step 'guard: nftables table and routing rules loaded'
 docker_needs_guard || fail "Docker does not need $guard yet (the drop-in is not active); no container was started"
 step 'Docker needs the guard (Requires= and After=)'

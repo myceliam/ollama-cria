@@ -60,7 +60,13 @@ case "$tool" in
     [ -f "$f/guard-loaded" ]
     ;;
   ip)
-    [ -f "$f/guard-loaded" ] && printf '5260:\tfrom all lookup 52\n5264:\tfrom all lookup main\n'
+    # guard-v6-missing: the IPv4 rules are there but the IPv6 block is not.
+    [ -f "$f/guard-loaded" ] || exit 0
+    if [ "${1:-}" = -6 ]; then
+      [ -f "$f/guard-v6-missing" ] || printf '5264:\tfrom all lookup main\n5265:\tfrom all prohibit\n'
+    else
+      printf '5260:\tfrom all lookup 52\n5264:\tfrom all lookup main\n'
+    fi
     exit 0
     ;;
   nginx)

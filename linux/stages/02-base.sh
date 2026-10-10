@@ -19,6 +19,11 @@
 #   - Unattended upgrades on.
 #   - net.ipv4.ip_nonlocal_bind = 1, so nginx, Docker and sshd can bind the
 #     tailnet address at boot before tailscale0 has it.
+#   - systemd-networkd keeps routing rules it did not create
+#     (ManageForeignRoutingPolicyRules=no). By default it deletes them
+#     whenever it restarts, and on 4 October 2026 an automatic update
+#     restarted it and wiped the guard's rules, its IPv6 block (5265)
+#     included. Added 10 October 2026; not on the live VPS until Liam says.
 #   - ufw: deny incoming and routed, allow outgoing; allow everything on
 #     tailscale0, and 41641/udp for Tailscale's direct connections. The
 #     live Cloudflare rules belong to the separate website, not the stack.
@@ -94,6 +99,11 @@ Suites: noble
 Components: stable
 Signed-By: /etc/apt/keyrings/docker.asc'
 
+networkd_dropin=/etc/systemd/networkd.conf.d/10-ollama-cria.conf
+networkd_conf="# ollama-cria Stage 2: keep the guard's routing rules when networkd restarts.
+[Network]
+ManageForeignRoutingPolicyRules=no"
+
 sshd_conf="# ollama-cria Stage 2, as on the live VPS: keys only, no root, tailnet only.
 PubkeyAuthentication yes
 PasswordAuthentication no
@@ -113,6 +123,7 @@ if [ "$mode" = check ]; then
   fact compose "$(docker compose version --short 2>/dev/null || echo none)"
   for p in "${ubuntu_packages[@]}"; do installed "$p" || fact missing "$p"; done
   fact nonlocal-bind "$(sysctl -n net.ipv4.ip_nonlocal_bind 2>/dev/null || echo unknown)"
+  if grep -qx 'ManageForeignRoutingPolicyRules=no' "$root$networkd_dropin" 2>/dev/null; then fact networkd-keeps-rules yes; else fact networkd-keeps-rules no; fi
   s=$(ufw status verbose 2>/dev/null || true)
   if grep -q '^Status: active' <<<"$s"; then fact ufw active; else fact ufw inactive; fi
   fact ufw-defaults "$(has '^Default: deny (incoming), allow (outgoing), deny (routed)' <<<"$s")"
@@ -196,6 +207,12 @@ fi
 if [ "$(sysctl -n net.ipv4.ip_nonlocal_bind 2>/dev/null || echo 0)" != 1 ]; then
   sysctl -q -p "$root/etc/sysctl.d/99-nginx-tailnet-bind.conf" >/dev/null || fail 'could not apply net.ipv4.ip_nonlocal_bind'
   step 'net.ipv4.ip_nonlocal_bind applied'
+fi
+
+# networkd reads this when it next starts, which is the moment it would
+# otherwise delete the guard's rules, so it needs no restart now.
+if put "$networkd_dropin" "$networkd_conf" 0644; then
+  step "systemd-networkd keeps the guard's routing rules (10-ollama-cria.conf)"
 fi
 
 # Firewall, as on the live VPS. The SSH session that runs this comes in on

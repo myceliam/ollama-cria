@@ -299,7 +299,7 @@ ssh -o BatchMode=yes -o StrictHostKeyChecking=yes vps true; "ssh exit code: $LAS
 
 ## V6 · Base system 🤖
 
-`02-base.sh` sets the server up as the live VPS was read on 7 October 2026: Docker and Compose at pinned versions, nftables, nginx, ufw, unattended upgrades, `ip_nonlocal_bind`, and sshd on the tailnet address only. It installs packages, so run it in its own window:
+`02-base.sh` sets the server up as the live VPS was read on 7 October 2026: Docker and Compose at pinned versions, nftables, nginx, ufw, unattended upgrades, `ip_nonlocal_bind`, and sshd on the tailnet address only. It also tells `systemd-networkd` to keep the guard's routing rules when it restarts, a setting added on 10 October 2026 after the live VPS lost them. It installs packages, so run it in its own window:
 
 ```powershell
 Start-VpsLong v6 02-base.sh run, liam, $vpsIp
@@ -319,6 +319,7 @@ $r = Invoke-Vps 02-base.sh check, liam, $vpsIp
 | `docker`, `compose` | version numbers, not `none` |
 | `missing` | no such line |
 | `nonlocal-bind` | `1` |
+| `networkd-keeps-rules` | `yes` |
 | `ufw`, `ufw-defaults`, `ufw-tailscale0`, `ufw-41641` | `active`, `yes`, `yes`, `yes` |
 | `ufw-other-allow` | `0` |
 | `ssh-listen`, `ssh-password-off`, `ssh-root-off` | `tailnet-only`, `yes`, `yes` |
@@ -534,7 +535,7 @@ fi
 
 ## V10 · The guard first, then images and services 🤖
 
-`05-services.sh` loads the guard and proves it (its nftables table and routing rule exist, and Docker requires it) **before** any image is pulled or container created. Then it pulls every image at the digest in `manifests/images.json`, builds the hardened Jina Reader and searxng-mcp, starts `owui-web-egress` and `kokoro` with nothing else pulled, waits until they're healthy, and switches on only the Groq relay site in nginx.
+`05-services.sh` loads the guard and proves it (its nftables table, routing rule 5260 and IPv6 block 5265 exist, and Docker requires it) **before** any image is pulled or container created. Then it pulls every image at the digest in `manifests/images.json`, builds the hardened Jina Reader and searxng-mcp, starts `owui-web-egress` and `kokoro` with nothing else pulled, waits until they're healthy, and switches on only the Groq relay site in nginx.
 
 ```powershell
 # V10 images
@@ -557,7 +558,7 @@ Add `guard-changed` after `$vpsIp` only when V9 changed the guard's files on a s
 
 ✅ **Passes when** `v10.log` ends with `exit code: 0`.
 🧯 **When it fails:**
-- **`the guard says it started, but its nftables table or routing rule 5260 is missing`:** `ssh vps 'sudo -n journalctl -u owui-web-egress-guard -n 30'` shows why. No container was started, which is correct.
+- **`the guard says it started, but its nftables table, routing rule 5260 or IPv6 block 5265 is missing`:** `ssh vps 'sudo -n journalctl -u owui-web-egress-guard -n 30'` shows why. No container was started, which is correct.
 - **gluetun never turns healthy:** the tunnel can't connect. Check V8's shape and V9's match. Then `ssh vps 'sudo -n docker logs --tail 40 vps-web-gluetun'`: a handshake that never completes means the keys or endpoint are wrong, or the Mullvad device was removed.
 - **A pull fails:** the registry may be down. Run it again later; images already pulled are kept.
 

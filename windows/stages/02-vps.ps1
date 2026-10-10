@@ -190,6 +190,7 @@ function Test-Checkpoint {
     $missing = @($run.Output | Where-Object { $_ -match '^FACT missing ' } | ForEach-Object { ($_ -split ' ')[2] })
     Add-StageCheck $result 'base packages' 'all installed' $(if ($missing) { "missing: $($missing -join ', ')" } else { 'all installed' }) ($missing.Count -eq 0)
     Add-StageCheck $result 'net.ipv4.ip_nonlocal_bind' '1' (& $get 'nonlocal-bind') ((& $get 'nonlocal-bind') -eq '1')
+    Add-StageCheck $result "systemd-networkd keeps the guard's routing rules" 'yes' (& $get 'networkd-keeps-rules') ((& $get 'networkd-keeps-rules') -eq 'yes')
     Add-StageCheck $result 'ufw' 'active' (& $get 'ufw') ((& $get 'ufw') -eq 'active')
     Add-StageCheck $result 'ufw defaults' 'deny incoming and routed, allow outgoing' (& $get 'ufw-defaults') ((& $get 'ufw-defaults') -eq 'yes')
     Add-StageCheck $result 'ufw lets in everything on tailscale0' 'yes' (& $get 'ufw-tailscale0') ((& $get 'ufw-tailscale0') -eq 'yes')
