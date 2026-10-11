@@ -505,27 +505,6 @@ services:
     restart: unless-stopped
 
 
-  gcal-owui-bridge:
-    build: ./gcal-owui-bridge
-    container_name: gcal-owui-bridge
-
-    ports:
-      - "127.0.0.1:18100:18100"
-
-    env_file:
-      - ./gcal-owui-bridge/.env
-
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
-    volumes:
-      - ./gcal-owui-bridge/data:/data
-      # Reuse the existing Desktop OAuth client (same one the old cocal MCP used).
-      - ./secrets:/app/secrets:ro
-
-    restart: unless-stopped
-
-
   # Followed Discord Announcement channels can be relayed into one private
   # Discord channel, then curated by an editable Open WebUI Pipe and published
   # into an Open WebUI Channel through its native webhook API.

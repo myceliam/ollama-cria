@@ -6,7 +6,7 @@
       "kind": "path",
       "host": "pc",
       "path": "E:\\ai\\ollama",
-      "purpose": "Stack .env, Docker secrets in secrets\\, gcal and Gmail bridge OAuth files (bundle folders 01 and 02)"
+      "purpose": "Stack .env, Docker secrets in secrets\\, Gmail bridge OAuth files (bundle folders 01 and 02)"
     },
     "dashboard": {
       "kind": "path",

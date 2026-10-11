@@ -32,8 +32,9 @@
       7e  OWUI is started alone again. The stage writes an empty owner-only
           owui-api-key.txt in the staging folder and asks a person to paste
           a new API key into it. Next visit: the key must open OWUI's
-          calendar API (what the gcal bridge uses); then it goes into every
-          file in manifests/owui-api-consumers.json, and OWUI is stopped.
+          tools API (what Stage 9 uses it for); then it goes into every
+          file in manifests/owui-api-consumers.json (none today), and OWUI
+          is stopped.
           Nothing runs until Stage 8.
 
     Run again once it is done (for example after Stage 8 has started the
@@ -439,15 +440,15 @@ function Invoke-ApiKey {
         Add-StageAsk $result $(if ($script:keyWhy -eq 'is empty') { $ask } else { "$keyPath $($script:keyWhy). $ask" })
         return $false
     }
-    $status = & $machine.HttpStatus "$owuiUrl/api/v1/calendars/" @{ Authorization = "Bearer $key" }
+    $status = & $machine.HttpStatus "$owuiUrl/api/v1/tools/" @{ Authorization = "Bearer $key" }
     if ($status -in 401, 403) {
         Add-StageAsk $result "OWUI refused the key in $keyPath (HTTP $status). Create a new key and replace the file's contents. $ask"
         return $false
     }
-    if ($status -ne 200) { $result.Problems.Add("OWUI's calendar API answered HTTP $status to the new key; the gcal bridge needs it"); return $false }
+    if ($status -ne 200) { $result.Problems.Add("OWUI's tools API answered HTTP $status to the new key; Stage 9 needs it"); return $false }
     $done = Write-ConsumerKey $key
     if ($done.Count -ne $consumers.Count) { return $false }
-    $result.Steps.Add("the new OWUI API key opens OWUI's calendar API and is in $($done.Count) consumer(s): $($done -join ', ')")
+    $result.Steps.Add("the new OWUI API key opens OWUI's tools API and is in $($done.Count) consumer(s)$(if ($done.Count) { ": $($done -join ', ')" })")
     $result.Data['ApiKeyChecked'] = $true
     return $true
 }
@@ -490,7 +491,7 @@ function Test-Checkpoint($Seed) {
     $bad = @($cs.Keys | Where-Object { $cs[$_] -ne 'a key' } | ForEach-Object { "$($_): $($cs[$_])" })
     Add-StageCheck $result 'every OWUI API key consumer holds a key' "$($cs.Count) of $($cs.Count)" "$($cs.Count - $bad.Count) of $($cs.Count)$(if ($bad) { "; $($bad -join ', ')" })" ($bad.Count -eq 0)
     $checked = [bool]$result.Data['ApiKeyChecked']
-    Add-StageCheck $result 'the key opened OWUI''s calendar API when it was placed' 'yes' $(if ($checked) { 'yes' } else { 'no' }) $checked
+    Add-StageCheck $result 'the key opened OWUI''s tools API when it was placed' 'yes' $(if ($checked) { 'yes' } else { 'no' }) $checked
 }
 
 # ---------- main ----------
@@ -507,7 +508,7 @@ if ($Mode -eq 'Plan') {
     if ($seed) {
         $result.Steps.Add("would build the images of $(@($projects | ForEach-Object { $_['name'] }) -join ', ') and pull the rest at their digests, OWUI $($seed.Provenance['owui_version']) at the seed's")
         $result.Steps.Add('would create owui-data and every project''s volumes and containers without starting them, then place bundle folder 07')
-        $result.Steps.Add("would start OWUI alone for you to create the admin account, import the seed ($($seededTables.Count) tables), then ask you for a new API key for $($consumers.Count) consumer(s)")
+        $result.Steps.Add("would start OWUI alone for you to create the admin account, import the seed ($($seededTables.Count) tables), then ask you for a new OWUI API key (Stage 9 uses it; it goes into $($consumers.Count) file(s))")
     }
     $result.Status = 'planned'
     return $result

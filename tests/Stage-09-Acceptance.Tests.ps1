@@ -39,7 +39,7 @@ BeforeAll {
                 New-Row 'gateway-health' 4 @{ type = 'http'; url = 'http://127.0.0.1:13100/health'; fields = @{ status = 'ok'; brave_configured = $true } } @{ owner = 5 }
                 New-Row 'gateway-research' 4 @{ type = 'http'; method = 'POST'; url = 'http://127.0.0.1:13100/research'; body = @{ query = 'q' }; fields = @{ status = @('ok', 'partial') } } @{ owner = 5 }
                 New-Row 'kokoro-speech' 4 @{ type = 'http'; method = 'POST'; url = 'http://{{VPS_TS_IP}}:8880/v1/audio/speech'; body = @{ voice = 'af_heart' } } @{ owner = 5 }
-                New-Row 'gcal-events' 4 @{ type = 'http'; url = 'http://127.0.0.1:18100/events/next?days=1'; uses = 'gcal'; fields = @{ source = 'google_calendar_live' } } @{ owner = 4 }
+                New-Row 'gmail-profile' 4 @{ type = 'http'; url = 'http://127.0.0.1:18101/profile'; uses = 'gmail'; fields = @{ source = 'gmail_live' } } @{ owner = 4 }
                 [ordered]@{ id = 'media'; group = 4; who = 'user'; owner = 6; what = 'media'; steps = 'Make a picture.' }
                 New-Row 'bolt-from-vps' 12 @{ type = 'vps'; url = 'http://{{PC_TS_IP}}:3001/mcp'; anyStatus = $true }
                 New-Row 'terminal-from-vps' 12 @{ type = 'vps'; url = 'http://{{PC_TS_IP}}:18019/health'; status = 200 }
@@ -76,14 +76,14 @@ BeforeAll {
 
         $c = New-TestContext -Stage 9 -Mode $Mode -RepoRoot $repo -Base $base
         Initialize-ProtectedFolder -Path $c.StagingRoot
-        $keys = @{ owui = 'sk-' + ('A' * 40); mcpo = 'm' * 32; terminal = 't' * 32; gcal = 'g' * 32 }
+        $keys = @{ owui = 'sk-' + ('A' * 40); mcpo = 'm' * 32; terminal = 't' * 32; gmail = 'g' * 32 }
         if (-not $NoKey) {
             $k = Open-NewOwnerOnlyFile -Path (Join-Path $c.StagingRoot 'owui-api-key.txt')
             try { $b = [Text.Encoding]::ASCII.GetBytes($keys.owui); $k.Write($b, 0, $b.Length) } finally { $k.Dispose() }
         }
         $live = $c.Topology['roots']['stack']['path']
         Write-Text (Join-Path $live '.env') "# stack`nMCPO_API_KEY=$($keys.mcpo)`nOPEN_TERMINAL_API_KEY=`"$($keys.terminal)`"`n"
-        Write-Text (Join-Path $live 'gcal-owui-bridge/.env') "GCAL_BRIDGE_API_KEY=$($keys.gcal)`n"
+        Write-Text (Join-Path $live 'gmail-owui-bridge/.env') "GMAIL_BRIDGE_API_KEY=$($keys.gmail)`n"
 
         $global:CriaWeb = @{
             Keys       = $keys
@@ -133,9 +133,9 @@ BeforeAll {
                 'http://127.0.0.1:13100/health' { return (& $ok '{"status":"ok","brave_configured":true}') }
                 'http://127.0.0.1:13100/research' { return (& $ok '{"status":"partial"}') }
                 "http://$($w.Vps):8880/v1/audio/speech" { return (& $ok 'ID3') }
-                'http://127.0.0.1:18100/events/next*' {
-                    if ($Headers['X-API-Key'] -ne $w.Keys.gcal) { return $no }
-                    return (& $ok (@{ source = 'google_calendar_live'; events = @(@{ summary = $w.PrivateBit }) } | ConvertTo-Json -Depth 4))
+                'http://127.0.0.1:18101/profile' {
+                    if ($Headers['X-API-Key'] -ne $w.Keys.gmail) { return $no }
+                    return (& $ok (@{ source = 'gmail_live'; emailAddress = $w.PrivateBit } | ConvertTo-Json -Depth 4))
                 }
             }
             return @{ Status = 0; Body = '' }
@@ -174,7 +174,7 @@ Describe 'Stage 9: functional tests' {
         $r.Status | Should -Be 'done'
         $res = $r.Data['Results']
         @($res.Keys) | Should -Be @('ollama-models', 'server:time', 'server:censys', 'server:open-terminal', 'tool:brave_search', 'function:comfyui_studio',
-            'gateway-health', 'gateway-research', 'kokoro-speech', 'gcal-events', 'bolt-from-vps', 'terminal-from-vps', 'model:helper', 'model:resting', 'model:studio-hd')
+            'gateway-health', 'gateway-research', 'kokoro-speech', 'gmail-profile', 'bolt-from-vps', 'terminal-from-vps', 'model:helper', 'model:resting', 'model:studio-hd')
         @($res.Values | Where-Object { -not $_['ok'] }) | Should -BeNullOrEmpty
         $res['server:censys'].actual | Should -Be '2 tools'
         $res['bolt-from-vps'].actual | Should -Be 'HTTP 401 from the VPS'
@@ -231,7 +231,7 @@ Describe 'Stage 9: functional tests' {
         $w.Override['GET http://127.0.0.1:11434/api/tags'] = @{ Status = 200; Body = '{"error":"x"}' }
         $w.Override['GET http://127.0.0.1:3000/api/v1/tools/id/brave_search/valves/spec'] = @{ Status = 500; Body = 'ModuleNotFoundError: secret detail' }
         $w.Override['vps terminal-from-vps'] = '000'
-        Write-Text (Join-Path $c.Live 'gcal-owui-bridge/.env') "OTHER=1`n"
+        Write-Text (Join-Path $c.Live 'gmail-owui-bridge/.env') "OTHER=1`n"
         $r = Invoke-Stage '09-acceptance.ps1' $c
         $r.Status | Should -Be 'failed'
         $r.Problems | Should -Contain 'server:time failed (HTTP 500); Stage 8 owns it'
@@ -240,7 +240,7 @@ Describe 'Stage 9: functional tests' {
         $r.Problems | Should -Contain "ollama-models failed (HTTP 200, but the answer lacks '`"models`"'); Stage 8 owns it"
         $r.Problems | Should -Contain 'tool:brave_search failed (HTTP 500); Stage 7 owns it'
         $r.Problems | Should -Contain 'terminal-from-vps failed (nothing answered the VPS); Stage 8 owns it'
-        $r.Problems | Should -Contain "gcal-events failed (GCAL_BRIDGE_API_KEY is not set in $(Join-Path $c.Live 'gcal-owui-bridge/.env') (Stage 4 renders it)); Stage 4 owns it"
+        $r.Problems | Should -Contain "gmail-profile failed (GMAIL_BRIDGE_API_KEY is not set in $(Join-Path $c.Live 'gmail-owui-bridge/.env') (Stage 4 renders it)); Stage 4 owns it"
         ($r.Problems -join "`n") | Should -Not -Match 'boom|secret detail'
         $r.Data['Results']['server:censys'].ok | Should -BeTrue -Because 'one failure does not stop the others'
     }

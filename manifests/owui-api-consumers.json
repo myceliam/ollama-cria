@@ -1,13 +1,6 @@
 {
   "$schema": "./schemas/owui-api-consumers.schema.json",
   "formatVersion": 1,
-  "note": "Hand-kept. Found by reading the stack's code on 7 October 2026: only the gcal bridge calls OWUI with an API key. The Gmail bridge and the dashboard never call OWUI; web-vps-relay/deploy_tools.py reads a key from OWUI's database; the mcpo watchdog uses mcpo's own key.",
-  "consumers": [
-    {
-      "name": "gcal-owui-bridge",
-      "location": "stack:gcal-owui-bridge/.env",
-      "setting": "OWUI_API_KEY",
-      "why": "Syncs Google Calendar events into OWUI's calendar (app/owui_client.py)"
-    }
-  ]
+  "note": "Hand-kept. Found by reading the stack's code on 7 October 2026, updated 11 October 2026 (AICL-0160): nothing calls OWUI with an API key any more. The gcal bridge, the only consumer, was removed. The Gmail bridge and the dashboard never call OWUI; web-vps-relay/deploy_tools.py reads a key from OWUI's database; the mcpo watchdog uses mcpo's own key. Stage 7e still asks for a key, because Stage 9 uses it; it is written into no file.",
+  "consumers": []
 }

@@ -32,7 +32,7 @@ $Global:OWUI = [ordered]@{
     SupportScripts = 'E:\ai\ollama\_support\scripts'
     OllamaExe  = 'C:\Users\lroon\AppData\Local\Programs\Ollama\ollama.exe'
     ComfyLog   = 'E:\ai\comfyui\ComfyUI\user\comfyui_8188.log'
-    Ports      = @{ ComfyUI = 8188; OWUI = 3000; Ollama = 11434; Mcpo = 18000; Gmail = 18101; Calendar = 18100 }
+    Ports      = @{ ComfyUI = 8188; OWUI = 3000; Ollama = 11434; Mcpo = 18000; Gmail = 18101 }
     GmailCompose = 'E:\ai\ollama\gmail-owui-bridge\docker-compose.yml'
     AutoFreeLog  = 'E:\ai\ollama\logs\autofree.log'
     # GB of VRAM ComfyUI must leave untouched, so Ollama always has somewhere to
@@ -106,14 +106,12 @@ function _owui_stop_models {
     Get-Process 'llama-server' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 }
 
-# Start the OWUI helper bridges (Gmail + Calendar). Idempotent — safe to re-run.
+# Start the OWUI helper bridge (Gmail). Idempotent, safe to re-run.
 # Gmail is its OWN compose project (subfolder), so 'up'/start-stack recreate it
-# from its file; Calendar rides in the main 'ollama' project so a plain start
-# is enough. This is the guard against Gmail silently vanishing again.
+# from its file. This is the guard against Gmail silently vanishing again.
+# (The Calendar bridge was removed on 2026-10-11, AICL-0160.)
 function _owui_start_bridges {
-    _owui_head 'OWUI bridges (Gmail + Calendar)'
-    # Calendar: part of the main compose project — just make sure it's running.
-    docker start gcal-owui-bridge 2>$null | Out-Null
+    _owui_head 'OWUI bridge (Gmail)'
     # Gmail: standalone project — prefer compose up (recreates if removed),
     # fall back to a plain start if the compose file ever moves.
     if (Test-Path $OWUI.GmailCompose) {
@@ -122,7 +120,7 @@ function _owui_start_bridges {
         docker start gmail-owui-bridge 2>$null | Out-Null
     }
     Start-Sleep 2
-    foreach ($b in @(@{ n='Gmail'; p=$OWUI.Ports.Gmail }, @{ n='Calendar'; p=$OWUI.Ports.Calendar })) {
+    foreach ($b in @(@{ n='Gmail'; p=$OWUI.Ports.Gmail })) {
         $up = _owui_port $b.p
         $c  = if ($up) { 'Green' } else { 'Red' }
         $s  = if ($up) { 'UP  ' } else { 'DOWN' }
@@ -173,8 +171,7 @@ function _owui_status {
         @{ n='OpenWebUI'; p=$OWUI.Ports.OWUI },
         @{ n='Ollama'; p=$OWUI.Ports.Ollama },
         @{ n='mcpo-core'; p=$OWUI.Ports.Mcpo },
-        @{ n='Gmail'; p=$OWUI.Ports.Gmail },
-        @{ n='Calendar'; p=$OWUI.Ports.Calendar }
+        @{ n='Gmail'; p=$OWUI.Ports.Gmail }
     )
     foreach ($m in $map) {
         $up = _owui_port $m.p
@@ -275,7 +272,7 @@ function _owui_mappings {
     $known = @{
         '3000'  = 'Open WebUI'; '8188' = 'ComfyUI';    '6080'  = 'Homelab dashboard'
         '18088' = 'Dozzle';     '18000' = 'mcpo';      '8080'  = 'SearXNG'
-        '18100' = 'gcal bridge';'18101' = 'gmail bridge'; '8880' = 'Kokoro TTS'
+        '18101' = 'gmail bridge'; '8880' = 'Kokoro TTS'
         '11434' = 'Ollama';     '18019' = 'open-terminal'; '8931' = 'Playwright MCP'
     }
 
@@ -1525,7 +1522,7 @@ $Global:OWUI_CMDS = @(
     # ---------------- Stack (Docker) ----------------
     @{ cmd='up';        grp='Stack (Docker)'; blurb='Bring the whole OWUI/Ollama/mcpo stack online (idempotent)';
        act={ _owui_runps "$($OWUI.OllamaRoot)\start-stack.ps1" } }
-    @{ cmd='bridges';   grp='Stack (Docker)'; blurb='Start the Gmail + Calendar OWUI bridges (revive if a bridge dropped out)';
+    @{ cmd='bridges';   grp='Stack (Docker)'; blurb='Start the Gmail OWUI bridge (revive it if it dropped out)';
        act={ _owui_start_bridges } }
     # Renamed 2026-07-31: 'watchdog' became ambiguous once 'autofree' arrived
     # (two different watchdogs). Old name kept as an alias.

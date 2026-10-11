@@ -5,14 +5,13 @@
 
     One notification to pc-info that answers "did anything happen overnight,
     and what does today look like". Every section degrades independently:
-    a dead gcal bridge must not cost you the stack summary.
+    one failed check must not cost you the rest.
 
     SECTIONS
       1  Stack        - containers up, anything unhealthy
       2  Machine      - disk headroom, GPU idle temp and VRAM
       3  Backups      - last nightly, last offsite push
-      4  Today        - calendar events and tasks due
-      5  Security     - critical CVEs published in the last 24h (NVD)
+      4  Security     - critical CVEs published in the last 24h (NVD)
 #>
 
 [CmdletBinding()]
@@ -84,35 +83,7 @@ try {
     }
 } catch { Add-Line "BACKUP     check failed" }
 
-# ------------------------------------------------------------------ 4. today
-try {
-    $gk = (docker exec gcal-owui-bridge printenv GCAL_BRIDGE_API_KEY 2>$null).Trim()
-    if ($gk) {
-        $h  = @{ "X-API-Key" = $gk }
-        $s  = (Get-Date).Date.ToString("yyyy-MM-ddTHH:mm:sszzz")
-        $e  = (Get-Date).Date.AddDays(1).AddSeconds(-1).ToString("yyyy-MM-ddTHH:mm:sszzz")
-        $ev = Invoke-RestMethod -Uri ("http://127.0.0.1:18100/events/live?start={0}&end={1}" -f [uri]::EscapeDataString($s), [uri]::EscapeDataString($e)) -Headers $h -TimeoutSec 25
-
-        Add-Line ""
-        if ($ev.count -gt 0) {
-            Add-Line ("TODAY      {0} event(s)" -f $ev.count)
-            foreach ($x in ($ev.events | Select-Object -First 6)) {
-                $when = if ($x.all_day) { "all day" } else { try { ([datetime]$x.start).ToString("HH:mm") } catch { "?" } }
-                Add-Line ("   {0}  {1}" -f $when.PadRight(7), $x.title)
-            }
-        } else { Add-Line "TODAY      nothing in the calendar" }
-
-        try {
-            $td = Invoke-RestMethod -Uri "http://127.0.0.1:18100/tasks/due?days=1" -Headers $h -TimeoutSec 25
-            if ($td.count -gt 0) {
-                Add-Line ("TASKS      {0} due" -f $td.count)
-                foreach ($x in ($td.tasks | Select-Object -First 5)) { Add-Line ("   - " + $x.title) }
-            }
-        } catch { }
-    }
-} catch { Add-Line "TODAY      calendar bridge unreachable" }
-
-# --------------------------------------------------------------- 5. security
+# --------------------------------------------------------------- 4. security
 try {
     $nvdKey = ""
     $envLine = Select-String -Path "E:\ai\ollama\.env" -Pattern "^NVD_API_KEY=" -EA SilentlyContinue | Select-Object -First 1

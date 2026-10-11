@@ -106,7 +106,6 @@ $healthUrls = [ordered]@{
     'open-terminal'         = 'http://127.0.0.1:18019/openapi.json'
     'SearXNG via the relay' = 'http://127.0.0.1:8080/config'
     'Jina Reader via the relay' = 'http://127.0.0.1:3001/'
-    'gcal bridge'           = 'http://127.0.0.1:18100/health'
     'Gmail bridge'          = 'http://127.0.0.1:18101/health'
     'ntfy'                  = 'http://127.0.0.1:8090/v1/health'
     'Dozzle'                = 'http://127.0.0.1:18088/'
@@ -506,8 +505,8 @@ function Wait-Stack {
 }
 
 function Repair-StaleService {
-    # Recreates containers left on an older configuration (a gcal bridge
-    # created in Stage 7 before its new API key, for one).
+    # Recreates containers left on an older configuration (one created in
+    # Stage 7 before a setting it reads changed, for example).
     foreach ($p in $projects) {
         $stale = Get-StaleService $p
         if ($null -eq $stale) { $result.Warnings.Add("$($p['name']): compose could not give its configuration hashes, so stale containers were not looked for"); continue }

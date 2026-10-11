@@ -44,7 +44,7 @@
 | Stage 7 builds the local images, then pulls the rest at their digests, OWUI at the seed's (7a) | C-36, C-40 |
 | OWUI's volume carries a label Stage 7 checks; one it did not create is never used or removed (7b) | C-45 |
 | The seed and its secrets reach the importer on standard input, never on a command line (7d) | C-39 |
-| The new OWUI API key goes into the gcal bridge's `.env` only (`owui-api-consumers.json`) | The stack's code was read on 7 October 2026: nothing else calls OWUI with a key |
+| The new OWUI API key goes into no file today (`owui-api-consumers.json` is empty); Stage 9 uses it | The stack's code was read on 7 October 2026; its only consumer, the gcal bridge, was removed on 11 October 2026 (AICL-0160) |
 | Stage 8 checks every service, health URL and the tool catalogue itself, and recreates a container left on older settings (8b) | `start-stack.ps1` still exits 0 when a service is down; C-27 changes a live file and waits for Liam |
 | Stage 8 imports `OWUI-Stack-Startup` and `OWUI-mcpo-Watchdog` from their live XML, not with their installers (8d) | The live watchdog runs as S4U; its installer would make it interactive |
 | The ComfyUI firewall rule is the live one: TCP 8188 from the tailnet range and `127.0.0.1` (8a) | The containers reach ComfyUI from this PC through Docker Desktop, not from Docker's network |
@@ -141,11 +141,11 @@
 | ✅ Every Ollama model, with the same tags and the custom Modelfiles | ❌ Chats (97 today, all test data) |
 | ✅ Every ComfyUI model, custom node and workflow | ❌ Uploaded files (218 rows today, few real uploads) |
 | ✅ OWUI settings (the 409-row `config` table), with credentials re-injected | ❌ Notes, the single memory entry, automation run history |
-| ✅ 15 tools, 5 functions, 21 skills, 33 model presets, 5 prompts | ❌ Calendar events cached in OWUI (they re-sync from Google) |
-| ✅ 18 tool-server connections (16 through `mcpo-core`, plus Gmail and Calendar bridges) | ❌ Generated images and video |
+| ✅ 15 tools, 5 functions, 21 skills, 33 model presets, 5 prompts | ❌ Calendar events in OWUI |
+| ✅ 17 tool-server connections (16 through `mcpo-core`, plus the Gmail bridge) | ❌ Generated images and video |
 | ✅ Your OWUI user settings: pinned models, tool settings, the sub-agent prompt, TTS choices | ❌ Logs and caches |
 | ✅ Groups and access grants | ❌ 🗄️ Retired: Discord bridge, its pipe, channel and webhook; `OWUI-Automation-Chat-Tidy` |
-| ✅ Microservices: Tika, Playwright MCP, mcpo, the gcal and Gmail bridges, ntfy, Bolt, Dozzle, open-terminal, dashboard | |
+| ✅ Microservices: Tika, Playwright MCP, mcpo, the Gmail bridge, ntfy, Bolt, Dozzle, open-terminal, dashboard | |
 | ✅ VPS web egress through gluetun/Mullvad, the guard, Kokoro and the STT relay | |
 | ✅ Tailscale Serve rules, scheduled tasks and the ComfyUI logon launcher | |
 
@@ -440,7 +440,7 @@ The bundle was downloaded, checked and unpacked in Stage 1. `Restore-StackSecret
 | Bundle folder | Contents | Goes to |
 |---|---|---|
 | 01 | Stack `.env`, Docker secrets in `E:\ai\ollama\secrets\`, the local SearXNG `settings.yml` | 🖥️ |
-| 02 | Google OAuth client and tokens (gcal and Gmail bridges), the gcal bridge `watchdog.ps1` | 🖥️ |
+| 02 | Google OAuth client, the Gmail bridge token and its settings | 🖥️ |
 | 03 | OWUI secret values the seed refers to: provider API keys, tool-server bearer tokens, the Groq STT key, Valve secrets, `WEBUI_SECRET_KEY` | 🖥️ (used in Stage 7) |
 | 04 | SSH private key, public key and config | 🖥️ (placed in Stage 1) |
 | 05 | VPS web egress `.env` (WireGuard keys, Brave key, SearXNG secret) | ☁️ |
@@ -578,7 +578,6 @@ For each PC compose project (`ollama`, `gmail-owui-bridge`, `cline-dashboard`), 
 |---|---|
 | `mcpo-core-baked:pinned` | `Dockerfile.mcpo` |
 | `bolt-baked:pinned` | `bolt\Dockerfile.bolt` |
-| gcal bridge | `gcal-owui-bridge\` |
 | Gmail bridge | `gmail-owui-bridge\` (own compose project) |
 | Homelab dashboard | `E:\ai\ag-startuip\cline-dashboard` (own compose project) |
 
@@ -637,7 +636,7 @@ The seed lives at `manifests\owui-seed\` and is produced by 🛠️ `tools\Expor
 1. **Schema.** The controller starts OWUI alone at the recorded version (`docker compose up -d --no-deps open-webui`), reachable on `127.0.0.1:3000` only. It creates its empty schema.
 2. **Admin account** 👤. While OWUI has no account, the stage stops with an `ASK`: open `http://127.0.0.1:3000`, create the admin account (the first account is the admin), then run the same `-Execute` again.
 3. **Check and import, with OWUI stopped.** `Import-OwuiSeed.py` runs in a new container of the same service (`docker compose run --rm --no-deps -T`), with the seed, the secrets file from bundle folder 03 and the new tailnet addresses on its **standard input**, never on a command line. It refuses to continue unless the database's version and Alembic revision match the seed (C-40) and the database is fresh: one admin, nothing in the seeded tables. In one transaction it writes the seed rows and points **every** owner and member reference at the new admin: tools, functions, models, skills, prompts, groups, group members and grants (C-38). It applies the `user.settings` projection to the new admin, fills each secret reference, and encrypts Valves through OWUI's own code with this install's `WEBUI_SECRET_KEY`. It then checks that no reference to the old user ID remains. A rerun that finds the seed already in does not import it twice.
-4. **API key** 👤. The controller starts OWUI alone again, writes an empty owner-only `E:\recovery-secrets\owui-api-key.txt`, and asks you to create a key in Settings → Account → API keys and paste it there; then run the same `-Execute` again. The key must open OWUI's calendar API, then goes into every consumer in `manifests\owui-api-consumers.json`. That is only the gcal bridge's `.env` (`OWUI_API_KEY`): the code was read on 7 October 2026, and the Gmail bridge and the dashboard never call OWUI. This is the one time a fresh key is correct. OWUI is stopped again; nothing runs until Stage 8, which recreates the gcal bridge with the new key. Stage 11 deletes the key file.
+4. **API key** 👤. The controller starts OWUI alone again, writes an empty owner-only `E:\recovery-secrets\owui-api-key.txt`, and asks you to create a key in Settings → Account → API keys and paste it there; then run the same `-Execute` again. The key must open OWUI's tools API, which Stage 9 uses it for, then goes into every consumer in `manifests\owui-api-consumers.json`. There are none today: the gcal bridge, the only one, was removed on 11 October 2026 (AICL-0160), and the Gmail bridge and the dashboard never call OWUI. This is the one time a fresh key is correct. OWUI is stopped again; nothing runs until Stage 8. Stage 11 deletes the key file.
 5. **Upgrade later.** OWUI stays at the recorded version until Stage 9 passes, then moves to `latest` by the normal update route (C-40).
 
 > ⚠️ `ENABLE_PERSISTENT_CONFIG=true` means the `config` table wins over compose environment variables. That is why the settings travel in the seed, not in `.env`.
@@ -654,7 +653,7 @@ The seed lives at `manifests\owui-seed\` and is produced by 🛠️ `tools\Expor
 | 🤖 | Secret references | Every **required** one resolved (the importer stops otherwise); optional ones may stay blank by design (C-50) |
 | 🤖 | `PRAGMA integrity_check` and `PRAGMA foreign_key_check` | `ok` and no rows |
 | 🤖 | ntfy and Bolt files in their volumes, hashes matching the map | Placed |
-| 🤖 | Every API key consumer | Holds a key, and the key opened OWUI's calendar API when it was placed |
+| 🤖 | Every API key consumer | Holds a key (none today), and the key opened OWUI's tools API when it was placed |
 
 What you see in OWUI (functions, pinned models, the sub-agent prompt) is tested in Stage 9.
 
@@ -682,10 +681,10 @@ A rule or setting the controller did not make is reported, never changed.
 
 1. Ollama (native) is already running from Stage 6; the controller starts it as you if it is not.
 2. ComfyUI: the controller copies `start_comfyui_hidden.vbs` into your Startup folder (8d), starts it once as you, and waits for `/system_stats` to answer.
-3. `start-stack.ps1` brings up the 10 PC compose services with their normal dependencies (tika, playwright-mcp, web-vps-relay, mcpo-core, open-webui, gcal-owui-bridge, ntfy, bolt, dozzle, open-terminal), then the Gmail bridge and dashboard projects.
+3. `start-stack.ps1` brings up the 9 PC compose services with their normal dependencies (tika, playwright-mcp, web-vps-relay, mcpo-core, open-webui, ntfy, bolt, dozzle, open-terminal), then the Gmail bridge and dashboard projects.
 4. The controller then checks for itself, because `start-stack.ps1` still exits 0 when a service is down:
    - every service of every PC compose project is running, and healthy where it has a health check;
-   - every container runs its current configuration (`docker compose config --hash` against the container's label). A container left from Stage 7 with older settings, such as the gcal bridge before its new API key, is recreated;
+   - every container runs its current configuration (`docker compose config --hash` against the container's label). A container left from Stage 7 with older settings is recreated;
    - 12 health URLs on this PC answer **200**: OWUI, mcpo-core, open-terminal, SearXNG and Jina Reader through the relay, both bridges, ntfy, Dozzle, the dashboard, ComfyUI and Ollama. Bolt publishes only on the tailnet address, so its health check and Stage 9 cover it.
 5. The controller reads OWUI's tool catalogue with the Stage 7 API key and checks that every tool server the seed enables is listed (18 today). If one is missing, it restarts OWUI once, in case OWUI cached its list while mcpo was still starting. If OWUI will not show the list to the key, it asks you to check the tool servers in OWUI's admin settings and run again with `-Accept tool-catalogue`.
 
@@ -769,7 +768,7 @@ Each failure names the stage that owns it. The stage stops at once if the seed i
 | 7 | Speech to text | The Groq relay answers on the VPS's tailnet address | Dictate a sentence; the text appears (`stt`) |
 | 8 | Text to speech | Kokoro on the VPS speaks a sentence with `af_heart` | Read aloud uses `af_heart` (`tts`) |
 | 9 | Notifications | `ntfy_push` loads | One notification reaches the phone (`ntfy`) |
-| 10 | Calendar and Gmail | Both bridges hold a Google token; the gcal bridge lists the next day's events and the Gmail bridge reads the mailbox profile, live from Google. A failure here means re-consent (the bridge's `/auth/url`) | |
+| 10 | Gmail | The Gmail bridge holds a Google token and reads the mailbox profile, live from Google. A failure here means re-consent (the bridge's `/auth/url`) | |
 | 11 | Filters | `brave_command_router` and both Mermaid filters load | A command routes; a Mermaid diagram renders (`filters`) |
 | 12 | Bolt and open-terminal | From the VPS, on the PC's new tailnet address: Bolt answers on 3001 (any answer: it wants a token), open-terminal's `/health` gives 200 on 18019 | |
 | 13 | Model presets and skills | Every preset, as above | |
@@ -942,7 +941,7 @@ Running it again is safe. Afterwards, Stages 1 to 7 need the bundle again (they 
 | `acceptance.json` | One test row per capability (C-46): a safe call or a 👤 step, and the stage a failure goes back to | Hand-kept (Module 9), checked against its schema and the seed schema's expected tools and functions |
 | `owui-seed\schema.json` | Field allowlist: repo-safe, secret reference or excluded (C-41) | 🛠️ |
 | `owui-seed\*.json` | Functional seed, with OWUI version, image digest and Alembic revision | 🛠️ `Export-OwuiSeed.py` |
-| `owui-api-consumers.json` | Every file that holds the OWUI API key: only the gcal bridge's `.env` | Hand-kept (Module 9), from reading the stack's code |
+| `owui-api-consumers.json` | Every file that holds the OWUI API key: none since the gcal bridge was removed | Hand-kept (Module 9), from reading the stack's code |
 | `secrets.json` | Required and optional secret rows (names and logical destinations, no values) | Stage 4b table |
 
 ## Appendix C · Register
