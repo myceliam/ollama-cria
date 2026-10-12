@@ -92,7 +92,7 @@ BeforeAll {
         return $setup
     }
 
-    # A fake OWUI 0.11.4 database, built by the Python tests' own builder
+    # A fake OWUI 0.12.0 database, built by the Python tests' own builder
     # (tests/python/test_export_owui_seed.py), with fake secrets made at run time.
     function Get-TestPython {
         @(if ($IsWindows) { 'python', 'python3' } else { 'python3', 'python' }) |
@@ -743,7 +743,7 @@ Describe 'Collect-StackSecrets' {
         It 'stops when the export stops, passes its problems on, and writes nothing' {
             $r = Invoke-WithFakeDocker $script:S 'seed-stop'
             $r.IsValid | Should -BeFalse
-            $r.Problems | Should -Contain 'seed: OWUI version is 0.0.1, schema.json is for 0.11.4 (C-40)'
+            $r.Problems | Should -Contain 'seed: OWUI version is 0.0.1, schema.json is for 0.12.0 (C-40)'
             $r.Problems | Should -Contain "row 'owui-seed-secrets': failed (the seed export stopped; see its problems)"
             Test-Path -LiteralPath $script:S.SeedOut | Should -BeFalse
             $r.RunFolder | Should -BeNullOrEmpty

@@ -1,14 +1,14 @@
 {
-  "alembic_revision": "d4c1a8e37b62",
+  "alembic_revision": "b8f2c6d91a04",
   "counts": {
     "access_grant": 1,
-    "config": 409,
-    "function": 5,
+    "config": 425,
+    "function": 6,
     "group": 1,
     "group_member": 0,
-    "model": 33,
+    "model": 93,
     "prompt": 5,
-    "skill": 21,
+    "skill": 10,
     "tool": 15
   },
   "endpoints": [
@@ -66,6 +66,9 @@
     "EXT_AU_MEL_WG_401_TS_IP",
     "EXT_AU_MEL_WG_401_TS_IP6",
     "EXT_AU_MEL_WG_401_TS_NAME",
+    "EXT_AU_MEL_WG_402_TS_IP",
+    "EXT_AU_MEL_WG_402_TS_IP6",
+    "EXT_AU_MEL_WG_402_TS_NAME",
     "EXT_AU_MEL_WG_403_TS_IP",
     "EXT_AU_MEL_WG_403_TS_IP6",
     "EXT_AU_MEL_WG_403_TS_NAME",
@@ -138,12 +141,6 @@
     "EXT_BR_SAO_WG_202_TS_IP",
     "EXT_BR_SAO_WG_202_TS_IP6",
     "EXT_BR_SAO_WG_202_TS_NAME",
-    "EXT_BR_SAO_WG_303_TS_IP",
-    "EXT_BR_SAO_WG_303_TS_IP6",
-    "EXT_BR_SAO_WG_303_TS_NAME",
-    "EXT_BR_SAO_WG_304_TS_IP",
-    "EXT_BR_SAO_WG_304_TS_IP6",
-    "EXT_BR_SAO_WG_304_TS_NAME",
     "EXT_CA_MTR_WG_001_TS_IP",
     "EXT_CA_MTR_WG_001_TS_IP6",
     "EXT_CA_MTR_WG_001_TS_NAME",
@@ -1632,6 +1629,9 @@
     "MINIPC_WINDOWS_TS_IP",
     "MINIPC_WINDOWS_TS_IP6",
     "MINIPC_WINDOWS_TS_NAME",
+    "MR_FOLD_1_TS_IP",
+    "MR_FOLD_1_TS_IP6",
+    "MR_FOLD_1_TS_NAME",
     "MR_FOLD_TS_IP",
     "MR_FOLD_TS_IP6",
     "MR_FOLD_TS_NAME",
@@ -1646,7 +1646,7 @@
     "VPS_TS_IP6",
     "VPS_TS_NAME"
   ],
-  "image_digest": "ghcr.io/open-webui/open-webui@sha256:8b432fe0a65b91116afc7961365c6cca5379cc923171386a96691f3471f3cae9",
-  "owui_version": "0.11.4",
+  "image_digest": "ghcr.io/open-webui/open-webui@sha256:e597ba2ca4425ff40f1f677930baae1278cc1e44cea399d5f588d5ce53611910",
+  "owui_version": "0.12.0",
   "seed_format": 1
 }

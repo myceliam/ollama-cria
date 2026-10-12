@@ -32,7 +32,7 @@ BeforeAll {
                 Write-Text (Join-Path $repo "manifests/owui-seed/seed/$n.json") '[]'
             }
             Write-Json (Join-Path $repo 'manifests/owui-seed/seed/provenance.json') @{
-                seed_format = 1; owui_version = '0.11.4'; alembic_revision = 'd4c1a8e37b62'; image_digest = $script:Digest
+                seed_format = 1; owui_version = '0.12.0'; alembic_revision = 'b8f2c6d91a04'; image_digest = $script:Digest
                 endpoints = @('PC_TS_IP'); counts = $script:Counts
             }
         }
@@ -169,7 +169,7 @@ Describe 'Stage 7: run' {
         $r = Invoke-Stage '07-state.ps1' $c
         $r.Status | Should -Be 'planned'
         $r.Problems | Should -BeNullOrEmpty
-        $r.Steps[0] | Should -Be "would build the images of ollama, gmail-owui-bridge, cline-dashboard and pull the rest at their digests, OWUI 0.11.4 at the seed's"
+        $r.Steps[0] | Should -Be "would build the images of ollama, gmail-owui-bridge, cline-dashboard and pull the rest at their digests, OWUI 0.12.0 at the seed's"
         $r.Steps.Count | Should -Be 3
         Get-Call 'docker *' | Should -BeNullOrEmpty
     }

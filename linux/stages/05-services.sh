@@ -40,6 +40,7 @@ root=${CRIA_ROOT:-}
 home=/home/$user
 egress=$home/owui-web-egress
 kokoro=$home/kokoro
+kroki=$home/kroki
 guard=owui-web-egress-guard.service
 log=$root/var/log/ollama-cria/stage-05.log
 
@@ -90,6 +91,7 @@ if [ "$mode" = check ]; then
   fact egress-running "$(compose_state "$egress")"
   fact gluetun-health "$(docker inspect --format '{{.State.Health.Status}}' vps-web-gluetun 2>/dev/null || echo missing)"
   fact kokoro-running "$(compose_state "$kokoro")"
+  fact kroki-running "$(compose_state "$kroki")"
   # The exit address from inside the tunnel's namespace against the
   # host's own; only whether they differ is printed.
   host_ip=$(curl -fsS --max-time 15 https://api.ipify.org 2>/dev/null || true)
@@ -98,6 +100,7 @@ if [ "$mode" = check ]; then
   elif [ "$host_ip" = "$tunnel_ip" ]; then fact exit-ip same
   else fact exit-ip differs; fi
   fact listen-8880 "$(listening 8880)"
+  fact listen-8800 "$(listening 8800)"
   fact listen-18099 "$(listening 18099)"
   fact listen-13100 "$(listening 13100)"
   if [ "$(readlink -- "$root/etc/nginx/sites-enabled/groq-relay" 2>/dev/null || true)" = /etc/nginx/sites-available/groq-relay ]; then fact nginx-site yes; else fact nginx-site no; fi
@@ -112,7 +115,7 @@ tun=$root/dev/net/tun
 if [ -n "$root" ]; then [ -e "$tun" ] || tun=; else [ -c "$tun" ] || tun=; fi
 [ -n "$tun" ] || fail '/dev/net/tun is missing; gluetun needs it (ask the provider to enable TUN)'
 [ -f "$root$egress/.env" ] || fail "$egress/.env is missing; Stage 4 places it from bundle folder 05"
-for f in "$egress/compose.yml" "$egress/guard.sh" "$egress/guard.nft" "$kokoro/compose.yml" /etc/systemd/system/$guard \
+for f in "$egress/compose.yml" "$egress/guard.sh" "$egress/guard.nft" "$kokoro/compose.yml" "$kroki/compose.yml" /etc/systemd/system/$guard \
   /etc/systemd/system/docker.service.d/owui-web-egress.conf /etc/nginx/sites-available/groq-relay; do
   [ -f "$root$f" ] || fail "$f is missing; run Stage 5 again so it is placed first"
 done
@@ -164,7 +167,7 @@ done
 
 # 5c and 5d: the compose projects, with nothing else pulled. --wait holds
 # until every service is running and healthy.
-for project in "$egress" "$kokoro"; do
+for project in "$egress" "$kokoro" "$kroki"; do
   if ! compose "$project" up -d --pull never --wait --wait-timeout 300 >>"$log" 2>&1; then
     fail "the compose project in $project did not come up healthy ($(compose_state "$project") running; see the log)"
   fi

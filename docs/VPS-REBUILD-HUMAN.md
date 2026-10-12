@@ -58,7 +58,7 @@ Your PC ──Tailscale──▶ VPS ──WireGuard──▶ Mullvad Stockholm 
 - 🧱 **Kill switch 1, gluetun:** nothing leaves the VPN container except through the tunnel.
 - 🧱 **Kill switch 2, the guard:** a firewall on the VPS itself. It lets the search services reach only Tailscale and the one Mullvad entry server, blocks IPv6, and stops them opening connections to your PC.
 - ⏱️ **Boot order:** Docker won't start until the guard is up.
-- 🔒 **Tailscale only:** everything on the VPS, SSH included, answers only on Tailscale. From the internet, only Tailscale's own port is open.
+- 🔒 **Tailscale only:** everything on the VPS, SSH, Kokoro and Kroki included, answers only on Tailscale. From the internet, only Tailscale's own port is open.
 
 ---
 
@@ -146,7 +146,7 @@ Tell the agent when it's done, and whether step 5 worked.
 
 ### V7 · The VPS's settings files
 
-🤖 **The agent** copies every VPS file from the repo into place, with the Tailscale addresses filled in: the VPN container's settings, the firewall guard, SearXNG, the Brave/Jina gateway, Kokoro and the dictation relay. Each file is checked after the trip.
+🤖 **The agent** copies every VPS file from the repo into place, with the Tailscale addresses filled in: the VPN container's settings, the firewall guard, SearXNG, the Brave/Jina gateway, Kokoro, the Kroki diagram renderer and the dictation relay. Each file is checked after the trip.
 
 ✅ **You should see** one `PLACED new` line per file.
 
@@ -212,7 +212,7 @@ The firewall guard names your Mullvad entry server too, as the one place the VPN
 
 ### V10 · The guard first, then everything else
 
-🤖 **The agent** starts the firewall guard and proves it's loaded **before** anything else runs. Then it downloads every program at the exact version recorded, builds the two it makes itself (Jina Reader is the slow one), and starts the VPN container, SearXNG, Jina, the Brave/Jina gateway, Kokoro and the dictation relay. It waits until all of them report healthy.
+🤖 **The agent** starts the firewall guard and proves it's loaded **before** anything else runs. Then it downloads every program at the exact version recorded, builds the two it makes itself (Jina Reader is the slow one), and starts the VPN container, SearXNG, Jina, the Brave/Jina gateway, Kokoro, Kroki (its four containers) and the dictation relay. It waits until all of them report healthy.
 
 ✅ **You should see** the agent report it finished with exit code 0.
 🧯 **The VPN container never turns healthy:** the keys or the entry server are wrong. The agent checks V8 and V9 again, then the VPN container's log.
@@ -222,7 +222,7 @@ The firewall guard names your Mullvad entry server too, as the one place the VPN
 👤 **You:** say OK when the agent asks. Web search drops out for a few minutes during these tests.
 
 🤖 **The agent** proves, one at a time:
-1. **Everything runs,** and every service answers only on Tailscale.
+1. **Everything runs,** and every service answers only on Tailscale, Kroki's health check included.
 2. **Multihop works:** it asks Mullvad's own checker from inside the VPN, which must say "Mullvad, Zurich, `ch-zrh`". A Stockholm answer would mean single hop.
 3. **It survives a restart,** with the guard up before Docker.
 4. **Kill switch 2:** with the guard broken on purpose, Docker must refuse to start. Then it puts it back.

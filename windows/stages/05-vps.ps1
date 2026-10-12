@@ -25,16 +25,16 @@
              two compose projects use, pulled at its digest from
              manifests/images.json and tagged as the compose file names it,
              or built (the hardened Jina Reader, searxng-mcp); then
-             owui-web-egress and kokoro with nothing else pulled, waiting
-             until healthy; then only the Groq relay site in nginx.
+             owui-web-egress, kokoro and kroki with nothing else pulled,
+             waiting until healthy; then only the Groq relay site in nginx.
 
     Check is checkpoint 5: the guard is enabled, active and loaded, and
     Docker needs it; every service runs and gluetun is healthy; the exit
-    address inside the tunnel differs from the VPS's own; Kokoro, the relay
-    and the gateway listen on the tailnet address only; nginx's
+    address inside the tunnel differs from the VPS's own; Kokoro, Kroki,
+    the relay and the gateway listen on the tailnet address only; nginx's
     configuration passes; and from this PC the gateway is healthy, Kokoro
-    lists its model and a SearXNG search returns results. The kill-switch
-    test is Stage 10's.
+    lists its model, Kroki answers its health check and a SearXNG search
+    returns results. The kill-switch test is Stage 10's.
 #>
 [CmdletBinding()]
 param(
@@ -62,7 +62,7 @@ $stages = Join-Path $repo 'linux/stages'
 $sources = @((Get-Content -LiteralPath (Join-Path $repo 'manifests/stack-files.json') -Raw | ConvertFrom-Json -AsHashtable)['sources'] |
         Where-Object { $_['host'] -eq 'vps' })
 $egressRoot = @($sources | Where-Object { $_['name'] -eq 'vps-egress' })[0]['root']
-$projects = 'owui-web-egress', 'kokoro'
+$projects = 'owui-web-egress', 'kokoro', 'kroki'
 $guardUnit = 'owui-web-egress-guard.service'
 
 # Images built on the VPS instead of pulled, by container: the hardened Jina
@@ -170,8 +170,9 @@ function Test-Checkpoint {
     Add-StageCheck $result 'owui-web-egress: every service running' 'all' (& $get 'egress-running') (& $all 'egress-running')
     Add-StageCheck $result 'gluetun' 'healthy' (& $get 'gluetun-health') ((& $get 'gluetun-health') -eq 'healthy')
     Add-StageCheck $result 'kokoro: every service running' 'all' (& $get 'kokoro-running') (& $all 'kokoro-running')
+    Add-StageCheck $result 'kroki: every service running' 'all' (& $get 'kroki-running') (& $all 'kroki-running')
     Add-StageCheck $result "exit address inside the tunnel vs the VPS's own" 'differs' (& $get 'exit-ip') ((& $get 'exit-ip') -eq 'differs')
-    foreach ($p in @(@{ Port = '8880'; Name = 'Kokoro' }, @{ Port = '18099'; Name = 'Groq STT relay' }, @{ Port = '13100'; Name = 'Brave/Jina gateway' })) {
+    foreach ($p in @(@{ Port = '8880'; Name = 'Kokoro' }, @{ Port = '8800'; Name = 'Kroki' }, @{ Port = '18099'; Name = 'Groq STT relay' }, @{ Port = '13100'; Name = 'Brave/Jina gateway' })) {
         $v = & $get "listen-$($p.Port)"
         Add-StageCheck $result "$($p.Name) ($($p.Port)) listens on the tailnet address only" 'tailnet-only' $v ($v -eq 'tailnet-only')
     }
@@ -182,6 +183,8 @@ function Test-Checkpoint {
     $models = Invoke-Curl "http://${ip}:8880/v1/models"
     $kokoro = $models.Ok -and $models.Text -match 'kokoro'
     Add-StageCheck $result 'from this PC: Kokoro lists its model' 'kokoro' $(if ($kokoro) { 'kokoro' } elseif ($models.Ok) { 'no kokoro model' } else { 'no answer' }) $kokoro
+    $kroki = Invoke-Curl "http://${ip}:8800/health"
+    Add-StageCheck $result 'from this PC: Kroki''s /health' 'answers' $(if ($kroki.Ok) { 'answers' } else { 'no answer' }) $kroki.Ok
     $search = Invoke-Curl "http://${ip}:18080/search?q=open+source+software&format=json"
     $hits = 0
     if ($search.Ok) { try { $hits = @(($search.Text | ConvertFrom-Json).results).Count } catch { $hits = 0 } }
@@ -202,7 +205,7 @@ if ($result.Problems.Count -eq 0) {
     if ($Mode -eq 'Plan') {
         $result.Steps.Add("would place $($files.Count) files on the VPS, never over one this stage did not write")
         $result.Steps.Add("would load the guard and make Docker need it, then pull $pulls images at their digests and build $made")
-        $result.Steps.Add("would start $($projects -join ' and ') with nothing else pulled, then switch on only the Groq relay site in nginx")
+        $result.Steps.Add("would start $($projects[0..($projects.Count - 2)] -join ', ') and $($projects[-1]) with nothing else pulled, then switch on only the Groq relay site in nginx")
     }
     else {
         $endpoint = Get-Endpoint

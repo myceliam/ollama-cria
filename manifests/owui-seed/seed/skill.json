@@ -1,349 +1,17 @@
 [
   {
-    "content": "# !ask\n\n**What it does:** Answer a question from a saved document (latest by default).\n\n**Syntax:** `!ask \"question\" [doc=\"id\"]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_reader`.`ask_document` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
-    "created_at": 1790370898,
-    "description": "(READ) !ask \"question\" [doc=\"id\"]  —  Answer a question from a saved document (latest by default). Runs brave_reader.ask_document deterministically.",
-    "id": "brave-ask",
-    "is_active": 1,
-    "meta": {
-      "i18n": null,
-      "tags": [
-        "brave",
-        "command"
+    "content": "# diagram-chart — Numbers as a bar and/or line chart.\n\nDraw what the user describes after the command.\n\n## Best for\n- Comparing amounts\n- Trends over time\n- Before and after figures\n\n## Template\nDraw a Mermaid **xychart-beta**. Do not switch to another diagram type.\n\n```mermaid\nxychart-beta\n    title \"UK inflation (%)\"\n    x-axis [2021, 2022, 2023, 2024]\n    y-axis \"Percent\" 0 --> 12\n    bar [2.6, 9.1, 7.3, 2.5]\n    line [2.6, 9.1, 7.3, 2.5]\n```\n\n- Titles and axis names in double quotes. X-axis categories in square brackets, separated by commas.\n- The y-axis range must cover every value. Each `bar [...]` or `line [...]` has one number per category.\n- Numbers only in the data lists: no units, % signs or thousands commas. Use `bar` and/or `line`.\n- Only use figures from the conversation or sources; say in the explanation if any are estimates.\n\n## Rules that keep it rendering in Open WebUI\n1. Exactly one fenced ```mermaid block, with nothing but the diagram inside it.\n2. Copy the template's shape. Do not add `%%{init}%%` themes, HTML tags, emoji or styling; the renderer supplies the dark look.\n3. Keep every label on one line. Inside quoted labels use single quotes, never double quotes.\n4. Keep it readable: about 20 items at most.\n5. After the block, write 2 to 4 plain-English lines saying what the diagram shows.\n\nIf the request is vague, draw the most useful interpretation rather than asking. If nothing follows the command, diagram the most recent topic in this conversation.",
+    "created_at": 1791833901,
+    "data": {
+      "files": [
+        {
+          "content": "# diagram-chart — Numbers as a bar and/or line chart.\n\nDraw what the user describes after the command.\n\n## Best for\n- Comparing amounts\n- Trends over time\n- Before and after figures\n\n## Template\nDraw a Mermaid **xychart-beta**. Do not switch to another diagram type.\n\n```mermaid\nxychart-beta\n    title \"UK inflation (%)\"\n    x-axis [2021, 2022, 2023, 2024]\n    y-axis \"Percent\" 0 --> 12\n    bar [2.6, 9.1, 7.3, 2.5]\n    line [2.6, 9.1, 7.3, 2.5]\n```\n\n- Titles and axis names in double quotes. X-axis categories in square brackets, separated by commas.\n- The y-axis range must cover every value. Each `bar [...]` or `line [...]` has one number per category.\n- Numbers only in the data lists: no units, % signs or thousands commas. Use `bar` and/or `line`.\n- Only use figures from the conversation or sources; say in the explanation if any are estimates.\n\n## Rules that keep it rendering in Open WebUI\n1. Exactly one fenced ```mermaid block, with nothing but the diagram inside it.\n2. Copy the template's shape. Do not add `%%{init}%%` themes, HTML tags, emoji or styling; the renderer supplies the dark look.\n3. Keep every label on one line. Inside quoted labels use single quotes, never double quotes.\n4. Keep it readable: about 20 items at most.\n5. After the block, write 2 to 4 plain-English lines saying what the diagram shows.\n\nIf the request is vague, draw the most useful interpretation rather than asking. If nothing follows the command, diagram the most recent topic in this conversation.",
+          "path": "SKILL.md"
+        }
       ]
     },
-    "name": "brave-ask",
-    "updated_at": 1790374230,
-    "user_id": "{{OWNER}}"
-  },
-  {
-    "content": "# !brief\n\n**What it does:** Public-interest brief on a company, organisation or genuinely public figure.\n\n**Syntax:** `!brief \"company or public figure\" [angle=\"...\"] [+sources]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_research`.`public_interest_brief` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
-    "created_at": 1790370898,
-    "description": "(RESEARCH) !brief \"company or public figure\" [angle=\"...\"] [+sources]  —  Public-interest brief on a company, organisation or genuinely public figure. Runs brave_research.public_interest_brief deterministically.",
-    "id": "brave-brief",
-    "is_active": 1,
-    "meta": {
-      "i18n": null,
-      "tags": [
-        "brave",
-        "command"
-      ]
-    },
-    "name": "brave-brief",
-    "updated_at": 1790374230,
-    "user_id": "{{OWNER}}"
-  },
-  {
-    "content": "# !claim\n\n**What it does:** Evidence that supports, contradicts or qualifies a claim.\n\n**Syntax:** `!claim \"the exact claim\" [context=\"who/when\"] [+sources]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_research`.`check_claim` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
-    "created_at": 1790370898,
-    "description": "(RESEARCH) !claim \"the exact claim\" [context=\"who/when\"] [+sources]  —  Evidence that supports, contradicts or qualifies a claim. Runs brave_research.check_claim deterministically.",
-    "id": "brave-claim",
-    "is_active": 1,
-    "meta": {
-      "i18n": null,
-      "tags": [
-        "brave",
-        "command"
-      ]
-    },
-    "name": "brave-claim",
-    "updated_at": 1790374230,
-    "user_id": "{{OWNER}}"
-  },
-  {
-    "content": "# !compare\n\n**What it does:** Balanced side-by-side comparison of two or more subjects.\n\n**Syntax:** `!compare \"A\" \"B\" [...] [by=\"criteria\"] [+deep] [+sources]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_research`.`compare` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
-    "created_at": 1790370898,
-    "description": "(RESEARCH) !compare \"A\" \"B\" [...] [by=\"criteria\"] [+deep] [+sources]  —  Balanced side-by-side comparison of two or more subjects. Runs brave_research.compare deterministically.",
-    "id": "brave-compare",
-    "is_active": 1,
-    "meta": {
-      "i18n": null,
-      "tags": [
-        "brave",
-        "command"
-      ]
-    },
-    "name": "brave-compare",
-    "updated_at": 1790374230,
-    "user_id": "{{OWNER}}"
-  },
-  {
-    "content": "# !discuss\n\n**What it does:** Forum and discussion threads: leads and opinions, not verified fact.\n\n**Syntax:** `!discuss \"topic\" [count=10] [+week|+month|+year]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_search`.`discussions` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
-    "created_at": 1790370898,
-    "description": "(SEARCH) !discuss \"topic\" [count=10] [+week|+month|+year]  —  Forum and discussion threads: leads and opinions, not verified fact. Runs brave_search.discussions deterministically.",
-    "id": "brave-discuss",
-    "is_active": 1,
-    "meta": {
-      "i18n": null,
-      "tags": [
-        "brave",
-        "command"
-      ]
-    },
-    "name": "brave-discuss",
-    "updated_at": 1790374229,
-    "user_id": "{{OWNER}}"
-  },
-  {
-    "content": "# !help\n\n**What it does:** Show this command reference.\n\n**Syntax:** `!help`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `none`.`-` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
-    "created_at": 1790370898,
-    "description": "(HELP) !help  —  Show this command reference. Shows the full command reference.",
-    "id": "brave-help",
-    "is_active": 1,
-    "meta": {
-      "i18n": null,
-      "tags": [
-        "brave",
-        "command"
-      ]
-    },
-    "name": "brave-help",
-    "updated_at": 1790374230,
-    "user_id": "{{OWNER}}"
-  },
-  {
-    "content": "# !library\n\n**What it does:** List the documents saved in this chat.\n\n**Syntax:** `!library`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_reader`.`list_library` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
-    "created_at": 1790370898,
-    "description": "(READ) !library  —  List the documents saved in this chat. Runs brave_reader.list_library deterministically.",
-    "id": "brave-library",
-    "is_active": 1,
-    "meta": {
-      "i18n": null,
-      "tags": [
-        "brave",
-        "command"
-      ]
-    },
-    "name": "brave-library",
-    "updated_at": 1790374230,
-    "user_id": "{{OWNER}}"
-  },
-  {
-    "content": "# !news\n\n**What it does:** Brave news results (defaults to the past week).\n\n**Syntax:** `!news \"topic\" [count=10] [+day|+week|+month|+year]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_search`.`news` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
-    "created_at": 1790370898,
-    "description": "(SEARCH) !news \"topic\" [count=10] [+day|+week|+month|+year]  —  Brave news results (defaults to the past week). Runs brave_search.news deterministically.",
-    "id": "brave-news",
-    "is_active": 1,
-    "meta": {
-      "i18n": null,
-      "tags": [
-        "brave",
-        "command"
-      ]
-    },
-    "name": "brave-news",
-    "updated_at": 1790374229,
-    "user_id": "{{OWNER}}"
-  },
-  {
-    "content": "# !overview\n\n**What it does:** General overview of a saved document.\n\n**Syntax:** `!overview [\"focus\"] [doc=\"id\"]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_reader`.`overview_document` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
-    "created_at": 1790370898,
-    "description": "(READ) !overview [\"focus\"] [doc=\"id\"]  —  General overview of a saved document. Runs brave_reader.overview_document deterministically.",
-    "id": "brave-overview",
-    "is_active": 1,
-    "meta": {
-      "i18n": null,
-      "tags": [
-        "brave",
-        "command"
-      ]
-    },
-    "name": "brave-overview",
-    "updated_at": 1790374230,
-    "user_id": "{{OWNER}}"
-  },
-  {
-    "content": "# !portfolio\n\n**What it does:** In-depth evidence dossier: background, mechanism, evidence, risks, status, disputes.\n\n**Syntax:** `!portfolio \"subject\" [focus=\"...\"] [+sources] [+nodiagrams]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_research`.`research_portfolio` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
-    "created_at": 1790370898,
-    "description": "(RESEARCH) !portfolio \"subject\" [focus=\"...\"] [+sources] [+nodiagrams]  —  In-depth evidence dossier: background, mechanism, evidence, risks, status, disputes. Runs brave_research.research_portfolio deterministically.",
-    "id": "brave-portfolio",
-    "is_active": 1,
-    "meta": {
-      "i18n": null,
-      "tags": [
-        "brave",
-        "command"
-      ]
-    },
-    "name": "brave-portfolio",
-    "updated_at": 1790374230,
-    "user_id": "{{OWNER}}"
-  },
-  {
-    "content": "# !profile\n\n**What it does:** A public person's professional relationship to an organisation (public LinkedIn + corroboration).\n\n**Syntax:** `!profile \"public person\" [org=\"organisation\"] [focus=\"...\"] [+sources]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_research`.`professional_profile` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
-    "created_at": 1790370898,
-    "description": "(RESEARCH) !profile \"public person\" [org=\"organisation\"] [focus=\"...\"] [+sources]  —  A public person's professional relationship to an organisation (public LinkedIn + corroboration). Runs brave_research.professional_profile deterministically.",
-    "id": "brave-profile",
-    "is_active": 1,
-    "meta": {
-      "i18n": null,
-      "tags": [
-        "brave",
-        "command"
-      ]
-    },
-    "name": "brave-profile",
-    "updated_at": 1790374230,
-    "user_id": "{{OWNER}}"
-  },
-  {
-    "content": "# !quote\n\n**What it does:** Exact wording with line numbers from a saved document.\n\n**Syntax:** `!quote \"exact phrase\" [doc=\"id\"] [lines=2]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_reader`.`quote_document` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
-    "created_at": 1790370898,
-    "description": "(READ) !quote \"exact phrase\" [doc=\"id\"] [lines=2]  —  Exact wording with line numbers from a saved document. Runs brave_reader.quote_document deterministically.",
-    "id": "brave-quote",
-    "is_active": 1,
-    "meta": {
-      "i18n": null,
-      "tags": [
-        "brave",
-        "command"
-      ]
-    },
-    "name": "brave-quote",
-    "updated_at": 1790374230,
-    "user_id": "{{OWNER}}"
-  },
-  {
-    "content": "# !read\n\n**What it does:** Read one public page in full via self-hosted Jina.\n\n**Syntax:** `!read \"https://...\" [+browser|+curl]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_reader`.`read_url` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
-    "created_at": 1790370898,
-    "description": "(READ) !read \"https://...\" [+browser|+curl]  —  Read one public page in full via self-hosted Jina. Runs brave_reader.read_url deterministically.",
-    "id": "brave-read",
-    "is_active": 1,
-    "meta": {
-      "i18n": null,
-      "tags": [
-        "brave",
-        "command"
-      ]
-    },
-    "name": "brave-read",
-    "updated_at": 1790374230,
-    "user_id": "{{OWNER}}"
-  },
-  {
-    "content": "# !save\n\n**What it does:** Save a full page into this chat's Reader Library for later questions.\n\n**Syntax:** `!save \"https://...\" [+browser]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_reader`.`save_url` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
-    "created_at": 1790370898,
-    "description": "(READ) !save \"https://...\" [+browser]  —  Save a full page into this chat's Reader Library for later questions. Runs brave_reader.save_url deterministically.",
-    "id": "brave-save",
-    "is_active": 1,
-    "meta": {
-      "i18n": null,
-      "tags": [
-        "brave",
-        "command"
-      ]
-    },
-    "name": "brave-save",
-    "updated_at": 1790374230,
-    "user_id": "{{OWNER}}"
-  },
-  {
-    "content": "# !search\n\n**What it does:** One targeted Brave web search for a fact or quick discovery.\n\n**Syntax:** `!search \"query\" [count=8] [+week|+month|+year] [+snippets]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_search`.`web` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
-    "created_at": 1790370898,
-    "description": "(SEARCH) !search \"query\" [count=8] [+week|+month|+year] [+snippets]  —  One targeted Brave web search for a fact or quick discovery. Runs brave_search.web deterministically.",
-    "id": "brave-search",
-    "is_active": 1,
-    "meta": {
-      "i18n": null,
-      "tags": [
-        "brave",
-        "command"
-      ]
-    },
-    "name": "brave-search",
-    "updated_at": 1790374229,
-    "user_id": "{{OWNER}}"
-  },
-  {
-    "content": "# !summarise\n\n**What it does:** Plain-English summary built from gathered evidence.\n\n**Syntax:** `!summarise \"subject\" [focus=\"...\"] [+quick|+deep] [+sources]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_research`.`summarise` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
-    "created_at": 1790370898,
-    "description": "(RESEARCH) !summarise \"subject\" [focus=\"...\"] [+quick|+deep] [+sources]  —  Plain-English summary built from gathered evidence. Runs brave_research.summarise deterministically.",
-    "id": "brave-summarise",
-    "is_active": 1,
-    "meta": {
-      "i18n": null,
-      "tags": [
-        "brave",
-        "command"
-      ]
-    },
-    "name": "brave-summarise",
-    "updated_at": 1790374229,
-    "user_id": "{{OWNER}}"
-  },
-  {
-    "content": "# !sweep\n\n**What it does:** Find-all / compiled lists: 2-6 planned searches in one bounded, de-duplicated sweep.\n\n**Syntax:** `!sweep \"what I want compiled\" \"query 1\" \"query 2\" [... up to 6] [include=\"...\"] [exclude=\"...\"] [+sources]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_search`.`source_sweep` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
-    "created_at": 1790370898,
-    "description": "(SEARCH) !sweep \"what I want compiled\" \"query 1\" \"query 2\" [... up to 6] [include=\"...\"] [exclude=\"...\"] [+sources]  —  Find-all / compiled lists: 2-6 planned searches in one bounded, de-duplicated sweep. Runs brave_search.source_sweep deterministically.",
-    "id": "brave-sweep",
-    "is_active": 1,
-    "meta": {
-      "i18n": null,
-      "tags": [
-        "brave",
-        "command"
-      ]
-    },
-    "name": "brave-sweep",
-    "updated_at": 1790374229,
-    "user_id": "{{OWNER}}"
-  },
-  {
-    "content": "# !topic\n\n**What it does:** Source-grounded research answer to a general question.\n\n**Syntax:** `!topic \"question\" [+quick|+deep] [+sources]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_research`.`topic` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
-    "created_at": 1790370898,
-    "description": "(RESEARCH) !topic \"question\" [+quick|+deep] [+sources]  —  Source-grounded research answer to a general question. Runs brave_research.topic deterministically.",
-    "id": "brave-topic",
-    "is_active": 1,
-    "meta": {
-      "i18n": null,
-      "tags": [
-        "brave",
-        "command"
-      ]
-    },
-    "name": "brave-topic",
-    "updated_at": 1790374229,
-    "user_id": "{{OWNER}}"
-  },
-  {
-    "content": "# !videos\n\n**What it does:** Brave video results: links and metadata only, nothing downloaded.\n\n**Syntax:** `!videos \"topic\" [count=10]`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_search`.`videos` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
-    "created_at": 1790370898,
-    "description": "(SEARCH) !videos \"topic\" [count=10]  —  Brave video results: links and metadata only, nothing downloaded. Runs brave_search.videos deterministically.",
-    "id": "brave-videos",
-    "is_active": 1,
-    "meta": {
-      "i18n": null,
-      "tags": [
-        "brave",
-        "command"
-      ]
-    },
-    "name": "brave-videos",
-    "updated_at": 1790374229,
-    "user_id": "{{OWNER}}"
-  },
-  {
-    "content": "# !wiki\n\n**What it does:** Pick an English Wikipedia article from a popup and save it to this chat.\n\n**Syntax:** `!wiki \"topic\"`\n\nRules: text in \"double quotes\"; +sources adds numbered citations; ; separates commands; -- note after a command = instruction for that section; a final ; -- note = instruction for the whole answer.\n\nThis skill is a command chip. The Brave Command Router filter normally converts it into a guaranteed tool call before you (the model) see the message, so you should never read this text. If you ARE reading it, the router is disabled: call `brave_reader`.`choose_wikipedia` once with the arguments given in the user's message, set include_sources true only if +sources is present, then write the answer from the result.",
-    "created_at": 1790370898,
-    "description": "(READ) !wiki \"topic\"  —  Pick an English Wikipedia article from a popup and save it to this chat. Runs brave_reader.choose_wikipedia deterministically.",
-    "id": "brave-wiki",
-    "is_active": 1,
-    "meta": {
-      "i18n": null,
-      "tags": [
-        "brave",
-        "command"
-      ]
-    },
-    "name": "brave-wiki",
-    "updated_at": 1790374230,
-    "user_id": "{{OWNER}}"
-  },
-  {
-    "content": "# /mermaid — draw a diagram\n\nDraw a Mermaid diagram of what the user describes after the command (or, if nothing is written, of the most recent topic in this conversation).\n\n## Pick the right type\n| Use | Mermaid type |\n|---|---|\n| Process, pipeline, decision, architecture | `flowchart TD` (or `LR` for wide pipelines) |\n| Who calls whom, request/response | `sequenceDiagram` |\n| Events over time | `timeline` |\n| Concept map / brainstorm | `mindmap` |\n| States and transitions | `stateDiagram-v2` |\n| Data model | `erDiagram` |\n\n## Rules that keep it rendering in Open WebUI\n1. One fenced block: ```mermaid ... ``` and nothing else inside it.\n2. Short stable node IDs (`gw`, `vps`, `db`), human text only in labels.\n3. **Every flowchart label in double quotes**: `gw[\"Gateway (VPS)\"]`, `d{\"Healthy?\"}`. Never unquoted labels with brackets, colons, slashes or commas.\n4. Edge labels quoted too: `a -->|\"over Tailscale\"| b`.\n5. Use `flowchart`, not the legacy `graph`. No `%%{init}%%` themes, no HTML tags, no emoji inside node IDs.\n6. Keep it readable: at most ~20 nodes; group with `subgraph id[\"Title\"] ... end` when there are clear zones.\n7. After the block, give a 2–4 line plain-English explanation of what the diagram shows.\n\nIf the request is ambiguous, draw the most useful interpretation rather than asking.",
-    "created_at": 1790374230,
-    "description": "(DIAGRAM) /mermaid <what to draw> — Draws a parser-safe Mermaid diagram (flowchart, sequence, timeline, mindmap, state, ER) of what you describe or of the conversation so far.",
-    "id": "mermaid",
+    "description": "(DIAGRAM) diagram-chart <what to draw> — Numbers as a bar and/or line chart. Best for: comparing amounts; trends over time; before and after figures.",
+    "id": "diagram-chart",
     "is_active": 1,
     "meta": {
       "i18n": null,
@@ -351,8 +19,224 @@
         "diagram"
       ]
     },
-    "name": "mermaid",
-    "updated_at": 1790374230,
+    "name": "diagram-chart",
+    "updated_at": 1791833901,
+    "user_id": "{{OWNER}}"
+  },
+  {
+    "content": "# diagram-compare — Several options scored across the same criteria, as a radar chart.\n\nDraw what the user describes after the command.\n\n## Best for\n- Product or option comparisons\n- Strengths and weaknesses\n- Scoring choices against criteria\n\n## Template\nDraw a Mermaid **radar-beta** chart. Do not switch to another diagram type.\n\n```mermaid\nradar-beta\n    title Phones\n    axis cam[\"Camera\"], bat[\"Battery\"], price[\"Value\"], size[\"Size\"]\n    curve a[\"Phone A\"]{4, 3, 2, 4}\n    curve b[\"Phone B\"]{2, 5, 4, 3}\n    max 5\n    min 0\n```\n\n- `axis` lists every criterion once as `id[\"Label\"]`, separated by commas. 3 to 8 axes.\n- Each `curve id[\"Option\"]{...}` has exactly one score per axis, in the same order. 2 to 5 curves.\n- Use one scale (for example 0 to 5) and set `max` and `min` to it. Explain the scores below the block.\n\n## Rules that keep it rendering in Open WebUI\n1. Exactly one fenced ```mermaid block, with nothing but the diagram inside it.\n2. Copy the template's shape. Do not add `%%{init}%%` themes, HTML tags, emoji or styling; the renderer supplies the dark look.\n3. Keep every label on one line. Inside quoted labels use single quotes, never double quotes.\n4. Keep it readable: about 20 items at most.\n5. After the block, write 2 to 4 plain-English lines saying what the diagram shows.\n\nIf the request is vague, draw the most useful interpretation rather than asking. If nothing follows the command, diagram the most recent topic in this conversation.",
+    "created_at": 1791833901,
+    "data": {
+      "files": [
+        {
+          "content": "# diagram-compare — Several options scored across the same criteria, as a radar chart.\n\nDraw what the user describes after the command.\n\n## Best for\n- Product or option comparisons\n- Strengths and weaknesses\n- Scoring choices against criteria\n\n## Template\nDraw a Mermaid **radar-beta** chart. Do not switch to another diagram type.\n\n```mermaid\nradar-beta\n    title Phones\n    axis cam[\"Camera\"], bat[\"Battery\"], price[\"Value\"], size[\"Size\"]\n    curve a[\"Phone A\"]{4, 3, 2, 4}\n    curve b[\"Phone B\"]{2, 5, 4, 3}\n    max 5\n    min 0\n```\n\n- `axis` lists every criterion once as `id[\"Label\"]`, separated by commas. 3 to 8 axes.\n- Each `curve id[\"Option\"]{...}` has exactly one score per axis, in the same order. 2 to 5 curves.\n- Use one scale (for example 0 to 5) and set `max` and `min` to it. Explain the scores below the block.\n\n## Rules that keep it rendering in Open WebUI\n1. Exactly one fenced ```mermaid block, with nothing but the diagram inside it.\n2. Copy the template's shape. Do not add `%%{init}%%` themes, HTML tags, emoji or styling; the renderer supplies the dark look.\n3. Keep every label on one line. Inside quoted labels use single quotes, never double quotes.\n4. Keep it readable: about 20 items at most.\n5. After the block, write 2 to 4 plain-English lines saying what the diagram shows.\n\nIf the request is vague, draw the most useful interpretation rather than asking. If nothing follows the command, diagram the most recent topic in this conversation.",
+          "path": "SKILL.md"
+        }
+      ]
+    },
+    "description": "(DIAGRAM) diagram-compare <what to draw> — Several options scored across the same criteria, as a radar chart. Best for: product or option comparisons; strengths and weaknesses; scoring choices against criteria.",
+    "id": "diagram-compare",
+    "is_active": 1,
+    "meta": {
+      "i18n": null,
+      "tags": [
+        "diagram"
+      ]
+    },
+    "name": "diagram-compare",
+    "updated_at": 1791833901,
+    "user_id": "{{OWNER}}"
+  },
+  {
+    "content": "# diagram-flowchart — Steps, decisions and cause and effect as boxes and arrows.\n\nDraw what the user describes after the command.\n\n## Best for\n- Processes and how something works\n- Cause and effect\n- Decision paths (yes/no branches)\n\n## Template\nDraw a Mermaid **flowchart**. Do not switch to another diagram type.\n\n```mermaid\nflowchart TD\n    start[\"Feeling tired\"] --> check{\"Sleeping 7+ hours?\"}\n    check -->|\"No\"| sleep[\"Fix sleep first\"]\n    check -->|\"Yes\"| bloods[\"Ask GP for blood test\"]\n```\n\n- Use `flowchart TD` (top-down) or `flowchart LR` for wide pipelines; never the legacy `graph`.\n- Short IDs (`a`, `gp`, `vps`); every label in double quotes: `id[\"Label (detail)\"]`, decisions `id{\"Question?\"}`.\n- One edge per line: write `a --> c` and `b --> c`, never `a, b --> c`. Edge labels quoted: `-->|\"text\"|`.\n- Never use lowercase `end` as an ID. Group related nodes with `subgraph g1[\"Title\"]` ... `end` only when it helps.\n\n## Rules that keep it rendering in Open WebUI\n1. Exactly one fenced ```mermaid block, with nothing but the diagram inside it.\n2. Copy the template's shape. Do not add `%%{init}%%` themes, HTML tags, emoji or styling; the renderer supplies the dark look.\n3. Keep every label on one line. Inside quoted labels use single quotes, never double quotes.\n4. Keep it readable: about 20 items at most.\n5. After the block, write 2 to 4 plain-English lines saying what the diagram shows.\n\nIf the request is vague, draw the most useful interpretation rather than asking. If nothing follows the command, diagram the most recent topic in this conversation.",
+    "created_at": 1791833901,
+    "data": {
+      "files": [
+        {
+          "content": "# diagram-flowchart — Steps, decisions and cause and effect as boxes and arrows.\n\nDraw what the user describes after the command.\n\n## Best for\n- Processes and how something works\n- Cause and effect\n- Decision paths (yes/no branches)\n\n## Template\nDraw a Mermaid **flowchart**. Do not switch to another diagram type.\n\n```mermaid\nflowchart TD\n    start[\"Feeling tired\"] --> check{\"Sleeping 7+ hours?\"}\n    check -->|\"No\"| sleep[\"Fix sleep first\"]\n    check -->|\"Yes\"| bloods[\"Ask GP for blood test\"]\n```\n\n- Use `flowchart TD` (top-down) or `flowchart LR` for wide pipelines; never the legacy `graph`.\n- Short IDs (`a`, `gp`, `vps`); every label in double quotes: `id[\"Label (detail)\"]`, decisions `id{\"Question?\"}`.\n- One edge per line: write `a --> c` and `b --> c`, never `a, b --> c`. Edge labels quoted: `-->|\"text\"|`.\n- Never use lowercase `end` as an ID. Group related nodes with `subgraph g1[\"Title\"]` ... `end` only when it helps.\n\n## Rules that keep it rendering in Open WebUI\n1. Exactly one fenced ```mermaid block, with nothing but the diagram inside it.\n2. Copy the template's shape. Do not add `%%{init}%%` themes, HTML tags, emoji or styling; the renderer supplies the dark look.\n3. Keep every label on one line. Inside quoted labels use single quotes, never double quotes.\n4. Keep it readable: about 20 items at most.\n5. After the block, write 2 to 4 plain-English lines saying what the diagram shows.\n\nIf the request is vague, draw the most useful interpretation rather than asking. If nothing follows the command, diagram the most recent topic in this conversation.",
+          "path": "SKILL.md"
+        }
+      ]
+    },
+    "description": "(DIAGRAM) diagram-flowchart <what to draw> — Steps, decisions and cause and effect as boxes and arrows. Best for: processes and how something works; cause and effect; decision paths (yes/no branches).",
+    "id": "diagram-flowchart",
+    "is_active": 1,
+    "meta": {
+      "i18n": null,
+      "tags": [
+        "diagram"
+      ]
+    },
+    "name": "diagram-flowchart",
+    "updated_at": 1791833901,
+    "user_id": "{{OWNER}}"
+  },
+  {
+    "content": "# diagram-gantt — Tasks on a calendar, showing order and overlap.\n\nDraw what the user describes after the command.\n\n## Best for\n- Project plans\n- Schedules and deadlines\n- Treatment or training plans over weeks\n\n## Template\nDraw a Mermaid **gantt** chart. Do not switch to another diagram type.\n\n```mermaid\ngantt\n    title Kitchen refit\n    dateFormat YYYY-MM-DD\n    section Prepare\n    Quotes :q1, 2026-11-02, 7d\n    Order units :o1, after q1, 3d\n    section Build\n    Fit units :f1, after o1, 5d\n```\n\n- Keep `dateFormat YYYY-MM-DD`. Each task is `Name :id, start, duration` where start is a date or `after id`.\n- Durations like `3d` or `2w`. Task names without colons.\n- Group tasks with `section Name`.\n\n## Rules that keep it rendering in Open WebUI\n1. Exactly one fenced ```mermaid block, with nothing but the diagram inside it.\n2. Copy the template's shape. Do not add `%%{init}%%` themes, HTML tags, emoji or styling; the renderer supplies the dark look.\n3. Keep every label on one line. Inside quoted labels use single quotes, never double quotes.\n4. Keep it readable: about 20 items at most.\n5. After the block, write 2 to 4 plain-English lines saying what the diagram shows.\n\nIf the request is vague, draw the most useful interpretation rather than asking. If nothing follows the command, diagram the most recent topic in this conversation.",
+    "created_at": 1791833901,
+    "data": {
+      "files": [
+        {
+          "content": "# diagram-gantt — Tasks on a calendar, showing order and overlap.\n\nDraw what the user describes after the command.\n\n## Best for\n- Project plans\n- Schedules and deadlines\n- Treatment or training plans over weeks\n\n## Template\nDraw a Mermaid **gantt** chart. Do not switch to another diagram type.\n\n```mermaid\ngantt\n    title Kitchen refit\n    dateFormat YYYY-MM-DD\n    section Prepare\n    Quotes :q1, 2026-11-02, 7d\n    Order units :o1, after q1, 3d\n    section Build\n    Fit units :f1, after o1, 5d\n```\n\n- Keep `dateFormat YYYY-MM-DD`. Each task is `Name :id, start, duration` where start is a date or `after id`.\n- Durations like `3d` or `2w`. Task names without colons.\n- Group tasks with `section Name`.\n\n## Rules that keep it rendering in Open WebUI\n1. Exactly one fenced ```mermaid block, with nothing but the diagram inside it.\n2. Copy the template's shape. Do not add `%%{init}%%` themes, HTML tags, emoji or styling; the renderer supplies the dark look.\n3. Keep every label on one line. Inside quoted labels use single quotes, never double quotes.\n4. Keep it readable: about 20 items at most.\n5. After the block, write 2 to 4 plain-English lines saying what the diagram shows.\n\nIf the request is vague, draw the most useful interpretation rather than asking. If nothing follows the command, diagram the most recent topic in this conversation.",
+          "path": "SKILL.md"
+        }
+      ]
+    },
+    "description": "(DIAGRAM) diagram-gantt <what to draw> — Tasks on a calendar, showing order and overlap. Best for: project plans; schedules and deadlines; treatment or training plans over weeks.",
+    "id": "diagram-gantt",
+    "is_active": 1,
+    "meta": {
+      "i18n": null,
+      "tags": [
+        "diagram"
+      ]
+    },
+    "name": "diagram-gantt",
+    "updated_at": 1791833901,
+    "user_id": "{{OWNER}}"
+  },
+  {
+    "content": "# diagram-mindmap — Ideas branching out from one central topic.\n\nDraw what the user describes after the command.\n\n## Best for\n- Brainstorms\n- Topic overviews\n- Pros and cons, or causes and fixes\n\n## Template\nDraw a Mermaid **mindmap**. Do not switch to another diagram type.\n\n```mermaid\nmindmap\n  root((\"Better sleep\"))\n    Causes\n      Stress\n      Late caffeine\n    Fixes\n      Fixed bedtime\n      Dark, cool room\n```\n\n- Structure comes only from indentation: two spaces per level, consistently. No arrows.\n- The root is `root((\"Topic\"))`. Branches are short plain words with no brackets, colons or quotes.\n- 3 to 6 main branches, each with 2 to 5 leaves.\n\n## Rules that keep it rendering in Open WebUI\n1. Exactly one fenced ```mermaid block, with nothing but the diagram inside it.\n2. Copy the template's shape. Do not add `%%{init}%%` themes, HTML tags, emoji or styling; the renderer supplies the dark look.\n3. Keep every label on one line. Inside quoted labels use single quotes, never double quotes.\n4. Keep it readable: about 20 items at most.\n5. After the block, write 2 to 4 plain-English lines saying what the diagram shows.\n\nIf the request is vague, draw the most useful interpretation rather than asking. If nothing follows the command, diagram the most recent topic in this conversation.",
+    "created_at": 1791833901,
+    "data": {
+      "files": [
+        {
+          "content": "# diagram-mindmap — Ideas branching out from one central topic.\n\nDraw what the user describes after the command.\n\n## Best for\n- Brainstorms\n- Topic overviews\n- Pros and cons, or causes and fixes\n\n## Template\nDraw a Mermaid **mindmap**. Do not switch to another diagram type.\n\n```mermaid\nmindmap\n  root((\"Better sleep\"))\n    Causes\n      Stress\n      Late caffeine\n    Fixes\n      Fixed bedtime\n      Dark, cool room\n```\n\n- Structure comes only from indentation: two spaces per level, consistently. No arrows.\n- The root is `root((\"Topic\"))`. Branches are short plain words with no brackets, colons or quotes.\n- 3 to 6 main branches, each with 2 to 5 leaves.\n\n## Rules that keep it rendering in Open WebUI\n1. Exactly one fenced ```mermaid block, with nothing but the diagram inside it.\n2. Copy the template's shape. Do not add `%%{init}%%` themes, HTML tags, emoji or styling; the renderer supplies the dark look.\n3. Keep every label on one line. Inside quoted labels use single quotes, never double quotes.\n4. Keep it readable: about 20 items at most.\n5. After the block, write 2 to 4 plain-English lines saying what the diagram shows.\n\nIf the request is vague, draw the most useful interpretation rather than asking. If nothing follows the command, diagram the most recent topic in this conversation.",
+          "path": "SKILL.md"
+        }
+      ]
+    },
+    "description": "(DIAGRAM) diagram-mindmap <what to draw> — Ideas branching out from one central topic. Best for: brainstorms; topic overviews; pros and cons, or causes and fixes.",
+    "id": "diagram-mindmap",
+    "is_active": 1,
+    "meta": {
+      "i18n": null,
+      "tags": [
+        "diagram"
+      ]
+    },
+    "name": "diagram-mindmap",
+    "updated_at": 1791833901,
+    "user_id": "{{OWNER}}"
+  },
+  {
+    "content": "# diagram-pie — Shares of a whole as a pie chart.\n\nDraw what the user describes after the command.\n\n## Best for\n- Budget or time breakdowns\n- Market or vote shares\n- Survey results\n\n## Template\nDraw a Mermaid **pie** chart. Do not switch to another diagram type.\n\n```mermaid\npie title Monthly budget\n    \"Rent\" : 900\n    \"Food\" : 400\n    \"Savings\" : 300\n```\n\n- Every slice is `\"Label\" : number`, label in double quotes, plain number with no units or % sign.\n- 2 to 8 slices. Combine small ones into \"Other\".\n- Only use figures from the conversation or sources; say in the explanation if any are estimates.\n\n## Rules that keep it rendering in Open WebUI\n1. Exactly one fenced ```mermaid block, with nothing but the diagram inside it.\n2. Copy the template's shape. Do not add `%%{init}%%` themes, HTML tags, emoji or styling; the renderer supplies the dark look.\n3. Keep every label on one line. Inside quoted labels use single quotes, never double quotes.\n4. Keep it readable: about 20 items at most.\n5. After the block, write 2 to 4 plain-English lines saying what the diagram shows.\n\nIf the request is vague, draw the most useful interpretation rather than asking. If nothing follows the command, diagram the most recent topic in this conversation.",
+    "created_at": 1791833901,
+    "data": {
+      "files": [
+        {
+          "content": "# diagram-pie — Shares of a whole as a pie chart.\n\nDraw what the user describes after the command.\n\n## Best for\n- Budget or time breakdowns\n- Market or vote shares\n- Survey results\n\n## Template\nDraw a Mermaid **pie** chart. Do not switch to another diagram type.\n\n```mermaid\npie title Monthly budget\n    \"Rent\" : 900\n    \"Food\" : 400\n    \"Savings\" : 300\n```\n\n- Every slice is `\"Label\" : number`, label in double quotes, plain number with no units or % sign.\n- 2 to 8 slices. Combine small ones into \"Other\".\n- Only use figures from the conversation or sources; say in the explanation if any are estimates.\n\n## Rules that keep it rendering in Open WebUI\n1. Exactly one fenced ```mermaid block, with nothing but the diagram inside it.\n2. Copy the template's shape. Do not add `%%{init}%%` themes, HTML tags, emoji or styling; the renderer supplies the dark look.\n3. Keep every label on one line. Inside quoted labels use single quotes, never double quotes.\n4. Keep it readable: about 20 items at most.\n5. After the block, write 2 to 4 plain-English lines saying what the diagram shows.\n\nIf the request is vague, draw the most useful interpretation rather than asking. If nothing follows the command, diagram the most recent topic in this conversation.",
+          "path": "SKILL.md"
+        }
+      ]
+    },
+    "description": "(DIAGRAM) diagram-pie <what to draw> — Shares of a whole as a pie chart. Best for: budget or time breakdowns; market or vote shares; survey results.",
+    "id": "diagram-pie",
+    "is_active": 1,
+    "meta": {
+      "i18n": null,
+      "tags": [
+        "diagram"
+      ]
+    },
+    "name": "diagram-pie",
+    "updated_at": 1791833901,
+    "user_id": "{{OWNER}}"
+  },
+  {
+    "content": "# diagram-quadrant — Items placed on a two-by-two grid by two qualities.\n\nDraw what the user describes after the command.\n\n## Best for\n- Priorities (effort against impact)\n- Risk (likelihood against severity)\n- Comparing options on two measures\n\n## Template\nDraw a Mermaid **quadrantChart**. Do not switch to another diagram type.\n\n```mermaid\nquadrantChart\n    title Priorities\n    x-axis Low effort --> High effort\n    y-axis Low impact --> High impact\n    quadrant-1 Plan carefully\n    quadrant-2 Do now\n    quadrant-3 Drop\n    quadrant-4 Delegate\n    Fix boiler: [0.3, 0.9]\n    Paint shed: [0.6, 0.2]\n```\n\n- quadrant-1 is top right, 2 top left, 3 bottom left, 4 bottom right.\n- Each point is `Name: [x, y]` with both values between 0 and 1. Names in plain words with no colons or brackets.\n- Axis text is plain words joined by `-->`. 3 to 12 points.\n\n## Rules that keep it rendering in Open WebUI\n1. Exactly one fenced ```mermaid block, with nothing but the diagram inside it.\n2. Copy the template's shape. Do not add `%%{init}%%` themes, HTML tags, emoji or styling; the renderer supplies the dark look.\n3. Keep every label on one line. Inside quoted labels use single quotes, never double quotes.\n4. Keep it readable: about 20 items at most.\n5. After the block, write 2 to 4 plain-English lines saying what the diagram shows.\n\nIf the request is vague, draw the most useful interpretation rather than asking. If nothing follows the command, diagram the most recent topic in this conversation.",
+    "created_at": 1791833901,
+    "data": {
+      "files": [
+        {
+          "content": "# diagram-quadrant — Items placed on a two-by-two grid by two qualities.\n\nDraw what the user describes after the command.\n\n## Best for\n- Priorities (effort against impact)\n- Risk (likelihood against severity)\n- Comparing options on two measures\n\n## Template\nDraw a Mermaid **quadrantChart**. Do not switch to another diagram type.\n\n```mermaid\nquadrantChart\n    title Priorities\n    x-axis Low effort --> High effort\n    y-axis Low impact --> High impact\n    quadrant-1 Plan carefully\n    quadrant-2 Do now\n    quadrant-3 Drop\n    quadrant-4 Delegate\n    Fix boiler: [0.3, 0.9]\n    Paint shed: [0.6, 0.2]\n```\n\n- quadrant-1 is top right, 2 top left, 3 bottom left, 4 bottom right.\n- Each point is `Name: [x, y]` with both values between 0 and 1. Names in plain words with no colons or brackets.\n- Axis text is plain words joined by `-->`. 3 to 12 points.\n\n## Rules that keep it rendering in Open WebUI\n1. Exactly one fenced ```mermaid block, with nothing but the diagram inside it.\n2. Copy the template's shape. Do not add `%%{init}%%` themes, HTML tags, emoji or styling; the renderer supplies the dark look.\n3. Keep every label on one line. Inside quoted labels use single quotes, never double quotes.\n4. Keep it readable: about 20 items at most.\n5. After the block, write 2 to 4 plain-English lines saying what the diagram shows.\n\nIf the request is vague, draw the most useful interpretation rather than asking. If nothing follows the command, diagram the most recent topic in this conversation.",
+          "path": "SKILL.md"
+        }
+      ]
+    },
+    "description": "(DIAGRAM) diagram-quadrant <what to draw> — Items placed on a two-by-two grid by two qualities. Best for: priorities (effort against impact); risk (likelihood against severity); comparing options on two measures.",
+    "id": "diagram-quadrant",
+    "is_active": 1,
+    "meta": {
+      "i18n": null,
+      "tags": [
+        "diagram"
+      ]
+    },
+    "name": "diagram-quadrant",
+    "updated_at": 1791833901,
+    "user_id": "{{OWNER}}"
+  },
+  {
+    "content": "# diagram-sankey — Amounts flowing from sources to destinations.\n\nDraw what the user describes after the command.\n\n## Best for\n- Where money goes\n- Energy or resource flows\n- Funnels and drop-off\n\n## Template\nDraw a Mermaid **sankey-beta** diagram. Do not switch to another diagram type.\n\n```mermaid\nsankey-beta\nSalary,Rent,900\nSalary,Food,400\nSalary,Savings,300\nSavings,ISA,200\n```\n\n- After the first line, every line is `source,target,value`: three fields, no header row, no spaces after commas.\n- Values are plain numbers. Names must not contain commas; if one must, wrap it in double quotes.\n- Flows must not loop back to an earlier node.\n\n## Rules that keep it rendering in Open WebUI\n1. Exactly one fenced ```mermaid block, with nothing but the diagram inside it.\n2. Copy the template's shape. Do not add `%%{init}%%` themes, HTML tags, emoji or styling; the renderer supplies the dark look.\n3. Keep every label on one line. Inside quoted labels use single quotes, never double quotes.\n4. Keep it readable: about 20 items at most.\n5. After the block, write 2 to 4 plain-English lines saying what the diagram shows.\n\nIf the request is vague, draw the most useful interpretation rather than asking. If nothing follows the command, diagram the most recent topic in this conversation.",
+    "created_at": 1791833901,
+    "data": {
+      "files": [
+        {
+          "content": "# diagram-sankey — Amounts flowing from sources to destinations.\n\nDraw what the user describes after the command.\n\n## Best for\n- Where money goes\n- Energy or resource flows\n- Funnels and drop-off\n\n## Template\nDraw a Mermaid **sankey-beta** diagram. Do not switch to another diagram type.\n\n```mermaid\nsankey-beta\nSalary,Rent,900\nSalary,Food,400\nSalary,Savings,300\nSavings,ISA,200\n```\n\n- After the first line, every line is `source,target,value`: three fields, no header row, no spaces after commas.\n- Values are plain numbers. Names must not contain commas; if one must, wrap it in double quotes.\n- Flows must not loop back to an earlier node.\n\n## Rules that keep it rendering in Open WebUI\n1. Exactly one fenced ```mermaid block, with nothing but the diagram inside it.\n2. Copy the template's shape. Do not add `%%{init}%%` themes, HTML tags, emoji or styling; the renderer supplies the dark look.\n3. Keep every label on one line. Inside quoted labels use single quotes, never double quotes.\n4. Keep it readable: about 20 items at most.\n5. After the block, write 2 to 4 plain-English lines saying what the diagram shows.\n\nIf the request is vague, draw the most useful interpretation rather than asking. If nothing follows the command, diagram the most recent topic in this conversation.",
+          "path": "SKILL.md"
+        }
+      ]
+    },
+    "description": "(DIAGRAM) diagram-sankey <what to draw> — Amounts flowing from sources to destinations. Best for: where money goes; energy or resource flows; funnels and drop-off.",
+    "id": "diagram-sankey",
+    "is_active": 1,
+    "meta": {
+      "i18n": null,
+      "tags": [
+        "diagram"
+      ]
+    },
+    "name": "diagram-sankey",
+    "updated_at": 1791833901,
+    "user_id": "{{OWNER}}"
+  },
+  {
+    "content": "# diagram-sequence — Who says or sends what to whom, in order.\n\nDraw what the user describes after the command.\n\n## Best for\n- Conversations and negotiations\n- Request and response between systems\n- Hand-offs between people or teams\n\n## Template\nDraw a Mermaid **sequenceDiagram**. Do not switch to another diagram type.\n\n```mermaid\nsequenceDiagram\n    participant P as Patient\n    participant G as GP\n    participant L as Lab\n    P->>G: Describes symptoms\n    G->>L: Requests blood test\n    L-->>G: Sends results\n    G-->>P: Explains results\n```\n\n- Declare each participant once at the top with a short ID: `participant G as GP`.\n- `->>` for a message, `-->>` for a reply. Message text after the colon, with no further colons.\n- Optional `Note over P,G: text`, and `alt` / `else` / `end` blocks for branches.\n\n## Rules that keep it rendering in Open WebUI\n1. Exactly one fenced ```mermaid block, with nothing but the diagram inside it.\n2. Copy the template's shape. Do not add `%%{init}%%` themes, HTML tags, emoji or styling; the renderer supplies the dark look.\n3. Keep every label on one line. Inside quoted labels use single quotes, never double quotes.\n4. Keep it readable: about 20 items at most.\n5. After the block, write 2 to 4 plain-English lines saying what the diagram shows.\n\nIf the request is vague, draw the most useful interpretation rather than asking. If nothing follows the command, diagram the most recent topic in this conversation.",
+    "created_at": 1791833901,
+    "data": {
+      "files": [
+        {
+          "content": "# diagram-sequence — Who says or sends what to whom, in order.\n\nDraw what the user describes after the command.\n\n## Best for\n- Conversations and negotiations\n- Request and response between systems\n- Hand-offs between people or teams\n\n## Template\nDraw a Mermaid **sequenceDiagram**. Do not switch to another diagram type.\n\n```mermaid\nsequenceDiagram\n    participant P as Patient\n    participant G as GP\n    participant L as Lab\n    P->>G: Describes symptoms\n    G->>L: Requests blood test\n    L-->>G: Sends results\n    G-->>P: Explains results\n```\n\n- Declare each participant once at the top with a short ID: `participant G as GP`.\n- `->>` for a message, `-->>` for a reply. Message text after the colon, with no further colons.\n- Optional `Note over P,G: text`, and `alt` / `else` / `end` blocks for branches.\n\n## Rules that keep it rendering in Open WebUI\n1. Exactly one fenced ```mermaid block, with nothing but the diagram inside it.\n2. Copy the template's shape. Do not add `%%{init}%%` themes, HTML tags, emoji or styling; the renderer supplies the dark look.\n3. Keep every label on one line. Inside quoted labels use single quotes, never double quotes.\n4. Keep it readable: about 20 items at most.\n5. After the block, write 2 to 4 plain-English lines saying what the diagram shows.\n\nIf the request is vague, draw the most useful interpretation rather than asking. If nothing follows the command, diagram the most recent topic in this conversation.",
+          "path": "SKILL.md"
+        }
+      ]
+    },
+    "description": "(DIAGRAM) diagram-sequence <what to draw> — Who says or sends what to whom, in order. Best for: conversations and negotiations; request and response between systems; hand-offs between people or teams.",
+    "id": "diagram-sequence",
+    "is_active": 1,
+    "meta": {
+      "i18n": null,
+      "tags": [
+        "diagram"
+      ]
+    },
+    "name": "diagram-sequence",
+    "updated_at": 1791833901,
+    "user_id": "{{OWNER}}"
+  },
+  {
+    "content": "# diagram-timeline — Events laid out in date order.\n\nDraw what the user describes after the command.\n\n## Best for\n- History and background\n- A sequence of incidents\n- Project milestones\n\n## Template\nDraw a Mermaid **timeline**. Do not switch to another diagram type.\n\n```mermaid\ntimeline\n    title NHS dental changes\n    2006 : New dental contract\n    2020 : Practices close in lockdown\n    2024 : Recovery plan : New patient premium\n```\n\n- Every line is `period : event`, with ` : ` between extra events in the same period. Never use arrows (`→`, `->`).\n- The period must not contain a colon: write `14.30`, not `14:30`. No `#` or `;` in the period.\n- Optional `section Name` lines group periods. Keep events short.\n\n## Rules that keep it rendering in Open WebUI\n1. Exactly one fenced ```mermaid block, with nothing but the diagram inside it.\n2. Copy the template's shape. Do not add `%%{init}%%` themes, HTML tags, emoji or styling; the renderer supplies the dark look.\n3. Keep every label on one line. Inside quoted labels use single quotes, never double quotes.\n4. Keep it readable: about 20 items at most.\n5. After the block, write 2 to 4 plain-English lines saying what the diagram shows.\n\nIf the request is vague, draw the most useful interpretation rather than asking. If nothing follows the command, diagram the most recent topic in this conversation.",
+    "created_at": 1791833901,
+    "data": {
+      "files": [
+        {
+          "content": "# diagram-timeline — Events laid out in date order.\n\nDraw what the user describes after the command.\n\n## Best for\n- History and background\n- A sequence of incidents\n- Project milestones\n\n## Template\nDraw a Mermaid **timeline**. Do not switch to another diagram type.\n\n```mermaid\ntimeline\n    title NHS dental changes\n    2006 : New dental contract\n    2020 : Practices close in lockdown\n    2024 : Recovery plan : New patient premium\n```\n\n- Every line is `period : event`, with ` : ` between extra events in the same period. Never use arrows (`→`, `->`).\n- The period must not contain a colon: write `14.30`, not `14:30`. No `#` or `;` in the period.\n- Optional `section Name` lines group periods. Keep events short.\n\n## Rules that keep it rendering in Open WebUI\n1. Exactly one fenced ```mermaid block, with nothing but the diagram inside it.\n2. Copy the template's shape. Do not add `%%{init}%%` themes, HTML tags, emoji or styling; the renderer supplies the dark look.\n3. Keep every label on one line. Inside quoted labels use single quotes, never double quotes.\n4. Keep it readable: about 20 items at most.\n5. After the block, write 2 to 4 plain-English lines saying what the diagram shows.\n\nIf the request is vague, draw the most useful interpretation rather than asking. If nothing follows the command, diagram the most recent topic in this conversation.",
+          "path": "SKILL.md"
+        }
+      ]
+    },
+    "description": "(DIAGRAM) diagram-timeline <what to draw> — Events laid out in date order. Best for: history and background; a sequence of incidents; project milestones.",
+    "id": "diagram-timeline",
+    "is_active": 1,
+    "meta": {
+      "i18n": null,
+      "tags": [
+        "diagram"
+      ]
+    },
+    "name": "diagram-timeline",
+    "updated_at": 1791833901,
     "user_id": "{{OWNER}}"
   }
 ]

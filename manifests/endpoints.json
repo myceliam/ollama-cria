@@ -112,6 +112,12 @@
       ]
     },
     {
+      "file": "vps/kroki/compose.yml",
+      "placeholders": [
+        "VPS_TS_IP"
+      ]
+    },
+    {
       "file": "vps/nginx/groq-relay",
       "placeholders": [
         "VPS_PUBLIC_IP",

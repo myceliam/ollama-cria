@@ -1,0 +1,32 @@
+# Kroki diagram renderer, added 2026-10-12 (AICL-0170) for Open WebUI diagram rendering.
+# Bound to the TAILSCALE IP only, like kokoro-tts. Needs no internet; not behind the Mullvad guard.
+# Companions: mermaid, bpmn, excalidraw. Core handles PlantUML, Graphviz, D2, Vega/Vega-Lite and others.
+services:
+  kroki:
+    image: yuzutech/kroki:latest
+    container_name: kroki
+    ports:
+      - "{{VPS_TS_IP}}:8800:8000"
+    environment:
+      KROKI_SAFE_MODE: secure
+      KROKI_MERMAID_HOST: kroki-mermaid
+      KROKI_BPMN_HOST: kroki-bpmn
+      KROKI_EXCALIDRAW_HOST: kroki-excalidraw
+    depends_on: [kroki-mermaid, kroki-bpmn, kroki-excalidraw]
+    mem_limit: 2g
+    restart: unless-stopped
+  kroki-mermaid:
+    image: yuzutech/kroki-mermaid:latest
+    container_name: kroki-mermaid
+    mem_limit: 1g
+    restart: unless-stopped
+  kroki-bpmn:
+    image: yuzutech/kroki-bpmn:latest
+    container_name: kroki-bpmn
+    mem_limit: 1g
+    restart: unless-stopped
+  kroki-excalidraw:
+    image: yuzutech/kroki-excalidraw:latest
+    container_name: kroki-excalidraw
+    mem_limit: 1g
+    restart: unless-stopped

@@ -1,0 +1,8 @@
+fastapi==0.115.14
+uvicorn[standard]==0.35.0
+google-api-python-client==2.174.0
+google-auth==2.40.3
+google-auth-oauthlib==1.2.2
+pydantic==2.11.7
+requests==2.32.3
+tzdata==2024.1

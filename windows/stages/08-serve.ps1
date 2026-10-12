@@ -517,6 +517,20 @@ function Repair-StaleService {
     }
 }
 
+function Repair-MissingService {
+    # Starts the services start-stack.ps1 left with no container at all: a
+    # project it does not know about, such as the gcal bridge's stop-gap
+    # compose project (restored 12 October 2026), which the live PC keeps
+    # running through its restart policy alone.
+    foreach ($p in $projects) {
+        $missing = @((Get-ProjectState $p).Bad | Where-Object { $_ -like '*: no container' } | ForEach-Object { ($_ -split ':')[0] })
+        if (-not $missing.Count) { continue }
+        $r = Invoke-Docker ((Get-ComposeArgument $p) + @('up', '-d', '--no-build', '--pull', 'never') + $missing)
+        if ($r.ExitCode -ne 0) { $result.Problems.Add("$($p['name']): could not start $($missing -join ', ') (exit $($r.ExitCode))"); continue }
+        $result.Steps.Add("$($p['name']): started $($missing -join ', '), which start-stack.ps1 does not start")
+    }
+}
+
 function Get-ToolServer {
     # The tool server connections the seed enables, or $null.
     $path = Join-Path $seedDir 'config.json'
@@ -590,6 +604,7 @@ function Invoke-Stack($Account) {
     Invoke-ComfyUi $Account
     if (-not (Invoke-StartStack)) { return }
     if ($act) {
+        Repair-MissingService
         Repair-StaleService
         & $Context.Say 'waiting up to five minutes for every service to run healthy'
     }

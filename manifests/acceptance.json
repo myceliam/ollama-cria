@@ -12,7 +12,7 @@
     "7": "Speech to text",
     "8": "Text to speech",
     "9": "Notifications",
-    "10": "Gmail",
+    "10": "Calendar and Gmail",
     "11": "Filters",
     "12": "Bolt and open-terminal from the VPS",
     "13": "Model presets and skills",
@@ -127,6 +127,19 @@
         "operation": "list_allowed_directories",
         "body": {},
         "contains": "Allowed directories"
+      }
+    },
+    {
+      "id": "server:gcal-bridge",
+      "group": 3,
+      "who": "auto",
+      "owner": 8,
+      "what": "the gcal bridge serves its OpenAPI description",
+      "server": ":18100(/|$)",
+      "probe": {
+        "type": "http",
+        "url": "http://127.0.0.1:18100/openapi.json",
+        "contains": "/events/next"
       }
     },
     {
@@ -643,6 +656,37 @@
       "steps": "Make ntfy_push send one notification the way you normally use it. It arrives on the phone."
     },
     {
+      "id": "gcal-auth",
+      "group": 10,
+      "who": "auto",
+      "owner": 4,
+      "what": "the gcal bridge holds a Google token",
+      "probe": {
+        "type": "http",
+        "url": "http://127.0.0.1:18100/auth/status",
+        "uses": "gcal",
+        "fields": {
+          "authenticated": true
+        }
+      }
+    },
+    {
+      "id": "gcal-events",
+      "group": 10,
+      "who": "auto",
+      "owner": 4,
+      "what": "the gcal bridge lists the next day's events from Google",
+      "probe": {
+        "type": "http",
+        "url": "http://127.0.0.1:18100/events/next?days=1",
+        "uses": "gcal",
+        "fields": {
+          "source": "google_calendar_live"
+        },
+        "timeoutSec": 60
+      }
+    },
+    {
       "id": "gmail-auth",
       "group": 10,
       "who": "auto",
@@ -671,6 +715,15 @@
       }
     },
     {
+      "id": "server:google-calendar-mcp",
+      "group": 10,
+      "who": "user",
+      "owner": 7,
+      "what": "Google's own Calendar MCP connection signs in and reads the calendar",
+      "server": "^https://calendarmcp\\.googleapis\\.com/",
+      "steps": "In OWUI, turn on the Google Calendar tool in a chat and ask what is on the calendar tomorrow. If OWUI asks you to sign in to Google, do so (its OAuth client secret comes back from the bundle). You should see tomorrow's events."
+    },
+    {
       "id": "function:brave_command_router",
       "group": 11,
       "who": "auto",
@@ -683,6 +736,21 @@
         "type": "owui-load",
         "kind": "function",
         "id": "brave_command_router"
+      }
+    },
+    {
+      "id": "function:command_builder",
+      "group": 11,
+      "who": "auto",
+      "owner": 7,
+      "what": "OWUI loads the command_builder function's code (its requirements are installed)",
+      "covers": [
+        "function:command_builder"
+      ],
+      "probe": {
+        "type": "owui-load",
+        "kind": "function",
+        "id": "command_builder"
       }
     },
     {
@@ -720,8 +788,8 @@
       "group": 11,
       "who": "user",
       "owner": 7,
-      "what": "brave_command_router routes a command; Mermaid diagrams render",
-      "steps": "In OWUI, send a command that brave_command_router handles and check it goes to the right tool. Then ask for a small Mermaid flowchart: it renders, in the modern style."
+      "what": "brave_command_router routes a command; the Command Guide builds one; Mermaid diagrams render",
+      "steps": "In OWUI, send a command that brave_command_router handles and check it goes to the right tool. In the Command Guide model, type 'diagram list' and check the full list of diagram skills comes back, then build one Brave command through its popups. Then ask for a small Mermaid flowchart with $diagram-flowchart: it renders, in the modern style."
     },
     {
       "id": "bolt-from-vps",

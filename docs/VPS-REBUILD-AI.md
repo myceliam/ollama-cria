@@ -34,13 +34,13 @@ PC: Open WebUI → web-vps-relay ──tailnet (WireGuard)──▶ VPS: gateway
 
 | Layer | What it does | Where it lives |
 |---|---|---|
-| Tailnet only | Every VPS service binds to the VPS's tailnet address. ufw denies all inbound except `tailscale0` and `41641/udp`. sshd listens on the tailnet address only | `vps/web-egress/compose.yml`, `vps/kokoro/compose.yml`, `vps/nginx/groq-relay`, `linux/stages/02-base.sh` |
+| Tailnet only | Every VPS service binds to the VPS's tailnet address. ufw denies all inbound except `tailscale0` and `41641/udp`. sshd listens on the tailnet address only | `vps/web-egress/compose.yml`, `vps/kokoro/compose.yml`, `vps/kroki/compose.yml`, `vps/nginx/groq-relay`, `linux/stages/02-base.sh` |
 | One tunnel | SearXNG, Jina Reader, the Brave/Jina gateway, searxng-mcp and the proxy relay share gluetun's network (`network_mode: service:gluetun`), so they have no route but the tunnel | `compose.yml` |
 | Multihop | gluetun's `custom` provider. The endpoint is the **entry** server's address with the **exit** server's multihop port; the public key is the **exit** server's | `.env` (bundle folder 05), `compose.yml` |
 | Kill switch 1 | gluetun's own firewall (`FIREWALL: on`): nothing leaves outside the tunnel. DNS goes over TLS inside it (`DOT: on`) | `compose.yml` |
 | Kill switch 2 | The nftables guard, table `inet owui_web`. The egress subnet may reach only the tailnet and **one** plaintext destination, the WireGuard handshake to the entry server. IPv6 is rejected. Containers can't open new connections to the PC or reach the VPS host | `guard.nft`, `guard.sh`, `owui-web-egress-guard.service` |
 | Boot order | Docker `Requires=` and `After=` the guard, so no container starts without it | `vps/systemd/docker.service.d/owui-web-egress.conf` |
-| Not tunnelled, on purpose | Kokoro (needs no internet), the Groq STT relay (Groq refuses Mullvad addresses), SSH and Tailscale | |
+| Not tunnelled, on purpose | Kokoro and Kroki (neither needs the internet), the Groq STT relay (Groq refuses Mullvad addresses), SSH and Tailscale | |
 
 **The egress `.env` has seven names:** `VPN_ENDPOINT_IP`, `VPN_ENDPOINT_PORT`, `WIREGUARD_PUBLIC_KEY`, `WIREGUARD_PRIVATE_KEY`, `WIREGUARD_ADDRESSES`, `BRAVE_API_KEY`, `SEARXNG_SECRET`.
 
@@ -534,7 +534,7 @@ fi
 
 ## V10 · The guard first, then images and services 🤖
 
-`05-services.sh` loads the guard and proves it (its nftables table and routing rule exist, and Docker requires it) **before** any image is pulled or container created. Then it pulls every image at the digest in `manifests/images.json`, builds the hardened Jina Reader and searxng-mcp, starts `owui-web-egress` and `kokoro` with nothing else pulled, waits until they're healthy, and switches on only the Groq relay site in nginx.
+`05-services.sh` loads the guard and proves it (its nftables table and routing rule exist, and Docker requires it) **before** any image is pulled or container created. Then it pulls every image at the digest in `manifests/images.json`, builds the hardened Jina Reader and searxng-mcp, starts `owui-web-egress`, `kokoro` and `kroki` (the diagram renderer, AICL-0170) with nothing else pulled, waits until they're healthy, and switches on only the Groq relay site in nginx.
 
 ```powershell
 # V10 images
@@ -543,7 +543,7 @@ $builds = @{
     'vps-web-searxng-mcp' = @{ Tag = 'searxng-mcp:1.6.0'; Folder = '/home/liam/owui-web-egress/searxng-mcp' }
 }
 $vpsImages = (Get-Content (Join-Path $repo 'manifests/images.json') -Raw | ConvertFrom-Json).vps |
-    Where-Object project -In 'owui-web-egress', 'kokoro' | Sort-Object container
+    Where-Object project -In 'owui-web-egress', 'kokoro', 'kroki' | Sort-Object container
 $imageLines = @(foreach ($i in $vpsImages) {
         $b = $builds[$i.container]
         if ($b) { "build $(if ($b.Tag) { $b.Tag } else { $i.image }) $($b.Folder)"; continue }
@@ -577,19 +577,21 @@ Ask first, because some of these take web search down for a few minutes:
 $r = Invoke-Vps 05-services.sh check, liam, $vpsIp
 curl.exe -fsS --max-time 20 "http://${vpsIp}:13100/health"
 (Invoke-RestMethod "http://${vpsIp}:8880/v1/models").data.id
+(Invoke-RestMethod "http://${vpsIp}:8800/health").status
 @((Invoke-RestMethod "http://${vpsIp}:18080/search?q=open+source+software&format=json").results).Count
 ```
 
 | Check | Expected |
 |---|---|
 | `guard-enabled`, `guard-active`, `nft-table`, `ip-rule`, `docker-needs-guard` | all `yes` |
-| `egress-running`, `kokoro-running` | `N/N`, every service up |
+| `egress-running`, `kokoro-running`, `kroki-running` | `N/N`, every service up |
 | `gluetun-health` | `healthy` |
 | `exit-ip` | `differs` (the tunnel's exit is not the VPS's own address) |
-| `listen-8880`, `listen-18099`, `listen-13100` | `tailnet-only` |
+| `listen-8880`, `listen-8800`, `listen-18099`, `listen-13100` | `tailnet-only` |
 | `nginx-site`, `nginx-test` | `yes`, `ok` |
 | `/health` | `status` ok, `brave_configured` true |
 | Kokoro models | lists `kokoro` |
+| Kroki `/health` | `pass` |
 | SearXNG results | more than 0 |
 
 **11b · The multihop route.** Mullvad's own checker, asked from inside the tunnel:
@@ -650,7 +652,7 @@ Start-VpsLong killswitch 10-vps.sh kill-switch -InputLines $test
 # V11 outside
 if ((tailscale status --json | ConvertFrom-Json).ExitNodeStatus) { throw 'turn the exit node off for this test: tailscale set --exit-node=' }
 $pub = (Invoke-Vps 10-vps.sh public-ip).Facts
-$ports = @(22, 80, 443, 3000, 3001, 8000, 8080, 8443, 8880, 8888, 8889, 11434, 13000, 13055, 13100, 18080, 18099) +
+$ports = @(22, 80, 443, 3000, 3001, 8000, 8080, 8443, 8800, 8880, 8888, 8889, 11434, 13000, 13055, 13100, 18080, 18099) +
     @("$($pub['tcp_ports'])" -split ',' | Where-Object { $_ -match '^[0-9]+$' } | ForEach-Object { [int]$_ }) | Sort-Object -Unique
 $probe = & $machine.TcpProbe $pub['public_ipv4'] $ports 4000
 $open = @($ports | Where-Object { $probe[$_] -ne 'closed' })
@@ -778,7 +780,7 @@ Remove-Item -LiteralPath (Get-WorkFile 'vps-bootstrap.sh'), (Get-WorkFile 'snipp
 ```powershell
 & 'E:\ai\ollama\_support\scripts\maintenance\Add-AIChange.ps1' -Author 'Liam' -LoggedBy '<you>' -Model '<your model>' `
     -Request 'Rebuild the VPS after it was lost (docs/VPS-REBUILD-AI.md)' `
-    -Summary 'Rebuilt the VPS: base, guard, gluetun/Mullvad multihop, SearXNG, Jina, gateway, Kokoro, Groq relay; keys <saved|new>; tailnet address <kept|changed>' `
+    -Summary 'Rebuilt the VPS: base, guard, gluetun/Mullvad multihop, SearXNG, Jina, gateway, Kokoro, Kroki, Groq relay; keys <saved|new>; tailnet address <kept|changed>' `
     -Files 'VPS /home/liam; ~/.ssh/known_hosts on the PC; Bitwarden bundle' `
     -Steps 'V0 to V14 of docs/VPS-REBUILD-AI.md' -Completed 'Y' `
     -Verification 'checkpoint 5; multihop exit ch-zrh; guard break refused Docker; kill switch failed closed and recovered; nothing open from outside; OWUI search, speech and dictation; bundle round trip matched' `
