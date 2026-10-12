@@ -676,29 +676,6 @@
       "forward_cookies": false,
       "headers": null,
       "info": {
-        "description": "Read and manage Google Calendar: list and search events, check free/busy, create, move and delete entries through the local bridge. Writes land in your real calendar. New events belong in the TM129 category unless you say otherwise.\n\n⚙️ Functions (28): audit · auth_status · auth_url · create_event_events_create · delete_event_events_delete · delete_preview_events_delete_preview · freebusy · full_sync_sync_full · get_calendars_calendars · get_event_events_get · get_live_events_events_live · get_next_events_events_next · health · incremental_sync_sync_incremental · owui_remap · owui_status · owui_sync_now_owui_sync · refresh_calendars_calendars_refresh · search_cache_events_cache_search · select_calendar_calendars_select · sync_status · tasks_due · tasks_lists · undo_last_event_events_undo · update_event_events_update · watch_start_google_watch_start · watch_status_google_watch_status · watch_stop_google_watch_stop",
-        "id": "gcal",
-        "name": "🗓️ Google Calendar"
-      },
-      "key": {
-        "$bundle": "config/tool_server.connections/6/key"
-      },
-      "path": "openapi.json",
-      "spec": "",
-      "spec_type": "url",
-      "type": "openapi",
-      "url": "http://gcal-owui-bridge:18100"
-    },
-    {
-      "auth_type": "bearer",
-      "config": {
-        "access_grants": [],
-        "enable": true,
-        "function_name_filter_list": ""
-      },
-      "forward_cookies": false,
-      "headers": null,
-      "info": {
         "description": "Scans the configured MCP servers and their tool definitions for prompt-injection bait, over-broad permissions and suspicious descriptions. Use when adding a new MCP server, or periodically to check nothing has drifted.\n\n⚙️ Functions (4): audit_mcp_config · audit_mcp_config_text · audit_static_config · explain_risk_model",
         "id": "mcp_risk_scanner",
         "name": "🛡️ MCP Risk Scanner"

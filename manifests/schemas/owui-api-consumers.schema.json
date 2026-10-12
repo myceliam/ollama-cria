@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/myceliam/ollama-cria/blob/main/manifests/schemas/owui-api-consumers.schema.json",
   "title": "ollama-cria OWUI API key consumers",
-  "description": "Every file that holds the OWUI API key, and the setting in it. Stage 7e writes the new key into each one (RESTORE.md Stage 7). Names only, never a value.",
+  "description": "Every file that holds the OWUI API key, and the setting in it. Stage 7e writes the new key into each one (RESTORE.md Stage 7); the list may be empty, and Stage 9 still uses the key. Names only, never a value.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -21,7 +21,7 @@
     },
     "consumers": {
       "type": "array",
-      "minItems": 1,
+      "minItems": 0,
       "items": {
         "type": "object",
         "additionalProperties": false,

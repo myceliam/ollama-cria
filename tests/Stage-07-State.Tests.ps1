@@ -24,7 +24,7 @@ BeforeAll {
         $env:CRIA_FAKE_TAILSCALE = $null
         $base = Join-Path $TestDrive ([guid]::NewGuid().ToString('n'))
         $repo = Join-Path $base 'repo'
-        foreach ($f in 'manifests/images.json', 'manifests/owui-api-consumers.json', 'manifests/owui-seed/schema.json', 'tools/Import-OwuiSeed.py') {
+        foreach ($f in 'manifests/images.json', 'manifests/owui-seed/schema.json', 'tools/Import-OwuiSeed.py') {
             Write-Text (Join-Path $repo $f) ([IO.File]::ReadAllText((Join-Path $script:RealRepo $f)))
         }
         if (-not $NoSeed) {
@@ -36,9 +36,14 @@ BeforeAll {
                 endpoints = @('PC_TS_IP'); counts = $script:Counts
             }
         }
+        # The real manifest lists no consumer today; one stand-in keeps the
+        # write path covered.
+        Write-Json (Join-Path $repo 'manifests/owui-api-consumers.json') @{ formatVersion = 1; consumers = @(
+                @{ name = 'example-consumer'; location = 'stack:example-consumer/.env'; setting = 'OWUI_API_KEY' }
+            ) }
         $live = Join-Path $base 'live/ollama'
         $script:Old = 'old' + 'value'
-        Write-Text (Join-Path $live 'gcal-owui-bridge/.env') "OWUI_BASE_URL=http://host.docker.internal:3000`r`nOWUI_API_KEY=$($script:Old)`r`nTZ=Europe/London`r`n"
+        Write-Text (Join-Path $live 'example-consumer/.env') "OWUI_BASE_URL=http://host.docker.internal:3000`r`nOWUI_API_KEY=$($script:Old)`r`nTZ=Europe/London`r`n"
 
         $state = Read-RecoveryState -Path (Join-Path $base 'state/state.json')
         $bundleRoot = Join-Path $base 'staging/stack-secrets-2026-10-07'
@@ -228,7 +233,7 @@ Describe 'Stage 7: run' {
         $r = Invoke-Visit $c
         $r.Problems | Should -BeNullOrEmpty
         $r.Status | Should -Be 'done'
-        [IO.File]::ReadAllText((Join-Path $c.Live 'gcal-owui-bridge/.env')) | Should -Be "OWUI_BASE_URL=http://host.docker.internal:3000`r`nOWUI_API_KEY=$key`r`nTZ=Europe/London`r`n"
+        [IO.File]::ReadAllText((Join-Path $c.Live 'example-consumer/.env')) | Should -Be "OWUI_BASE_URL=http://host.docker.internal:3000`r`nOWUI_API_KEY=$key`r`nTZ=Europe/London`r`n"
         $global:CriaDocker.Running | Should -BeFalse
         ($r | ConvertTo-Json -Depth 6) | Should -Not -Match $key
         Get-Call 'docker compose * run *' | Where-Object { $_ -notlike '*exec(sys.stdin.read())*' } | Should -HaveCount 1
@@ -273,7 +278,7 @@ Describe 'Stage 7: run' {
         $r = Invoke-Visit $c
         $r.Status | Should -Be 'needs-user'
         $r.Asks[0].Text | Should -Match 'OWUI refused the key .* \(HTTP 401\)'
-        [IO.File]::ReadAllText((Join-Path $c.Live 'gcal-owui-bridge/.env')) | Should -Match "OWUI_API_KEY=$($script:Old)"
+        [IO.File]::ReadAllText((Join-Path $c.Live 'example-consumer/.env')) | Should -Match "OWUI_API_KEY=$($script:Old)"
 
         [IO.File]::WriteAllText((Get-KeyFile $c), 'not a key')
         (Invoke-Visit $c).Asks[0].Text | Should -Match 'does not hold one OWUI API key'

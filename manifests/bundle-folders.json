@@ -10,7 +10,7 @@
     "02": {
       "kind": "path",
       "host": "pc",
-      "holds": "Google OAuth client, tokens and bridge settings for the gcal and Gmail bridges, and the gcal watchdog script"
+      "holds": "Google OAuth client, the Gmail bridge token and its settings"
     },
     "03": {
       "kind": "consumed",
