@@ -8,7 +8,7 @@
       "host": "pc",
       "root": "E:\\ai\\ollama",
       "repoFolder": "stack",
-      "purpose": "The PC stack: compose file, Dockerfiles, bridge and relay source, MCP servers, Modelfiles, the scripts the scheduled tasks and the toolkit run. Stage 1 copies it back to the same place. Not copied: .env, secrets\\, data folders, owui-tools\\ (the OWUI seed carries the live tools and functions), discord-owui-bridge\\ (retired), docs, logs, backups; gcal-owui-bridge\\watchdog.ps1 and searxng\\settings.yml, which hold a secret written into the file and travel in the secrets bundle instead (the local SearXNG is only the offline rollback profile).",
+      "purpose": "The PC stack: compose file, Dockerfiles, bridge and relay source, MCP servers, Modelfiles, the scripts the scheduled tasks and the toolkit run. Stage 1 copies it back to the same place. Not copied: .env, secrets\\, data folders, the rest of owui-tools\\ (the OWUI seed carries the live tools, functions, skills and models; only the sources and deployers behind the Command Guide, the Command Builder, the diagram skills, the Brave router and the Mermaid guard are kept, so they can be rebuilt and redeployed), discord-owui-bridge\\ (retired), docs, logs, backups; gcal-owui-bridge\\watchdog.ps1 and searxng\\settings.yml, which hold a secret written into the file and travel in the secrets bundle instead (the local SearXNG is only the offline rollback profile).",
       "files": [
         "Dockerfile.mcpo",
         "autofree-watchdog.ps1",
@@ -50,6 +50,17 @@
         "modelfiles/qwen3.5-code_27b.Modelfile",
         "modelfiles/qwen3.5-code_9b.Modelfile",
         "modelfiles/qwen38-fixed.Modelfile",
+        "owui-tools/brave_command_router.py",
+        "owui-tools/build_guide_diagram_section.py",
+        "owui-tools/command_builder.py",
+        "owui-tools/command_guide_system_prompt.md",
+        "owui-tools/deploy_brave_command_router.py",
+        "owui-tools/deploy_command_guide.py",
+        "owui-tools/deploy_diagram_skills.py",
+        "owui-tools/deploy_mermaid_guard.py",
+        "owui-tools/diagram_skills.py",
+        "owui-tools/mermaid_guard.py",
+        "owui-tools/test_mermaid_guard.py",
         "vps/owuihelp",
         "web-vps-relay/deploy_tools.py",
         "web-vps-relay/relay.py",
@@ -132,6 +143,16 @@
       "root": "/home/liam/kokoro",
       "repoFolder": "vps/kokoro",
       "purpose": "Kokoro TTS on the VPS (Stage 5d, R-14).",
+      "files": [
+        "compose.yml"
+      ]
+    },
+    {
+      "name": "vps-kroki",
+      "host": "vps",
+      "root": "/home/liam/kroki",
+      "repoFolder": "vps/kroki",
+      "purpose": "The Kroki diagram renderer on the VPS and its mermaid, bpmn and excalidraw companions (Stage 5d, AICL-0170). Tailnet only; needs no internet, so it is not behind the guard.",
       "files": [
         "compose.yml"
       ]

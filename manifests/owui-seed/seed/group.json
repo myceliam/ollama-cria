@@ -10,6 +10,7 @@
     "id": "904215ed-0ae4-4893-baed-e54783d9ab06",
     "meta": null,
     "name": "Mwmbees",
+    "parent_group_id": null,
     "permissions": {
       "access_grants": {
         "allow_users": true

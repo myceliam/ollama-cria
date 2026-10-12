@@ -181,6 +181,7 @@ exec bash -c "`$*"
             $fake = @{ users = 'liam'; 'tailscale-ip' = $script:VpsIp; download = 'GOOD-KEY'; installed = "ca-certificates ubuntu`niproute2 ubuntu"
                 'docker-version' = '29.8.2'; 'ssh-listen' = $script:VpsIp; enabled = 'ssh.socket'
                 'services-owui-web-egress' = "gluetun`nsearxng`njina-reader"; 'services-kokoro' = 'kokoro-tts'
+                'services-kroki' = "kroki`nkroki-mermaid`nkroki-bpmn`nkroki-excalidraw"
             }
             foreach ($k in $fake.Keys) { Set-Content -LiteralPath (Join-Path $vps "fake/$k") -Value $fake[$k] }
             Set-Content -LiteralPath (Join-Path $vps 'dev/net/tun') -Value 'x'
@@ -287,6 +288,7 @@ exec bash -c "`$*"
         Test-Path (Join-Path $rig.Vps 'etc/systemd/system/owui-web-egress-guard.service') | Should -BeTrue
         Test-Path (Join-Path $rig.Vps 'home/liam/owui-web-egress/compose.override.yml') | Should -BeTrue
         Test-Path (Join-Path $rig.Vps 'home/liam/owui-web-egress/searxng-mcp/Dockerfile') | Should -BeTrue
+        Get-VpsFile $rig '/home/liam/kroki/compose.yml' | Should -Match ([regex]::Escape("$($script:VpsIp):8800:8000"))
 
         # V8B: the empty file, never over one that is there
         $r = . (Get-Runnable 'V8B template' $rig) 6> $null
@@ -337,6 +339,7 @@ exec bash -c "`$*"
         $log = @(Get-Content -LiteralPath (Join-Path $rig.Work 'v10.log'))
         $log[-1] | Should -Be 'exit code: 0' -Because ($log -join "`n")
         $log | Should -Contain 'STEP built searxng-mcp:1.6.0 from /home/liam/owui-web-egress/searxng-mcp'
+        $log | Should -Contain 'STEP /home/liam/kroki: 4/4 services running'
         @($log -like 'STEP pulled *').Count | Should -BeGreaterThan 0
         $calls = @(Get-Content -LiteralPath (Join-Path $rig.Vps 'fake/calls'))
         $guardAt = [array]::IndexOf($calls, @($calls -match '^systemctl start owui-web-egress-guard.service')[0])

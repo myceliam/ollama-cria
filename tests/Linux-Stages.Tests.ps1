@@ -68,12 +68,13 @@ BeforeAll {
         $b = New-Box
         $egress = '/home/liam/owui-web-egress'
         foreach ($f in '.env', 'compose.yml', 'guard.sh', 'guard.nft', 'jina-official/Dockerfile', 'searxng-mcp/Dockerfile') { Set-BoxFile $b "$egress/$f" 'x' }
-        foreach ($f in '/home/liam/kokoro/compose.yml', '/etc/systemd/system/owui-web-egress-guard.service',
+        foreach ($f in '/home/liam/kokoro/compose.yml', '/home/liam/kroki/compose.yml', '/etc/systemd/system/owui-web-egress-guard.service',
             '/etc/systemd/system/docker.service.d/owui-web-egress.conf', '/etc/nginx/sites-available/groq-relay', '/dev/net/tun') { Set-BoxFile $b $f 'x' }
         $null = New-Item -ItemType Directory -Path (Join-Path $b.Root 'etc/nginx/sites-enabled') -Force
         & ln -s /etc/nginx/sites-available/default (Join-Path $b.Root 'etc/nginx/sites-enabled/default')
         Set-Fake $b 'services-owui-web-egress' "gluetun`nsearxng`njina-reader"
         Set-Fake $b 'services-kokoro' 'kokoro-tts'
+        Set-Fake $b 'services-kroki' "kroki`nkroki-mermaid`nkroki-bpmn`nkroki-excalidraw"
         return $b
     }
 
@@ -258,7 +259,7 @@ Describe '05-place.sh' -Skip:$IsWindows {
 }
 
 Describe '05-services.sh' -Skip:$IsWindows {
-    It 'loads the guard before any image or container, pulls at digests, builds, starts both projects and the relay site' {
+    It 'loads the guard before any image or container, pulls at digests, builds, starts every project and the relay site' {
         $b = New-PlacedBox
         $r = Invoke-Box $b '05-services.sh' @('run', 'liam', $script:TsIp) $script:Images
         $r.Output | Should -Not -Match '^FAIL'
@@ -276,6 +277,7 @@ Describe '05-services.sh' -Skip:$IsWindows {
         $r.Steps | Should -Contain 'STEP tagged it qmcgaw/gluetun:v3'
         $r.Steps | Should -Contain 'STEP built searxng-mcp:1.6.0 from /home/liam/owui-web-egress/searxng-mcp'
         $r.Steps | Should -Contain 'STEP /home/liam/owui-web-egress: 3/3 services running'
+        $r.Steps | Should -Contain 'STEP /home/liam/kroki: 4/4 services running'
         $r.Steps | Should -Contain "STEP nginx's default site switched off"
         (& readlink (Join-Path $b.Root 'etc/nginx/sites-enabled/groq-relay')) | Should -Be '/etc/nginx/sites-available/groq-relay'
         Test-Path (Join-Path $b.Root 'etc/nginx/sites-enabled/default') | Should -BeFalse
@@ -325,7 +327,7 @@ Describe '05-services.sh' -Skip:$IsWindows {
         $null = Invoke-Box $b '05-services.sh' @('run', 'liam', $script:TsIp) $script:Images
         Set-Fake $b 'host-ip' '203.0.113.10'
         Set-Fake $b 'tunnel-ip' '198.51.100.20'
-        foreach ($p in '8880', '18099', '13100') { Set-Fake $b "listen-$p" $script:TsIp }
+        foreach ($p in '8880', '8800', '18099', '13100') { Set-Fake $b "listen-$p" $script:TsIp }
         $r = Invoke-Box $b '05-services.sh' @('check', 'liam', $script:TsIp)
         $r.ExitCode | Should -Be 0
         $facts = @{}
@@ -336,7 +338,9 @@ Describe '05-services.sh' -Skip:$IsWindows {
         $facts['docker-needs-guard'] | Should -Be 'yes'
         $facts['egress-running'] | Should -Be '3/3'
         $facts['kokoro-running'] | Should -Be '1/1'
+        $facts['kroki-running'] | Should -Be '4/4'
         $facts['exit-ip'] | Should -Be 'differs'
+        $facts['listen-8800'] | Should -Be 'tailnet-only'
         $facts['listen-18099'] | Should -Be 'tailnet-only'
         $facts['nginx-site'] | Should -Be 'yes'
         $r.Output -join "`n" | Should -Not -Match '203\.0\.113\.10|198\.51\.100\.20'

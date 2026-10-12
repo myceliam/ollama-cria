@@ -1,4 +1,4 @@
-"""Tests for tools/Export-OwuiSeed.py against a fake OWUI 0.11.4 database.
+"""Tests for tools/Export-OwuiSeed.py against a fake OWUI 0.12.0 database.
 
 Run: python -m unittest discover -s tests/python -v
 
@@ -100,7 +100,7 @@ def build_db(path: Path, schema: dict, mutate=None) -> None:
         db.execute('INSERT INTO config VALUES (?, ?, ?)', (k, json.dumps(v), 1))
 
     def tool(tid, content, valves):
-        db.execute('INSERT INTO tool VALUES (?,?,?,?,?,?,?,?,?)',
+        db.execute('INSERT INTO tool (id, user_id, name, content, specs, meta, valves, updated_at, created_at) VALUES (?,?,?,?,?,?,?,?,?)',
                    (tid, ADMIN, tid, content, json.dumps([{'name': tid}]), json.dumps({'description': tid}), valves, 2, 1))
 
     tool('brave_search', 'class Tools:\n    def search(self):\n        return f"Bearer {self.valves.BRAVE_API_KEY}"\n',
@@ -108,7 +108,8 @@ def build_db(path: Path, schema: dict, mutate=None) -> None:
     tool('local_subagent', 'class Tools: pass\n', json.dumps({'BASE_URL': f'http://{PC_IP}:11434', 'TIMEOUT': 30}))
 
     def function(fid, ftype):
-        db.execute('INSERT INTO function VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+        db.execute('INSERT INTO function (id, user_id, name, type, content, meta, valves, is_active, is_global, updated_at, created_at) '
+                   'VALUES (?,?,?,?,?,?,?,?,?,?,?)',
                    (fid, ADMIN, fid, ftype, 'class Filter: pass\n', '{}', None, 1, 0, 2, 1))
 
     function('ntfy_push', 'event')
@@ -116,12 +117,15 @@ def build_db(path: Path, schema: dict, mutate=None) -> None:
                (encrypt({'ntfy_token': 'tk_' + 'n' * 29, 'ntfy_url': f'http://{PC_IP}:8090', 'only_user_ids': [ADMIN]}),))
     function('discord_feed_curator', 'pipe')
 
-    db.execute('INSERT INTO model VALUES (?,?,?,?,?,?,?,?,?)',
+    db.execute('INSERT INTO model (id, user_id, base_model_id, name, params, meta, is_active, updated_at, created_at) VALUES (?,?,?,?,?,?,?,?,?)',
                ('qwen-helper', ADMIN, 'qwen3:14b', 'Qwen helper', json.dumps({'temperature': 0.2}),
                 json.dumps({'toolIds': ['brave_search'], 'headers': {'Authorization': 'Bearer ' + 'x' * 30}}), 1, 2, 1))
-    db.execute('INSERT INTO skill VALUES (?,?,?,?,?,?,?,?,?)', ('s1', ADMIN, 'summarise', 'd', 'body', '{}', 1, 2, 1))
+    db.execute('INSERT INTO skill (id, user_id, name, description, content, meta, is_active, updated_at, created_at, version_id, data) '
+               'VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+               ('s1', ADMIN, 'summarise', 'd', 'body', '{}', 1, 2, 1, 'h8', json.dumps({'files': [{'path': 'SKILL.md', 'content': 'body'}]})))
     db.execute('INSERT INTO prompt VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', ('p1', '/tidy', ADMIN, 'Tidy', 'Tidy this', None, None, '[]', 1, 'h9', 2, 1))
-    db.execute('INSERT INTO "group" VALUES (?,?,?,?,?,?,?,?,?)', ('g1', ADMIN, 'Family', '', None, None, '{}', 2, 1))
+    db.execute('INSERT INTO "group" (id, user_id, name, description, data, meta, permissions, updated_at, created_at, parent_group_id) '
+               'VALUES (?,?,?,?,?,?,?,?,?,?)', ('g1', ADMIN, 'Family', '', None, None, '{}', 2, 1, None))
     db.execute('INSERT INTO group_member VALUES (?,?,?,?,?)', ('gm1', 'g1', ADMIN, 2, 1))
     for gid, rtype, rid, ptype, pid in [
         ('a1', 'tool', 'brave_search', 'group', 'g1'),
@@ -301,7 +305,7 @@ class ExportTests(unittest.TestCase):
 
     def test_provenance_records_version_revision_and_digest(self):
         prov = self.run_export().seed('provenance')
-        self.assertEqual((prov['owui_version'], prov['alembic_revision']), ('0.11.4', 'd4c1a8e37b62'))
+        self.assertEqual((prov['owui_version'], prov['alembic_revision']), ('0.12.0', 'b8f2c6d91a04'))
         self.assertEqual(prov['image_digest'], 'sha256:' + 'd' * 64)
         self.assertEqual(prov['endpoints'], ['PC_TS_IP'])
 
@@ -469,7 +473,7 @@ class ExportTests(unittest.TestCase):
         self.assert_stopped(run, 'tool/brave_search/valves: could not be decrypted', '(InvalidToken)')
 
     def test_stops_when_valves_are_encrypted_and_the_codec_is_missing(self):
-        run = self.run_export(env={'PYTHONPATH': ''}, extra=['--owui-version', '0.11.4'])
+        run = self.run_export(env={'PYTHONPATH': ''}, extra=['--owui-version', '0.12.0'])
         self.assert_stopped(run, "encrypted, and OWUI's Valve codec could not be loaded")
 
     def test_stops_on_a_secret_shaped_value_under_a_safe_name(self):

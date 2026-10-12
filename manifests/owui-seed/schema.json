@@ -1,7 +1,7 @@
 {
-  "$comment": "Allowlist for tools/Export-OwuiSeed.py (RESTORE.md Stage 7d, C-41). Every table, seeded column and config key is classified; anything unknown stops the export. Column classes: safe, json (secret-named fields inside become references), owner (becomes {{OWNER}}), valves (decrypted with OWUI's codec, then like json), excluded. Config classes: safe, secret, excluded. user_settings is a projection: paths not listed are left out and named in a warning. valves holds per-field overrides, keyed \"tool:<id>\", \"function:<id>\", \"user:tool:<id>\" or \"user:function:<id>\", each field \"safe\" or \"secret\". Built from the OWUI 0.11.4 source, then checked against the live install's names on 6 October 2026 (legacy tables and config keys added; ui.backgroundImageUrl, ui.recentEmojis, ui.userLocation and ui.version left out on purpose). Review it again when OWUI moves.",
-  "owui_version": "0.11.4",
-  "alembic_revision": "d4c1a8e37b62",
+  "$comment": "Allowlist for tools/Export-OwuiSeed.py (RESTORE.md Stage 7d, C-41). Every table, seeded column and config key is classified; anything unknown stops the export. Column classes: safe, json (secret-named fields inside become references), owner (becomes {{OWNER}}), valves (decrypted with OWUI's codec, then like json), excluded. Config classes: safe, secret, excluded. user_settings is a projection: paths not listed are left out and named in a warning. valves holds per-field overrides, keyed \"tool:<id>\", \"function:<id>\", \"user:tool:<id>\" or \"user:function:<id>\", each field \"safe\" or \"secret\". Built from the OWUI 0.11.4 source, then checked against the live install's names on 6 October 2026 (legacy tables and config keys added; ui.backgroundImageUrl, ui.recentEmojis, ui.userLocation and ui.version left out on purpose). Moved to OWUI 0.12.0 (Alembic b8f2c6d91a04) on 12 October 2026 against the live install: version_id (a pointer into the new *_history tables) is excluded like prompt.version_id, the history tables are excluded, skill.data (the skill's files) is json, group.parent_group_id is safe, document_chunk and oauth.enable are gone, and the new realtime-audio, MFA, tool-search and Tavily keys are classified. Review it again when OWUI moves.",
+  "owui_version": "0.12.0",
+  "alembic_revision": "b8f2c6d91a04",
   "tables": {
     "access_grant": {
       "columns": {
@@ -33,7 +33,6 @@
     "config": "special",
     "config_old": "excluded",
     "document": "excluded",
-    "document_chunk": "excluded",
     "feedback": "excluded",
     "file": "excluded",
     "folder": "excluded",
@@ -49,9 +48,11 @@
         "is_active": "safe",
         "is_global": "safe",
         "updated_at": "safe",
-        "created_at": "safe"
+        "created_at": "safe",
+        "version_id": "excluded"
       }
     },
+    "function_history": "excluded",
     "group": {
       "columns": {
         "id": "safe",
@@ -62,7 +63,8 @@
         "meta": "json",
         "permissions": "json",
         "updated_at": "safe",
-        "created_at": "safe"
+        "created_at": "safe",
+        "parent_group_id": "safe"
       }
     },
     "group_member": {
@@ -91,9 +93,11 @@
         "meta": "json",
         "is_active": "safe",
         "updated_at": "safe",
-        "created_at": "safe"
+        "created_at": "safe",
+        "version_id": "excluded"
       }
     },
+    "model_history": "excluded",
     "note": "excluded",
     "oauth_session": "excluded",
     "pinned_note": "excluded",
@@ -125,9 +129,12 @@
         "meta": "json",
         "is_active": "safe",
         "updated_at": "safe",
-        "created_at": "safe"
+        "created_at": "safe",
+        "version_id": "excluded",
+        "data": "json"
       }
     },
+    "skill_history": "excluded",
     "tag": "excluded",
     "tool": {
       "columns": {
@@ -139,12 +146,21 @@
         "meta": "json",
         "valves": "valves",
         "updated_at": "safe",
-        "created_at": "safe"
+        "created_at": "safe",
+        "version_id": "excluded"
       }
     },
+    "tool_history": "excluded",
     "user": "special"
   },
   "config": {
+    "audio.realtime.enabled": "safe",
+    "audio.realtime.model": "safe",
+    "audio.realtime.openai.api_base_url": "safe",
+    "audio.realtime.openai.api_key": "secret",
+    "audio.realtime.prompt_template": "safe",
+    "audio.realtime.transcription_model": "safe",
+    "audio.realtime.voice": "safe",
     "audio.stt.allowed_extensions": "safe",
     "audio.stt.azure.api_key": "secret",
     "audio.stt.azure.base_url": "safe",
@@ -173,6 +189,7 @@
     "audio.tts.openai.api_base_url": "safe",
     "audio.tts.openai.api_key": "secret",
     "audio.tts.openai.params": "safe",
+    "audio.tts.realtime.prompt_template": "safe",
     "audio.tts.split_on": "safe",
     "audio.tts.voice": "safe",
     "auth.admin.email": "safe",
@@ -181,6 +198,9 @@
     "auth.api_key.endpoint_restrictions": "safe",
     "auth.enable_api_keys": "safe",
     "auth.jwt_expiry": "safe",
+    "auth.mfa.allow_oauth_bypass": "safe",
+    "auth.mfa.allow_trusted_header_bypass": "safe",
+    "auth.mfa.enable": "safe",
     "automations.auth_token_expires_in": "safe",
     "automations.enable": "safe",
     "automations.max_count": "safe",
@@ -195,6 +215,10 @@
     "chat.context_compaction.token_cap": "safe",
     "chat.context_compaction.token_threshold": "safe",
     "chat.tool_permissions.enable": "safe",
+    "chat.tool_search.always_loaded": "safe",
+    "chat.tool_search.defer_builtin_tools": "safe",
+    "chat.tool_search.defer_threshold": "safe",
+    "chat.tool_search.enable": "safe",
     "code_execution.enable": "safe",
     "code_execution.engine": "safe",
     "code_execution.jupyter.auth": "safe",
@@ -292,7 +316,6 @@
     "oauth.client_secret": "secret",
     "oauth.code_challenge_method": "safe",
     "oauth.email_claim": "safe",
-    "oauth.enable": "safe",
     "oauth.enable_group_creation": "safe",
     "oauth.enable_group_mapping": "safe",
     "oauth.enable_role_mapping": "safe",
@@ -545,6 +568,7 @@
     "web.search.staan_max_snippets": "safe",
     "web.search.tavily_api_key": "secret",
     "web.search.tavily_extract_depth": "safe",
+    "web.search.tavily_search_depth": "safe",
     "web.search.trust_env": "safe",
     "web.search.yacy_password": "secret",
     "web.search.yacy_query_url": "safe",
@@ -671,6 +695,7 @@
     "function": [
       "brave_command_router",
       "comfyui_studio",
+      "command_builder",
       "mermaid_modern_style",
       "mermaid_render_guard",
       "ntfy_push"

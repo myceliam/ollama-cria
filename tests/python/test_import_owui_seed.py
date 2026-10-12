@@ -257,7 +257,7 @@ class ImportTests(unittest.TestCase):
         self.assert_untouched()
 
     def test_stops_on_another_owui_version(self):
-        self.assert_stopped(self.run_import(env={'FAKE_OWUI_VERSION': '0.12.0'}), 'OWUI version is 0.12.0, the seed is from 0.11.4 (C-40)')
+        self.assert_stopped(self.run_import(env={'FAKE_OWUI_VERSION': '0.13.0'}), 'OWUI version is 0.13.0, the seed is from 0.12.0 (C-40)')
 
     def test_stops_on_another_alembic_revision(self):
         db = sqlite3.connect(self.new)

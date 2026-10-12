@@ -24,15 +24,6 @@
       ]
     },
     {
-      "container": "gcal-owui-bridge",
-      "project": "ollama",
-      "state": "running",
-      "image": "ollama-gcal-owui-bridge",
-      "imageId": "sha256:c2138e7e405fabf282afd8b9c1d42e1163fefdfe35296de5e2ae874f0d7566a2",
-      "imageStored": false,
-      "repoDigests": []
-    },
-    {
       "container": "gmail-owui-bridge",
       "project": "gmail-owui-bridge",
       "state": "running",
@@ -88,10 +79,10 @@
       "project": "ollama",
       "state": "running",
       "image": "ghcr.io/open-webui/open-terminal:latest",
-      "imageId": "sha256:81a5394b3cd4ae32adb600f2135f09ee124de37f26b0a780e2f5692472c0fc5c",
+      "imageId": "sha256:4fd3bcc4da21ff3ded64a811465bd0f828d908c24114fae5800e3f1879cc0e03",
       "imageStored": true,
       "repoDigests": [
-        "ghcr.io/open-webui/open-terminal@sha256:81a5394b3cd4ae32adb600f2135f09ee124de37f26b0a780e2f5692472c0fc5c"
+        "ghcr.io/open-webui/open-terminal@sha256:4fd3bcc4da21ff3ded64a811465bd0f828d908c24114fae5800e3f1879cc0e03"
       ]
     },
     {
@@ -99,10 +90,10 @@
       "project": "ollama",
       "state": "running",
       "image": "ghcr.io/open-webui/open-webui:latest",
-      "imageId": "sha256:8b432fe0a65b91116afc7961365c6cca5379cc923171386a96691f3471f3cae9",
+      "imageId": "sha256:e597ba2ca4425ff40f1f677930baae1278cc1e44cea399d5f588d5ce53611910",
       "imageStored": true,
       "repoDigests": [
-        "ghcr.io/open-webui/open-webui@sha256:8b432fe0a65b91116afc7961365c6cca5379cc923171386a96691f3471f3cae9"
+        "ghcr.io/open-webui/open-webui@sha256:e597ba2ca4425ff40f1f677930baae1278cc1e44cea399d5f588d5ce53611910"
       ]
     },
     {
@@ -202,6 +193,50 @@
       "imageStored": true,
       "repoDigests": [
         "ghcr.io/remsky/kokoro-fastapi-cpu@sha256:bcf38f9bf7f040b0465dd4352eb0fa0b2db42d4bd91eba16acef0b40e5c57905"
+      ]
+    },
+    {
+      "container": "kroki",
+      "project": "kroki",
+      "state": "running",
+      "image": "yuzutech/kroki:latest",
+      "imageId": "sha256:a4341ac44cd2590124da7142d13fdf5d83eadc2b94c023d018a2227695a30da1",
+      "imageStored": true,
+      "repoDigests": [
+        "yuzutech/kroki@sha256:a4341ac44cd2590124da7142d13fdf5d83eadc2b94c023d018a2227695a30da1"
+      ]
+    },
+    {
+      "container": "kroki-bpmn",
+      "project": "kroki",
+      "state": "running",
+      "image": "yuzutech/kroki-bpmn:latest",
+      "imageId": "sha256:7518c290361113fd59fda353694f5cdfe6bdf323069c9ca4204608d3641a207a",
+      "imageStored": true,
+      "repoDigests": [
+        "yuzutech/kroki-bpmn@sha256:7518c290361113fd59fda353694f5cdfe6bdf323069c9ca4204608d3641a207a"
+      ]
+    },
+    {
+      "container": "kroki-excalidraw",
+      "project": "kroki",
+      "state": "running",
+      "image": "yuzutech/kroki-excalidraw:latest",
+      "imageId": "sha256:f6ed8589e7f5b4a4e38dc5a5c67fd2323e083b8b4f711c342366197f03dc1609",
+      "imageStored": true,
+      "repoDigests": [
+        "yuzutech/kroki-excalidraw@sha256:f6ed8589e7f5b4a4e38dc5a5c67fd2323e083b8b4f711c342366197f03dc1609"
+      ]
+    },
+    {
+      "container": "kroki-mermaid",
+      "project": "kroki",
+      "state": "running",
+      "image": "yuzutech/kroki-mermaid:latest",
+      "imageId": "sha256:2fd07c6ef9ef99e59c288f125fdb411188569237544f7db8d69935a2d7efa08d",
+      "imageStored": true,
+      "repoDigests": [
+        "yuzutech/kroki-mermaid@sha256:2fd07c6ef9ef99e59c288f125fdb411188569237544f7db8d69935a2d7efa08d"
       ]
     },
     {

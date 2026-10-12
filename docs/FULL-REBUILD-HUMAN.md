@@ -222,7 +222,7 @@ Docker Desktop, Ollama and Python aren't here: Stage 3 installs them at their re
 
 ### Step 8 · Stage 5 · The VPS side
 
-🖥️ **The menu runs Stage 5:** it puts the VPS's files in place, then starts the **firewall guard first** and proves it's loaded and that Docker can't start without it. Only then does it download every program at its exact recorded version, build the two it makes itself, and start the VPN container, SearXNG, Jina, the Brave/Jina gateway, Kokoro and the dictation relay.
+🖥️ **The menu runs Stage 5:** it puts the VPS's files in place, then starts the **firewall guard first** and proves it's loaded and that Docker can't start without it. Only then does it download every program at its exact recorded version, build the two it makes itself, and start the VPN container, SearXNG, Jina, the Brave/Jina gateway, Kokoro, the Kroki diagram renderer and the dictation relay.
 
 The result is the same chain as before: **your PC → Tailscale → VPS → Mullvad Stockholm → Mullvad Zurich → Brave and websites**, with two kill switches, so neither your PC nor the VPS is the address a website sees.
 
@@ -252,7 +252,7 @@ Stage 6 doesn't need the VPS, but the menu runs the steps in order. It's by far 
 1. **The admin account.** Open `http://127.0.0.1:3000` on the PC and create the admin account. The first account is the admin. Save the password in Bitwarden. Answer `y`.
 2. **The API key.** After the stage loads your tools, functions, model presets and settings, it starts Open WebUI again. Go to **Settings → Account → API keys**, create a key, and paste it into the file the menu names (`E:\recovery-secrets\owui-api-key.txt`). Save the file and answer `y`.
 
-✅ **You should see** step 10 ✅: 15 tools, 5 functions, 33 model presets, 21 skills and 5 prompts, one account, and nothing left unfilled.
+✅ **You should see** step 10 ✅: 15 tools, 6 functions, 93 model presets, 10 skills and 5 prompts, one account, and nothing left unfilled. The Command Guide model and the ten `diagram-*` skills are among them.
 🧯 **"OWUI refused the key":** make a new key and replace the whole contents of the file.
 
 Your chats and old uploads don't come back. That's by design: the rebuild brings back what the stack can do, not its history.
@@ -272,7 +272,7 @@ Your chats and old uploads don't come back. That's by design: the rebuild brings
 
 🖥️ **The menu runs Stage 9:** it tests each service directly: the models list, every tool server, web search and page reading through the VPS, Kokoro, the dictation relay, both Google bridges, Bolt and the terminal. It loads each tool's and function's code, and asks every model preset to say "OK".
 
-👤 **You,** nine checks. The menu asks about each one by name; answer `y` once it works:
+👤 **You,** ten checks. The menu asks about each one by name; answer `y` once it works:
 
 | The menu asks about | What to try |
 |---|---|
@@ -282,7 +282,8 @@ Your chats and old uploads don't come back. That's by design: the rebuild brings
 | `stt` | Press the microphone and say a sentence; the text appears |
 | `tts` | Press Read aloud; you hear the `af_heart` voice |
 | `ntfy` | Send one notification with `ntfy_push`; it reaches your phone |
-| `filters` | A command goes to the right tool; a Mermaid diagram renders |
+| `server:google-calendar-mcp` | Turn on the Google Calendar tool in a chat and ask what's on tomorrow; sign in to Google if asked |
+| `filters` | A command goes to the right tool; in the Command Guide, `diagram list` shows every diagram skill and a Brave command builds; a Mermaid diagram renders |
 | `other-tools` | Use each of the other ten tools once (the report lists them) |
 | `serve-pages` | The dashboard and Dozzle open from your phone |
 

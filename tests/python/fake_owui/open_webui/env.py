@@ -3,8 +3,8 @@ import os
 if os.environ.get('FAKE_OWUI_NOISY'):
     print('fake OWUI log line, as the real env.py logs to stdout on import')
 
-VERSION = os.environ.get('FAKE_OWUI_VERSION', '0.11.4')
-# Like OWUI 0.11.4: the key comes from the environment, and importing env.py
+VERSION = os.environ.get('FAKE_OWUI_VERSION', '0.12.0')
+# Like OWUI 0.12.0: the key comes from the environment, and importing env.py
 # stops the process when there is none (FAKE_OWUI_KEY is the tests' shortcut).
 WEBUI_SECRET_KEY = os.getenv('WEBUI_SECRET_KEY', os.getenv('WEBUI_JWT_SECRET_KEY', '')) or os.environ.get('FAKE_OWUI_KEY', '')
 if not WEBUI_SECRET_KEY:

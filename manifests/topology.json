@@ -71,6 +71,12 @@
       "path": "/home/liam/kokoro",
       "create": true,
       "holds": "Kokoro TTS compose project, placed in Stage 5"
+    },
+    "vps-kroki": {
+      "host": "vps",
+      "path": "/home/liam/kroki",
+      "create": true,
+      "holds": "Kroki diagram renderer compose project, placed in Stage 5"
     }
   },
   "composeProjects": [
@@ -97,6 +103,11 @@
     {
       "name": "kokoro",
       "root": "vps-kokoro",
+      "file": "compose.yml"
+    },
+    {
+      "name": "kroki",
+      "root": "vps-kroki",
       "file": "compose.yml"
     }
   ]

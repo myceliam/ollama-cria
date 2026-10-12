@@ -29,8 +29,8 @@ BeforeAll {
         $global:CriaSearch = '{"results":[{"title":"one"},{"title":"two"}]}'
         $global:CriaFacts = [ordered]@{
             'guard-enabled' = 'yes'; 'guard-active' = 'yes'; 'nft-table' = 'yes'; 'ip-rule' = 'yes'; 'docker-needs-guard' = 'yes'
-            'egress-running' = '6/6'; 'gluetun-health' = 'healthy'; 'kokoro-running' = '1/1'; 'exit-ip' = 'differs'
-            'listen-8880' = 'tailnet-only'; 'listen-18099' = 'tailnet-only'; 'listen-13100' = 'tailnet-only'; 'nginx-site' = 'yes'; 'nginx-test' = 'ok'
+            'egress-running' = '6/6'; 'gluetun-health' = 'healthy'; 'kokoro-running' = '1/1'; 'kroki-running' = '4/4'; 'exit-ip' = 'differs'
+            'listen-8880' = 'tailnet-only'; 'listen-8800' = 'tailnet-only'; 'listen-18099' = 'tailnet-only'; 'listen-13100' = 'tailnet-only'; 'nginx-site' = 'yes'; 'nginx-test' = 'ok'
         }
         $global:CriaFake.Vps = {
             param($Call, $InputLines)
@@ -60,6 +60,7 @@ BeforeAll {
             switch -Wildcard ($Arguments[-1]) {
                 '*:13100/health' { return New-ExecResult 0 @('{"status":"ok"}') }
                 '*:8880/v1/models' { return New-ExecResult 0 @('{"data":[{"id":"kokoro","object":"model"}]}') }
+                '*:8800/health' { return New-ExecResult 0 @('{"status":"pass"}') }
                 '*:18080/search*' { return New-ExecResult 0 @($global:CriaSearch) }
             }
             return New-ExecResult 7
@@ -81,9 +82,9 @@ Describe 'Stage 5: run' {
         $r.Status | Should -Be 'planned'
         $r.Problems | Should -BeNullOrEmpty
         $r.Steps | Should -Be @(
-            'would place 18 files on the VPS, never over one this stage did not write'
-            'would load the guard and make Docker need it, then pull 5 images at their digests and build 2'
-            'would start owui-web-egress and kokoro with nothing else pulled, then switch on only the Groq relay site in nginx')
+            'would place 19 files on the VPS, never over one this stage did not write'
+            'would load the guard and make Docker need it, then pull 9 images at their digests and build 2'
+            'would start owui-web-egress, kokoro and kroki with nothing else pulled, then switch on only the Groq relay site in nginx')
         Get-Call 'vps *' | Should -BeNullOrEmpty
     }
 
@@ -94,7 +95,7 @@ Describe 'Stage 5: run' {
         $r.Status | Should -Be 'done'
         Get-Call 'vps *' | Should -Be @('vps vps 05-place.sh liam', "vps vps 05-services.sh run liam $($script:VpsIp) guard-changed")
 
-        $global:CriaPlaced.Count | Should -Be 18
+        $global:CriaPlaced.Count | Should -Be 19
         foreach ($p in $global:CriaPlaced.Keys) {
             $f = $global:CriaPlaced[$p]
             [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($f.Bytes)).ToLowerInvariant() | Should -Be $f.Sha
@@ -104,6 +105,7 @@ Describe 'Stage 5: run' {
         $global:CriaPlaced["$($script:Egress)/compose.yml"].Mode | Should -Be '0644'
         $global:CriaPlaced["$($script:Egress)/compose.yml"].Owner | Should -Be 'liam'
         $global:CriaPlaced['/home/liam/kokoro/compose.yml'].Owner | Should -Be 'liam'
+        $global:CriaPlaced['/home/liam/kroki/compose.yml'].Owner | Should -Be 'liam'
         foreach ($p in '/etc/systemd/system/owui-web-egress-guard.service', '/etc/systemd/system/docker.service.d/owui-web-egress.conf', '/etc/nginx/sites-available/groq-relay') {
             $global:CriaPlaced[$p].Owner | Should -Be 'root'
             $global:CriaPlaced[$p].Mode | Should -Be '0644'
@@ -115,17 +117,18 @@ Describe 'Stage 5: run' {
         $global:CriaPlaced.Contains("$($script:Egress)/compose.override.yml") | Should -BeTrue
 
         $images = $global:CriaImages
-        $images.Count | Should -Be 7
+        $images.Count | Should -Be 11
         $images | Should -Contain "build jina-reader-official-hardened:2026-09-24 $($script:Egress)/jina-official"
         $images | Should -Contain "build searxng-mcp:1.6.0 $($script:Egress)/searxng-mcp"
         @($images -match '^pull qmcgaw/gluetun@sha256:[0-9a-f]{64} qmcgaw/gluetun:v3$').Count | Should -Be 1
         @($images -match '^pull python@sha256:[0-9a-f]{64} -$').Count | Should -Be 1
         @($images -match '^pull ghcr\.io/remsky/kokoro-fastapi-cpu@sha256:[0-9a-f]{64} ghcr\.io/remsky/kokoro-fastapi-cpu:v0\.5\.0$').Count | Should -Be 1
+        @($images -match '^pull yuzutech/kroki(-mermaid|-bpmn|-excalidraw)?@sha256:[0-9a-f]{64} yuzutech/kroki(-mermaid|-bpmn|-excalidraw)?:latest$').Count | Should -Be 4
         @($images -match 'mcpo-core-baked|jina-ai/reader').Count | Should -Be 0
 
-        $r.Steps | Should -Contain 'placed 18 files on the VPS: 18 new'
+        $r.Steps | Should -Contain 'placed 19 files on the VPS: 19 new'
         $r.Steps | Should -Contain "05-services.sh: $($script:Egress): 6/6 services running"
-        $r.Data['Placed'] | Should -Be 18
+        $r.Data['Placed'] | Should -Be 19
         ($r | ConvertTo-Json -Depth 6) | Should -Not -Match ([regex]::Escape($script:VpsIp))
     }
 
@@ -138,7 +141,7 @@ Describe 'Stage 5: run' {
         }
         $r = Invoke-Stage '05-vps.ps1' $c
         $r.Status | Should -Be 'done'
-        $r.Steps | Should -Contain 'placed 18 files on the VPS: 18 same'
+        $r.Steps | Should -Contain 'placed 19 files on the VPS: 19 same'
         Get-Call 'vps vps 05-services.sh *' | Should -Be @("vps vps 05-services.sh run liam $($script:VpsIp)")
     }
 
@@ -156,7 +159,7 @@ Describe 'Stage 5: run' {
         $r = Invoke-Stage '05-vps.ps1' $c
         $r.Status | Should -Be 'failed'
         $r.Problems | Should -Be @("05-place.sh: $($script:Egress)/compose.yml: a different file is already there, not one this stage wrote; move it away and run again")
-        $r.Steps | Should -Contain 'placed 18 files on the VPS: 1 new'
+        $r.Steps | Should -Contain 'placed 19 files on the VPS: 1 new'
         Get-Call 'vps vps 05-services.sh *' | Should -BeNullOrEmpty
     }
 
@@ -172,14 +175,14 @@ Describe 'Stage 5: run' {
 }
 
 Describe 'Stage 5: checkpoint' {
-    It 'passes on a healthy VPS, with the gateway, Kokoro and a search answering this PC' {
+    It 'passes on a healthy VPS, with the gateway, Kokoro, Kroki and a search answering this PC' {
         $c = New-Stage5 -Mode Check
         $k = Invoke-Stage '05-vps.ps1' $c
         @($k.Checks | Where-Object { -not $_.Ok } | ForEach-Object { "$($_.What): $($_.Actual)" }) | Should -BeNullOrEmpty
         $k.Status | Should -Be 'passed'
-        $k.Checks.Count | Should -Be 14
+        $k.Checks.Count | Should -Be 17
         Get-Call 'vps *' | Should -Be @("vps vps 05-services.sh check liam $($script:VpsIp)")
-        @(Get-Call 'curl *').Count | Should -Be 3
+        @(Get-Call 'curl *').Count | Should -Be 4
         ($k | ConvertTo-Json -Depth 6) | Should -Not -Match ([regex]::Escape($script:VpsIp))
     }
 
