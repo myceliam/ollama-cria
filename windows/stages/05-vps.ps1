@@ -165,7 +165,7 @@ function Test-Checkpoint {
     $get = { param($Name) if ($f.ContainsKey($Name)) { $f[$Name] } else { 'not reported' } }
     $all = { param($Name) $v = & $get $Name; $v -match '^([1-9][0-9]*)/([0-9]+)$' -and $Matches[1] -eq $Matches[2] }
     Add-StageCheck $result 'guard unit enabled and active' 'yes, yes' "$(& $get 'guard-enabled'), $(& $get 'guard-active')" ((& $get 'guard-enabled') -eq 'yes' -and (& $get 'guard-active') -eq 'yes')
-    Add-StageCheck $result "guard's nftables table and routing rule loaded" 'yes, yes' "$(& $get 'nft-table'), $(& $get 'ip-rule')" ((& $get 'nft-table') -eq 'yes' -and (& $get 'ip-rule') -eq 'yes')
+    Add-StageCheck $result "guard's nftables table and routing rules (IPv4 5260, IPv6 block 5265) loaded" 'yes, yes' "$(& $get 'nft-table'), $(& $get 'ip-rule')" ((& $get 'nft-table') -eq 'yes' -and (& $get 'ip-rule') -eq 'yes')
     Add-StageCheck $result 'Docker needs the guard (Requires= and After=)' 'yes' (& $get 'docker-needs-guard') ((& $get 'docker-needs-guard') -eq 'yes')
     Add-StageCheck $result 'owui-web-egress: every service running' 'all' (& $get 'egress-running') (& $all 'egress-running')
     Add-StageCheck $result 'gluetun' 'healthy' (& $get 'gluetun-health') ((& $get 'gluetun-health') -eq 'healthy')

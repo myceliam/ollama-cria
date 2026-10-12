@@ -19,6 +19,14 @@
 #   - Unattended upgrades on.
 #   - net.ipv4.ip_nonlocal_bind = 1, so nginx, Docker and sshd can bind the
 #     tailnet address at boot before tailscale0 has it.
+#   - systemd-networkd keeps routing rules it did not create
+#     (ManageForeignRoutingPolicyRules=no). By default it deletes them
+#     whenever it restarts, and on 4 October 2026 an automatic update
+#     restarted it and wiped the guard's rules, its IPv6 block (5265)
+#     included. Added 10 October 2026.
+#   - No IPv6 on the public interface (netplan: dhcp6 off, no router
+#     advertisements, no link-local addresses). Tailscale keeps its own
+#     IPv6 on tailscale0. Liam's call, 10 October 2026.
 #   - ufw: deny incoming and routed, allow outgoing; allow everything on
 #     tailscale0, and 41641/udp for Tailscale's direct connections. The
 #     live Cloudflare rules belong to the separate website, not the stack.
@@ -68,6 +76,18 @@ mine=$(tailscale ip -4 2>/dev/null | head -n 1 || true)
 # yes or no: does the input hold a line grep matches with these arguments?
 has() { if grep -q "$@"; then echo yes; else echo no; fi; }
 
+# Does networkd keep routing rules it did not create? Reads its effective
+# configuration (networkd.conf and every drop-in, in systemd's order), so a
+# later drop-in that turns it back on counts.
+networkd_keeps_rules() {
+  systemd-analyze ${root:+--root="$root"} cat-config systemd/networkd.conf 2>/dev/null | awk '
+    /^[[:space:]]*\[/ { section = $0; gsub(/[[:space:]]/, "", section); next }
+    section == "[Network]" && /^[[:space:]]*ManageForeignRoutingPolicyRules[[:space:]]*=/ {
+      v = $0; sub(/^[^=]*=[[:space:]]*/, "", v); sub(/[[:space:]]+$/, "", v); value = tolower(v)
+    }
+    END { exit !(value == "no" || value == "false" || value == "off" || value == "0") }'
+}
+
 installed() { [ "$(dpkg-query -W -f '${Status}' "$1" 2>/dev/null || true)" = 'install ok installed' ]; }
 version_of() { dpkg-query -W -f '${Version}' "$1" 2>/dev/null || true; }
 
@@ -94,6 +114,24 @@ Suites: noble
 Components: stable
 Signed-By: /etc/apt/keyrings/docker.asc'
 
+networkd_dropin=/etc/systemd/networkd.conf.d/10-ollama-cria.conf
+networkd_conf="# ollama-cria Stage 2: keep the guard's routing rules when networkd restarts.
+[Network]
+ManageForeignRoutingPolicyRules=no"
+
+netplan_dropin=/etc/netplan/60-ollama-cria.yaml
+netplan_conf='# ollama-cria Stage 2: no IPv6 on the public interface (Liam, 10 October 2026).
+# Tailscale keeps its own IPv6 on tailscale0.
+network:
+  version: 2
+  ethernets:
+    all-en:
+      match:
+        name: "en*"
+      dhcp6: false
+      accept-ra: false
+      link-local: []'
+
 sshd_conf="# ollama-cria Stage 2, as on the live VPS: keys only, no root, tailnet only.
 PubkeyAuthentication yes
 PasswordAuthentication no
@@ -113,6 +151,8 @@ if [ "$mode" = check ]; then
   fact compose "$(docker compose version --short 2>/dev/null || echo none)"
   for p in "${ubuntu_packages[@]}"; do installed "$p" || fact missing "$p"; done
   fact nonlocal-bind "$(sysctl -n net.ipv4.ip_nonlocal_bind 2>/dev/null || echo unknown)"
+  if networkd_keeps_rules; then fact networkd-keeps-rules yes; else fact networkd-keeps-rules no; fi
+  if grep -qx '      dhcp6: false' "$root$netplan_dropin" 2>/dev/null && grep -qx '      link-local: \[\]' "$root$netplan_dropin"; then fact ipv6-public-off yes; else fact ipv6-public-off no; fi
   s=$(ufw status verbose 2>/dev/null || true)
   if grep -q '^Status: active' <<<"$s"; then fact ufw active; else fact ufw inactive; fi
   fact ufw-defaults "$(has '^Default: deny (incoming), allow (outgoing), deny (routed)' <<<"$s")"
@@ -197,6 +237,27 @@ if [ "$(sysctl -n net.ipv4.ip_nonlocal_bind 2>/dev/null || echo 0)" != 1 ]; then
   sysctl -q -p "$root/etc/sysctl.d/99-nginx-tailnet-bind.conf" >/dev/null || fail 'could not apply net.ipv4.ip_nonlocal_bind'
   step 'net.ipv4.ip_nonlocal_bind applied'
 fi
+
+# networkd reads this when it next starts, which is the moment it would
+# otherwise delete the guard's rules, so it needs no restart now.
+if put "$networkd_dropin" "$networkd_conf" 0644; then
+  step "systemd-networkd keeps the guard's routing rules (10-ollama-cria.conf)"
+fi
+
+# No IPv6 on the public interface. netplan writes it for networkd's next
+# start (no 'netplan apply', which would reconfigure the link under this
+# SSH session); sysctl switches it off on each public interface now.
+if put "$netplan_dropin" "$netplan_conf" 0600; then
+  netplan generate >>"$log" 2>&1 || fail 'netplan rejected 60-ollama-cria.yaml (see the log on the VPS)'
+  step 'no IPv6 on the public interface (60-ollama-cria.yaml)'
+fi
+for d in "$root"/proc/sys/net/ipv6/conf/en*; do
+  [ -f "$d/disable_ipv6" ] || continue
+  if [ "$(cat "$d/disable_ipv6")" != 1 ]; then
+    sysctl -q -w "net.ipv6.conf.${d##*/}.disable_ipv6=1" >/dev/null || fail "could not switch IPv6 off on ${d##*/}"
+    step "IPv6 switched off on ${d##*/}"
+  fi
+done
 
 # Firewall, as on the live VPS. The SSH session that runs this comes in on
 # tailscale0, which is allowed before ufw is switched on.

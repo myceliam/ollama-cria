@@ -60,11 +60,27 @@ case "$tool" in
     [ -f "$f/guard-loaded" ]
     ;;
   ip)
-    [ -f "$f/guard-loaded" ] && printf '5260:\tfrom all lookup 52\n5264:\tfrom all lookup main\n'
+    # guard-v6-missing: the IPv4 rules are there but the IPv6 block is not.
+    [ -f "$f/guard-loaded" ] || exit 0
+    # guard-v6-scoped: rule 5265 blocks only one range, not everything.
+    if [ "${1:-}" = -6 ]; then
+      if [ -f "$f/guard-v6-scoped" ]; then printf '5264:\tfrom all lookup main\n5265:\tfrom 2001:db8::/32 prohibit\n'
+      elif [ ! -f "$f/guard-v6-missing" ]; then printf '5264:\tfrom all lookup main\n5265:\tfrom all prohibit\n'; fi
+    else
+      printf '5260:\tfrom all lookup 52\n5264:\tfrom all lookup main\n'
+    fi
     exit 0
     ;;
   nginx)
     exit "$(cat "$f/nginx-t" 2>/dev/null || echo 0)"
+    ;;
+  netplan)
+    [ ! -f "$f/netplan-fails" ]
+    ;;
+  systemd-analyze)
+    # cat-config: networkd.conf, then its drop-ins in name order.
+    cat "$CRIA_ROOT/etc/systemd/networkd.conf" "$CRIA_ROOT"/etc/systemd/networkd.conf.d/*.conf 2>/dev/null
+    exit 0
     ;;
   gpg)
     if grep -q GOOD-KEY "${*: -1}"; then

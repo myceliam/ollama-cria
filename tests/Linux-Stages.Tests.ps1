@@ -10,7 +10,7 @@ BeforeAll {
     $script:Stages = Join-Path $PSScriptRoot '../linux/stages'
     $script:FakeTools = Join-Path $PSScriptRoot 'fakes/fake-linux-tools.sh'
     $script:TsIp = @('100', '64', '0', '8') -join '.'
-    $script:Tools = 'id', 'tailscale', 'dpkg-query', 'apt-get', 'curl', 'gpg', 'systemctl', 'sysctl', 'ufw', 'sshd', 'docker', 'ss', 'chown', 'nft', 'ip', 'nginx',
+    $script:Tools = 'id', 'tailscale', 'dpkg-query', 'apt-get', 'curl', 'gpg', 'systemctl', 'sysctl', 'ufw', 'sshd', 'docker', 'ss', 'chown', 'nft', 'ip', 'nginx', 'netplan', 'systemd-analyze',
     'systemd-run', 'timeout'
 
     function New-Box {
@@ -100,6 +100,10 @@ Describe '02-base.sh run' -Skip:$IsWindows {
         Get-BoxFile $b '/etc/apt/keyrings/docker.asc' | Should -Match 'GOOD-KEY'
         Get-BoxFile $b '/etc/apt/sources.list.d/docker.sources' | Should -Match 'Signed-By: /etc/apt/keyrings/docker.asc'
         Get-BoxFile $b '/etc/sysctl.d/99-nginx-tailnet-bind.conf' | Should -Be "net.ipv4.ip_nonlocal_bind = 1`n"
+        Get-BoxFile $b '/etc/systemd/networkd.conf.d/10-ollama-cria.conf' | Should -Match '(?m)^\[Network\]\nManageForeignRoutingPolicyRules=no$'
+        $netplan = Get-BoxFile $b '/etc/netplan/60-ollama-cria.yaml'
+        $netplan | Should -Match '(?m)^      dhcp6: false$'
+        $netplan | Should -Match '(?m)^      link-local: \[\]$'
         $sshd = Get-BoxFile $b '/etc/ssh/sshd_config.d/00-liam-hardening.conf'
         $sshd | Should -Match "(?m)^ListenAddress $([regex]::Escape($script:TsIp))$"
         $sshd | Should -Match '(?m)^PasswordAuthentication no$'
@@ -183,8 +187,17 @@ Describe '02-base.sh check' -Skip:$IsWindows {
         $facts['ssh-listen'] | Should -Be 'tailnet-only'
         $facts['ssh-password-off'] | Should -Be 'yes'
         $facts['nonlocal-bind'] | Should -Be '1'
+        $facts['networkd-keeps-rules'] | Should -Be 'yes'
+        $facts['ipv6-public-off'] | Should -Be 'yes'
         $facts.ContainsKey('missing') | Should -BeFalse
         Get-Fake $b 'calls' | Where-Object { $_ -match '^(apt-get|ufw (allow|default|--force)|systemctl (enable|start|restart)|curl) ' } | Should -BeNullOrEmpty
+    }
+
+    It 'notices a later networkd drop-in that deletes foreign rules again' {
+        $b = New-Box
+        $null = Invoke-Box $b '02-base.sh' @('run', 'liam', $script:TsIp)
+        Set-BoxFile $b '/etc/systemd/networkd.conf.d/20-other.conf' "[Network]`nManageForeignRoutingPolicyRules=yes`n"
+        (Invoke-Box $b '02-base.sh' @('check', 'liam', $script:TsIp)).Output | Should -Contain 'FACT networkd-keeps-rules no'
     }
 
     It 'notices another open port and sshd listening everywhere' {
@@ -300,8 +313,19 @@ Describe '05-services.sh' -Skip:$IsWindows {
         Set-Fake $b 'guard-empty' ''
         $r = Invoke-Box $b '05-services.sh' @('run', 'liam', $script:TsIp) $script:Images
         $r.ExitCode | Should -Be 1
-        $r.Output[-1] | Should -Match 'routing rule 5260 is missing; no container was started'
+        $r.Output[-1] | Should -Match 'routing rule 5260 or IPv6 block 5265 is missing; no container was started'
         Get-Fake $b 'calls' | Where-Object { $_ -match '^docker ' } | Should -BeNullOrEmpty
+
+        # The IPv4 rules alone are not enough: the IPv6 block must be there
+        # too, and it must block everything, not one range.
+        foreach ($v6 in 'guard-v6-missing', 'guard-v6-scoped') {
+            $b = New-PlacedBox
+            Set-Fake $b $v6 ''
+            $r = Invoke-Box $b '05-services.sh' @('run', 'liam', $script:TsIp) $script:Images
+            $r.ExitCode | Should -Be 1 -Because $v6
+            $r.Output[-1] | Should -Match 'IPv6 block 5265 is missing; no container was started'
+            Get-Fake $b 'calls' | Where-Object { $_ -match '^docker ' } | Should -BeNullOrEmpty
+        }
 
         $b = New-PlacedBox
         Set-Fake $b 'dropin-inactive' ''
