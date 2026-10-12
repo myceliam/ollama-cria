@@ -142,10 +142,10 @@
 | ✅ Every ComfyUI model, custom node and workflow | ❌ Uploaded files (218 rows today, few real uploads) |
 | ✅ OWUI settings (the 425-row `config` table), with credentials re-injected | ❌ Notes, the single memory entry, automation run history |
 | ✅ 15 tools, 6 functions, 10 skills, 93 model presets, 5 prompts | ❌ Calendar events in OWUI |
-| ✅ 19 tool-server connections (16 through `mcpo-core`, the Gmail bridge, Google's own Calendar MCP and, until Liam decides, the old calendar bridge's entry) | ❌ Generated images and video |
+| ✅ 19 tool-server connections (16 through `mcpo-core`, the Gmail bridge, Google's own Calendar MCP and the gcal bridge) | ❌ Generated images and video |
 | ✅ Your OWUI user settings: pinned models, tool settings, the sub-agent prompt, TTS choices | ❌ Logs and caches |
 | ✅ Groups and access grants | ❌ 🗄️ Retired: Discord bridge, its pipe, channel and webhook; `OWUI-Automation-Chat-Tidy` |
-| ✅ Microservices: Tika, Playwright MCP, mcpo, the Gmail bridge, ntfy, Bolt, Dozzle, open-terminal, dashboard | |
+| ✅ Microservices: Tika, Playwright MCP, mcpo, the gcal bridge (a stop-gap, see 7a) and the Gmail bridge, ntfy, Bolt, Dozzle, open-terminal, dashboard | |
 | ✅ VPS web egress through gluetun/Mullvad, the guard, Kokoro, Kroki and the STT relay | |
 | ✅ Tailscale Serve rules, scheduled tasks and the ComfyUI logon launcher | |
 
@@ -440,7 +440,7 @@ The bundle was downloaded, checked and unpacked in Stage 1. `Restore-StackSecret
 | Bundle folder | Contents | Goes to |
 |---|---|---|
 | 01 | Stack `.env`, Docker secrets in `E:\ai\ollama\secrets\`, the local SearXNG `settings.yml` | 🖥️ |
-| 02 | Google OAuth client, the Gmail bridge token and its settings | 🖥️ |
+| 02 | Google OAuth client, the gcal and Gmail bridge tokens and their settings | 🖥️ |
 | 03 | OWUI secret values the seed refers to: provider API keys, tool-server bearer tokens, the Groq STT key, Valve secrets, `WEBUI_SECRET_KEY` | 🖥️ (used in Stage 7) |
 | 04 | SSH private key, public key and config | 🖥️ (placed in Stage 1) |
 | 05 | VPS web egress `.env` (WireGuard keys, Brave key, SearXNG secret) | ☁️ |
@@ -572,13 +572,14 @@ Rows with `auth` other than `none` pause for Liam to accept the licence in the b
 
 **7a · Build local images first** (moved from Stage 8, C-36)
 
-For each PC compose project (`ollama`, `gmail-owui-bridge`, `cline-dashboard`), `docker compose build` runs first; every image the project names that is still missing is then pulled **at its digest** and tagged as the compose file names it. OWUI comes from the digest the seed records (C-40); the rest from `manifests\images.json`. An image with nothing to build it from and no pinned digest stops the stage.
+For each PC compose project (`ollama`, `gmail-owui-bridge`, `gcal-owui-bridge`, `cline-dashboard`), `docker compose build` runs first; every image the project names that is still missing is then pulled **at its digest** and tagged as the compose file names it. OWUI comes from the digest the seed records (C-40); the rest from `manifests\images.json`. An image with nothing to build it from and no pinned digest stops the stage.
 
 | Image | Build from |
 |---|---|
 | `mcpo-core-baked:pinned` | `Dockerfile.mcpo` |
 | `bolt-baked:pinned` | `bolt\Dockerfile.bolt` |
 | Gmail bridge | `gmail-owui-bridge\` (own compose project) |
+| gcal bridge | `gcal-owui-bridge\` (own compose project). Removed on 11 October 2026 (AICL-0160) and brought back on 12 October as a chat tool only, grid sync off, until Google approves the Workspace Developer Preview enrolment its Calendar MCP needs; then it goes again (AICL-0184) |
 | Homelab dashboard | `E:\ai\ag-startuip\cline-dashboard` (own compose project) |
 
 Registry images (OWUI at its **recorded** digest, Tika, Playwright MCP, ntfy, Dozzle, open-terminal, the pinned `python@sha256:423ed6ab…` for `web-vps-relay`) are pulled in the same step. Nothing is created until every image is present.
@@ -683,12 +684,12 @@ A rule or setting the controller did not make is reported, never changed.
 
 1. Ollama (native) is already running from Stage 6; the controller starts it as you if it is not.
 2. ComfyUI: the controller copies `start_comfyui_hidden.vbs` into your Startup folder (8d), starts it once as you, and waits for `/system_stats` to answer.
-3. `start-stack.ps1` brings up the 9 PC compose services with their normal dependencies (tika, playwright-mcp, web-vps-relay, mcpo-core, open-webui, ntfy, bolt, dozzle, open-terminal), then the Gmail bridge and dashboard projects.
+3. `start-stack.ps1` brings up the 9 PC compose services with their normal dependencies (tika, playwright-mcp, web-vps-relay, mcpo-core, open-webui, ntfy, bolt, dozzle, open-terminal), then the Gmail bridge and dashboard projects. `start-stack.ps1` does not know the gcal bridge's project, so the controller starts any service still without a container itself.
 4. The controller then checks for itself, because `start-stack.ps1` still exits 0 when a service is down:
    - every service of every PC compose project is running, and healthy where it has a health check;
    - every container runs its current configuration (`docker compose config --hash` against the container's label). A container left from Stage 7 with older settings is recreated;
    - 12 health URLs on this PC answer **200**: OWUI, mcpo-core, open-terminal, SearXNG and Jina Reader through the relay, both bridges, ntfy, Dozzle, the dashboard, ComfyUI and Ollama. Bolt publishes only on the tailnet address, so its health check and Stage 9 cover it.
-5. The controller reads OWUI's tool catalogue with the Stage 7 API key and checks that every tool server the seed enables is listed (18 today). If one is missing, it restarts OWUI once, in case OWUI cached its list while mcpo was still starting. If OWUI will not show the list to the key, it asks you to check the tool servers in OWUI's admin settings and run again with `-Accept tool-catalogue`.
+5. The controller reads OWUI's tool catalogue with the Stage 7 API key and checks that every tool server the seed enables is listed (19 today). If one is missing, it restarts OWUI once, in case OWUI cached its list while mcpo was still starting. If OWUI will not show the list to the key, it asks you to check the tool servers in OWUI's admin settings and run again with `-Accept tool-catalogue`.
 
 > ♻️ **C-27:** `start-stack.ps1` must exit non-zero when a required service fails, and a 401/404/500 response must count as a failure for health checks that expect 200. That is a change to a live file and waits for Liam. Until then Stage 8 applies the rule itself.
 
@@ -770,7 +771,7 @@ Each failure names the stage that owns it. The stage stops at once if the seed i
 | 7 | Speech to text | The Groq relay answers on the VPS's tailnet address | Dictate a sentence; the text appears (`stt`) |
 | 8 | Text to speech | Kokoro on the VPS speaks a sentence with `af_heart` | Read aloud uses `af_heart` (`tts`) |
 | 9 | Notifications | `ntfy_push` loads | One notification reaches the phone (`ntfy`) |
-| 10 | Gmail | The Gmail bridge holds a Google token and reads the mailbox profile, live from Google. A failure here means re-consent (the bridge's `/auth/url`) | Google's own Calendar MCP signs in and reads tomorrow's events (`server:google-calendar-mcp`) |
+| 10 | Calendar and Gmail | Both bridges hold a Google token; the gcal bridge lists the next day's events and the Gmail bridge reads the mailbox profile, live from Google. A failure here means re-consent (the bridge's `/auth/url`) | Google's own Calendar MCP signs in and reads tomorrow's events (`server:google-calendar-mcp`) |
 | 11 | Filters | `brave_command_router`, `command_builder` and both Mermaid filters load | A command routes; the Command Guide lists the diagram skills and builds a command; a Mermaid diagram renders (`filters`) |
 | 12 | Bolt and open-terminal | From the VPS, on the PC's new tailnet address: Bolt answers on 3001 (any answer: it wants a token), open-terminal's `/health` gives 200 on 18019 | |
 | 13 | Model presets and skills | Every preset, as above | |

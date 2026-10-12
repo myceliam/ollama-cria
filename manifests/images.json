@@ -24,6 +24,17 @@
       ]
     },
     {
+      "container": "gcal-owui-bridge",
+      "project": "gcal-owui-bridge",
+      "state": "running",
+      "image": "gcal-owui-bridge-gcal-owui-bridge",
+      "imageId": "sha256:a9d858bfc4e57d71fef235e2474029526279458cbb34ef58cabb352af627e9f0",
+      "imageStored": true,
+      "repoDigests": [
+        "gcal-owui-bridge-gcal-owui-bridge@sha256:a9d858bfc4e57d71fef235e2474029526279458cbb34ef58cabb352af627e9f0"
+      ]
+    },
+    {
       "container": "gmail-owui-bridge",
       "project": "gmail-owui-bridge",
       "state": "running",

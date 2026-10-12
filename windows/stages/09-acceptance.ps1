@@ -74,6 +74,7 @@ $credentials = @{
     mcpo     = @{ File = '.env'; Name = 'MCPO_API_KEY'; Header = 'Authorization' }
     terminal = @{ File = '.env'; Name = 'OPEN_TERMINAL_API_KEY'; Header = 'Authorization' }
     pstool   = @{ File = '.env'; Name = 'WINDOWS_POWERSHELL_TOOL_TOKEN'; Header = 'Authorization' }
+    gcal     = @{ File = 'gcal-owui-bridge/.env'; Name = 'GCAL_BRIDGE_API_KEY'; Header = 'X-API-Key' }
     gmail    = @{ File = 'gmail-owui-bridge/.env'; Name = 'GMAIL_BRIDGE_API_KEY'; Header = 'X-API-Key' }
 }
 $headerCache = @{}

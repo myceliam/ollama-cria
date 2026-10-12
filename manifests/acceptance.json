@@ -12,7 +12,7 @@
     "7": "Speech to text",
     "8": "Text to speech",
     "9": "Notifications",
-    "10": "Gmail",
+    "10": "Calendar and Gmail",
     "11": "Filters",
     "12": "Bolt and open-terminal from the VPS",
     "13": "Model presets and skills",
@@ -127,6 +127,19 @@
         "operation": "list_allowed_directories",
         "body": {},
         "contains": "Allowed directories"
+      }
+    },
+    {
+      "id": "server:gcal-bridge",
+      "group": 3,
+      "who": "auto",
+      "owner": 8,
+      "what": "the gcal bridge serves its OpenAPI description",
+      "server": ":18100(/|$)",
+      "probe": {
+        "type": "http",
+        "url": "http://127.0.0.1:18100/openapi.json",
+        "contains": "/events/next"
       }
     },
     {
@@ -641,6 +654,37 @@
       "owner": 7,
       "what": "ntfy_push reaches the phone",
       "steps": "Make ntfy_push send one notification the way you normally use it. It arrives on the phone."
+    },
+    {
+      "id": "gcal-auth",
+      "group": 10,
+      "who": "auto",
+      "owner": 4,
+      "what": "the gcal bridge holds a Google token",
+      "probe": {
+        "type": "http",
+        "url": "http://127.0.0.1:18100/auth/status",
+        "uses": "gcal",
+        "fields": {
+          "authenticated": true
+        }
+      }
+    },
+    {
+      "id": "gcal-events",
+      "group": 10,
+      "who": "auto",
+      "owner": 4,
+      "what": "the gcal bridge lists the next day's events from Google",
+      "probe": {
+        "type": "http",
+        "url": "http://127.0.0.1:18100/events/next?days=1",
+        "uses": "gcal",
+        "fields": {
+          "source": "google_calendar_live"
+        },
+        "timeoutSec": 60
+      }
     },
     {
       "id": "gmail-auth",

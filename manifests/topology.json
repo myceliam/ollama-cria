@@ -91,6 +91,11 @@
       "file": "gmail-owui-bridge/docker-compose.yml"
     },
     {
+      "name": "gcal-owui-bridge",
+      "root": "stack",
+      "file": "gcal-owui-bridge/docker-compose.yml"
+    },
+    {
       "name": "cline-dashboard",
       "root": "dashboard",
       "file": "docker-compose.yml"

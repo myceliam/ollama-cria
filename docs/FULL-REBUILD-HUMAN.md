@@ -266,7 +266,7 @@ Your chats and old uploads don't come back. That's by design: the rebuild brings
 2. On your phone, with Tailscale on, open Open WebUI at your PC's Tailscale name. When the sign-in page opens, answer `y`.
 3. **Only if asked:** turn off the firewall rules the report names in Windows Defender Firewall, or check the tool servers in Open WebUI's admin settings.
 
-✅ **You should see** step 11 ✅: every service healthy, 12 health checks answering, 18 tool servers, 7 Serve rules.
+✅ **You should see** step 11 ✅: every service healthy, 12 health checks answering, 19 tool servers, 7 Serve rules.
 
 ### Step 12 · Stage 9 · Proof every feature works
 

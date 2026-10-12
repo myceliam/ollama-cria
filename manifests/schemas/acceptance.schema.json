@@ -186,13 +186,14 @@
           ]
         },
         "uses": {
-          "description": "Which credential the request carries, read at run time and never written down: owui (the API key Stage 7 left), mcpo, terminal, pstool or gmail (from the rendered .env files).",
+          "description": "Which credential the request carries, read at run time and never written down: owui (the API key Stage 7 left), mcpo, terminal, pstool, gcal or gmail (from the rendered .env files).",
           "enum": [
             "none",
             "owui",
             "mcpo",
             "terminal",
             "pstool",
+            "gcal",
             "gmail"
           ]
         },

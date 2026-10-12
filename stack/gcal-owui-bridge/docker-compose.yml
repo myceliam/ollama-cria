@@ -1,0 +1,23 @@
+services:
+  gcal-owui-bridge:
+    build: .
+    container_name: gcal-owui-bridge
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18100:18100"
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./data:/data
+      # Reuse the existing Desktop OAuth client you already use for the cocal MCP.
+      - ../secrets:/app/secrets:ro
+
+# Join OWUI's existing docker network so the "open-webui" hostname resolves for the
+# grid push. Without this the container lands on its own default net and /owui/sync
+# fails with NameResolutionError (Failed to resolve 'open-webui').
+networks:
+  default:
+    name: ollama_default
+    external: true

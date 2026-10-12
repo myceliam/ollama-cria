@@ -10,7 +10,7 @@
     "02": {
       "kind": "path",
       "host": "pc",
-      "holds": "Google OAuth client, the Gmail bridge token and its settings"
+      "holds": "Google OAuth client, the gcal and Gmail bridge tokens and their settings"
     },
     "03": {
       "kind": "consumed",

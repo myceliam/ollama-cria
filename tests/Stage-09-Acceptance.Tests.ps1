@@ -357,7 +357,7 @@ Describe 'manifests/acceptance.json' {
     }
 
     It 'gives every server row a regex that matches its own mcpo route' {
-        foreach ($r in @($script:Acc['rows'] | Where-Object { $_['server'] -and $_['probe']['type'] -eq 'mcpo' })) {
+        foreach ($r in @($script:Acc['rows'] | Where-Object { $_['server'] -and $_['probe'] -and $_['probe']['type'] -eq 'mcpo' })) {
             "http://mcpo-core:8000/$($r['probe']['server'])" | Should -Match $r['server'] -Because $r['id']
             "http://mcpo-core:8000/$($r['probe']['server'])x" | Should -Not -Match $r['server'] -Because $r['id']
         }
